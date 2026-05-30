@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useCity } from '@/contexts/CityContext';
+import { useCityContext as useCity } from '@/contexts/CityContext';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { useFavorites } from '@/hooks/useFavorites';
 import { templesApi, type Temple } from '@/lib/temples-api';
@@ -42,7 +42,10 @@ const ALL_INDIA_PAGE_SIZE = 10;
 
 export default function TempleDiscovery() {
   const geo = useGeolocation();
-  const { city, isHydrated, setCity } = useCity();
+  const _cityCtx = useCity() as any;
+  const city = (_cityCtx?.city ?? null);
+  const isHydrated: boolean = (_cityCtx?.isHydrated as boolean | undefined) ?? true;
+  const setCity: (slugOrCity: any) => void = (_cityCtx?.setCity as ((slugOrCity: any) => void) | undefined) ?? (() => {});
   const { ensureHydrated: hydrateFavorites } = useFavorites();
 
   const [tab, setTab] = useState<TempleTab>('local');

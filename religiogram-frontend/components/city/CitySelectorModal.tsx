@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useCity } from '@/contexts/CityContext';
+import { useCityContext as useCity } from '@/contexts/CityContext';
 import type { City } from '@/lib/cities';
+import { CITIES } from '@/lib/cities';
 
 /**
  * CitySelectorModal — first-load gate shown when we can't use GPS.
@@ -49,7 +50,10 @@ export function CitySelectorModal({
   title = 'Where are you?',
   subtitle = 'Choose your city so we can show nearby temples.',
 }: CitySelectorModalProps) {
-  const { city, cities, setCity } = useCity();
+  const _cityCtx = useCity() as any;
+  const city = (_cityCtx?.city ?? null) as City | null;
+  const cities: readonly City[] = (_cityCtx?.cities as readonly City[] | undefined) ?? CITIES;
+  const setCity: (slugOrCity: any) => void = (_cityCtx?.setCity as ((slugOrCity: any) => void) | undefined) ?? (() => {});
   const [focused, setFocused] = useState<string | null>(city?.slug ?? null);
   const firstBtnRef = useRef<HTMLButtonElement | null>(null);
 
