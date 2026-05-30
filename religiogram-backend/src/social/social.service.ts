@@ -175,7 +175,7 @@ export class SocialService {
     userId: string,
     cursor?: string,
     limit = 50,
-  ): Promise<{ data: { id: string; fullName: string; avatarUrl: string | null; friendshipId: string; username: string | null }[]; nextCursor: string | null; hasMore: boolean }> {
+  ): Promise<{ data: { id: string; fullName: string | null; avatarUrl: string | null; friendshipId: string; username: string | null }[]; nextCursor: string | null; hasMore: boolean }> {
     const PAGE = Math.min(limit, 100);
     let cursorId: string | undefined;
     if (cursor) {

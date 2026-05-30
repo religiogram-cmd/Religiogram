@@ -573,7 +573,7 @@ export class BookingsService {
         providerId: '00000000-0000-0000-0000-000000000000', // sentinel — overwritten on confirm
         serviceId: INVITE_CEREMONY_SERVICE_ID,
         serviceName: dto.ceremony,
-        type: BookingType.IN_PERSON,
+        type: BookingType.OFFLINE,
         scheduledAt: new Date(dto.scheduledAt),
         durationMinutes: 120, // sensible default for an invite ceremony
         notes: JSON.stringify(notesPayload),

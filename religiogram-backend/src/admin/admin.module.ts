@@ -34,6 +34,7 @@ import { VerificationReviewQueue } from "../verification/entities/verification-r
 import { VerificationSubmission } from "../verification/entities/verification-submission.entity";
 import { Booking } from "../bookings/entities/booking.entity";
 import { BookingsModule } from "../bookings/bookings.module";
+import { WalletModule } from '../wallet/wallet.module';
 
 @Module({
   imports: [

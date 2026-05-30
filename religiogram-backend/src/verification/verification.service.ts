@@ -11,7 +11,7 @@ import {
   VerificationSubmission,
   VerificationStatus,
 } from './entities/verification-submission.entity';
-import { Provider } from '../service-providers/entities/provider.entity';
+import { ProviderEntity as Provider } from '../service-providers/entities/provider.entity';
 import {
   VerificationDocument,
   DocType,

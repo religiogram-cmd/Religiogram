@@ -10,7 +10,7 @@ import { Repository } from 'typeorm';
 import { ConsultationSession } from './entities/consultation-session.entity';
 import { ConsultationIntroService } from './consultation-intro.service';
 import { TurnCredentialsService } from './turn-credentials.service'; // v9 (P0-3)
-import { IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, Min, MinLength , MaxLength } from 'class-validator';
 
 class StartSessionDto {
   @IsString()

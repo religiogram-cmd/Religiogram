@@ -91,6 +91,9 @@ function buildUserContext(opts: {
 
 @Injectable()
 export class AiOrchestratorService implements OnModuleInit {
+  async onModuleInit(): Promise<void> {
+    /* No-op; reserved for future warm-up hooks. */
+  }
   private readonly logger = new Logger(AiOrchestratorService.name);
 
   constructor(

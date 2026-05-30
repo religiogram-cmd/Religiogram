@@ -8,8 +8,7 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
-  UseGuards,
-} from '@nestjs/common';
+  UseGuards, DefaultValuePipe, ParseIntPipe} from '@nestjs/common';
 import { DisputeService } from './dispute.service';
 import { RaiseDisputeDto } from './dto/raise-dispute.dto';
 import {

@@ -197,13 +197,13 @@ export class PriestsService {
       // Encode sort-mode in cursor so decode can apply the correct keyset predicate
       const sortBy = dto.sortBy;
       let cursorPayload: Record<string, unknown>;
-      if (!sortBy || sortBy === 'default') {
+      if (!sortBy) {
         cursorPayload = { mode: 'default', isVerified: last.isVerified ?? false, ratingAvg: last.ratingAvg ?? null, id: last.id };
-      } else if (sortBy === 'RATING') {
+      } else if (sortBy === 'rating') {
         cursorPayload = { mode: 'rating', ratingAvg: last.ratingAvg ?? null, id: last.id };
-      } else if (sortBy === 'PRICE') {
+      } else if (sortBy === 'price') {
         cursorPayload = { mode: 'price', price: last.perMinutePaise ?? null, id: last.id };
-      } else if (sortBy === 'EXPERIENCE') {
+      } else if (sortBy === 'experience') {
         cursorPayload = { mode: 'experience', experience: last.experienceYears ?? null, id: last.id };
       } else {
         // DISTANCE and others: re-fetch from page 1 (distance is ephemeral)
