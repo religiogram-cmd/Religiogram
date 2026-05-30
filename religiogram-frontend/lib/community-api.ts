@@ -289,7 +289,7 @@ export const posts = {
   /** No single-post GET on the real backend; the feed payload already carries
    *  every field a card needs. Stub so callers don't crash. */
   get: async (_postId: string) => {
-    throw new ApiError('NOT_IMPLEMENTED', 'Single-post fetch is not supported.', 501);
+    throw new ApiError(501, 'NOT_IMPLEMENTED', 'Single-post fetch is not supported.');
   },
   remove: (postId: string) =>
     call<{ ok: true }>(`/social/posts/${postId}`, { method: 'DELETE' }),
