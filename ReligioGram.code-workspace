@@ -1,0 +1,63 @@
+{
+  "folders": [
+    {
+      "name": "Frontend (Next.js)",
+      "path": "religiogram-frontend"
+    },
+    {
+      "name": "Mock Server (Backend)",
+      "path": "religiogram-backend"
+    }
+  ],
+  "settings": {
+    "typescript.tsdk": "religiogram-frontend/node_modules/typescript/lib",
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/.next": true
+    },
+    "terminal.integrated.defaultProfile.windows": "Command Prompt"
+  },
+  "extensions": {
+    "recommendations": [
+      "bradlc.vscode-tailwindcss",
+      "esbenp.prettier-vscode",
+      "dbaeumer.vscode-eslint",
+      "ms-vscode.vscode-typescript-next"
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "compounds": [
+      {
+        "name": "Start Full App",
+        "configurations": ["Mock Server", "Next.js Dev"]
+      }
+    ],
+    "configurations": [
+      {
+        "name": "Mock Server",
+        "type": "node",
+        "request": "launch",
+        "program": "${workspaceFolder:Mock Server (Backend)}/server-mock.js",
+        "env": { "PORT": "3001" },
+        "console": "integratedTerminal",
+        "internalConsoleOptions": "neverOpen"
+      },
+      {
+        "name": "Next.js Dev",
+        "type": "node",
+        "request": "launch",
+        "program": "${workspaceFolder:Frontend (Next.js)}/node_modules/.bin/next",
+        "args": ["dev", "--port", "3000"],
+        "cwd": "${workspaceFolder:Frontend (Next.js)}",
+        "console": "integratedTerminal",
+        "internalConsoleOptions": "neverOpen",
+        "env": {
+          "NODE_ENV": "development"
+        }
+      }
+    ]
+  }
+}

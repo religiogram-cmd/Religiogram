@@ -1,0 +1,133 @@
+import {
+  Controller,
+  Get,
+  Query,
+} from '@nestjs/common';
+import { UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, DataSource } from 'typeorm';
+import { ProviderEntity, ProviderStatus } from '../service-providers/entities/provider.entity';
+import { Booking, BookingStatus } from '../bookings/entities/booking.entity';
+import { LedgerEntry, EntryType } from '../wallet/entities/ledger-entry.entity';
+import { Dispute, DisputeStatus } from '../dispute/entities/dispute.entity';
+import { FraudSignal } from '../fraud/entities/fraud-signal.entity';
+
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('admin')
+@Controller({ path: 'admin/analytics', version: '1' })
+export class AdminAnalyticsController {
+  constructor(
+    @InjectRepository(ProviderEntity)
+    private readonly providerRepo: Repository<ProviderEntity>,
+    @InjectRepository(Booking)
+    private readonly bookingRepo: Repository<Booking>,
+    @InjectRepository(LedgerEntry)
+    private readonly ledgerRepo: Repository<LedgerEntry>,
+    @InjectRepository(Dispute)
+    private readonly disputeRepo: Repository<Dispute>,
+    @InjectRepository(FraudSignal)
+    private readonly fraudRepo: Repository<FraudSignal>,
+    private readonly ds: DataSource,
+  ) {}
+
+  @Get('kpis')
+  async getKpis() {
+    const [
+      totalProviders,
+      pendingProviders,
+      approvedProviders,
+      totalBookings,
+      completedBookings,
+      cancelledBookings,
+      openDisputes,
+      unresolvedFraudSignals,
+    ] = await Promise.all([
+      this.providerRepo.count(),
+      this.providerRepo.count({ where: { status: ProviderStatus.PendingReview } }),
+      this.providerRepo.count({ where: { status: ProviderStatus.Approved } }),
+      this.bookingRepo.count(),
+      this.bookingRepo.count({ where: { status: BookingStatus.COMPLETED } }),
+      this.bookingRepo.count({ where: { status: BookingStatus.CANCELLED } }),
+      this.disputeRepo.count({ where: { status: DisputeStatus.RAISED } }),
+      this.fraudRepo.count({ where: { isResolved: false } }),
+    ]);
+
+    return {
+      providers: { total: totalProviders, pending: pendingProviders, approved: approvedProviders },
+      bookings:  { total: totalBookings, completed: completedBookings, cancelled: cancelledBookings },
+      disputes:  { open: openDisputes },
+      fraud:     { unresolved: unresolvedFraudSignals },
+    };
+  }
+
+  @Get('revenue')
+  async getRevenue(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const toDate   = to   ? new Date(to)   : new Date();
+    const fromDate = from ? new Date(from) : new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const result = await this.ds.query<Array<{ entry_type: string; total: string }>>(
+      `SELECT entry_type, SUM(amount) as total
+       FROM ledger_entries
+       WHERE created_at BETWEEN $1 AND $2
+       GROUP BY entry_type`,
+      [fromDate, toDate],
+    );
+
+    const map: Record<string, number> = {};
+    for (const row of result) {
+      map[row.entry_type] = Number(row.total);
+    }
+
+    return {
+      fromDate: fromDate.toISOString(),
+      toDate:   toDate.toISOString(),
+      credits:  map[EntryType.CREDIT]  ?? 0,
+      debits:   map[EntryType.DEBIT]   ?? 0,
+      holds:    map[EntryType.HOLD]    ?? 0,
+      releases: map[EntryType.RELEASE] ?? 0,
+    };
+  }
+
+  @Get('booking-trend')
+  async getBookingTrend(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const toDate   = to   ? new Date(to)   : new Date();
+    const fromDate = from ? new Date(from) : new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const rows = await this.ds.query<Array<{ day: string; count: string; status: string }>>(
+      `SELECT DATE_TRUNC('day', created_at) as day, status, COUNT(*) as count
+       FROM bookings
+       WHERE created_at BETWEEN $1 AND $2
+       GROUP BY day, status
+       ORDER BY day ASC`,
+      [fromDate, toDate],
+    );
+
+    return { fromDate: fromDate.toISOString(), toDate: toDate.toISOString(), rows };
+  }
+
+  @Get('dispute-sla')
+  async getDisputeSla() {
+    const now = new Date();
+    const [open, overdue] = await Promise.all([
+      this.disputeRepo.count({ where: { status: DisputeStatus.UNDER_INVESTIGATION } }),
+      this.ds.query<Array<{ count: string }>>(
+        `SELECT COUNT(*) as count FROM disputes WHERE status = 'under_investigation' AND sla_deadline < $1`,
+        [now],
+      ),
+    ]);
+    return {
+      open,
+      overdue: Number(overdue[0]?.count ?? 0),
+      healthPct: open > 0 ? Math.round(((open - Number(overdue[0]?.count ?? 0)) / open) * 100) : 100,
+    };
+  }
+}

@@ -1,0 +1,45 @@
+# ============================================================
+# Appendix F — WAL-G PITR backup cron
+#
+# Install: cp walg-backup /etc/cron.d/walg-backup
+#          chmod 0644 /etc/cron.d/walg-backup
+#          chown root:root /etc/cron.d/walg-backup
+#
+# Prerequisites:
+#   - wal-g binary at /usr/local/bin/wal-g
+#   - /etc/walg.env with Cloudflare R2 credentials (see below)
+#   - postgresql.conf has wal_level = replica
+#
+# /etc/walg.env example:
+#   WALG_S3_PREFIX=s3://religiogram-backups/wal-g
+#   AWS_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com
+#   AWS_ACCESS_KEY_ID=<r2_access_key>
+#   AWS_SECRET_ACCESS_KEY=<r2_secret_key>
+#   WALG_COMPRESSION_METHOD=lz4
+#   WALG_DELTA_MAX_STEPS=6
+#   PGHOST=/var/run/postgresql
+#   PGUSER=postgres
+#
+# Cost note: Cloudflare R2 has zero egress fees and $0.015/GB storage.
+# 30 days of daily base backups + continuous WAL = ~$1-3/month.
+# ============================================================
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# ── Full base backup — 02:30 UTC daily ───────────────────────
+# Runs after autovacuum completes its nightly passes, before
+# morning peak traffic. Takes ~2-5 minutes for a 5 GB database.
+30 2 * * * postgres /usr/local/bin/wal-g backup-push $PGDATA \
+    --env-file /etc/walg.env >> /var/log/walg/backup.log 2>&1
+
+# ── Delete old base backups — keep last 7 full backups ───────
+# Runs just after the backup push to free R2 storage.
+45 2 * * * postgres /usr/local/bin/wal-g delete retain FULL 7 \
+    --env-file /etc/walg.env --confirm >> /var/log/walg/backup.log 2>&1
+
+# ── WAL archiving — configured in postgresql.conf, NOT here ──
+# Add to postgresql.conf:
+#   archive_mode   = on
+#   archive_command = '/usr/local/bin/wal-g wal-push %p --env-file /etc/walg.env'
+#   restore_command = '/usr/local/bin/wal-g wal-fetch %f %p --env-file /etc/walg.env'

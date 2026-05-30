@@ -1,0 +1,40 @@
+#!/usr/bin/env sh
+# .husky/pre-commit — runs before every commit
+# Install: npm run prepare  (scripts.prepare = "husky install")
+. "$(dirname -- "$0")/_/husky.sh"
+
+echo "🔍 ReligioGram pre-commit checks..."
+
+# 1. TypeScript type check (fast, ~5s)
+echo "[1/4] TypeScript typecheck..."
+npx tsc --noEmit || { echo "❌ TypeScript errors — fix before committing"; exit 1; }
+
+# 2. ESLint on staged .ts files only
+echo "[2/4] ESLint on staged files..."
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR | grep '\.ts$' | grep -v '\.d\.ts$' || true)
+if [ -n "$STAGED" ]; then
+  echo "$STAGED" | xargs npx eslint --max-warnings=0 || { echo "❌ ESLint errors"; exit 1; }
+fi
+
+# 3. No .env accidentally staged (only .env.* variants allowed)
+echo "[3/4] Secret file guard..."
+if git diff --cached --name-only | grep -qE '^\.env$'; then
+  echo "❌ Refusing to commit .env — stage .env.development.local or .env.example instead"
+  exit 1
+fi
+
+# 4. Gitleaks on staged diff (fast — staged only, not full history)
+echo "[4/4] Gitleaks secret scan (staged)..."
+if command -v gitleaks &>/dev/null; then
+  git stash -q --keep-index
+  gitleaks detect --config .gitleaks.toml --source . --no-git --exit-code 1 2>/dev/null || {
+    git stash pop -q 2>/dev/null || true
+    echo "❌ Gitleaks found potential secrets — review before committing"
+    exit 1
+  }
+  git stash pop -q 2>/dev/null || true
+else
+  echo "⚠️  gitleaks not installed — skipping (install: brew install gitleaks)"
+fi
+
+echo "✅ Pre-commit checks passed"

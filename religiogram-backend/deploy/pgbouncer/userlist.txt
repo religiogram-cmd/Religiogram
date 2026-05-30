@@ -1,0 +1,2 @@
+# Generate scram verifier: psql -c "SELECT rolpassword FROM pg_authid WHERE rolname='religiogram_user'"
+"religiogram_user" "SCRAM-SHA-256$<iterations>:<salt>$<storedKey>:<serverKey>"

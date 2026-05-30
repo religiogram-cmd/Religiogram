@@ -1,0 +1,93 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  ReligioGram — Prometheus scrape configuration
+#
+#  Targets:
+#    api-1 / api-2  — NestJS /metrics (prom-client default registry)
+#    kafka-exporter — Kafka broker + consumer-group lag metrics
+#    postgres       — postgres_exporter (if deployed)
+#    redis          — redis_exporter  (if deployed)
+#    node           — node_exporter   (host metrics)
+#
+#  Alert rules are loaded from the rules/ directory.
+# ──────────────────────────────────────────────────────────────────────────────
+
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  scrape_timeout:      10s
+  external_labels:
+    cluster: religiogram
+    env:     docker
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+      scheme: http
+      timeout: 10s
+      api_version: v2
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+
+  # ── ReligioGram API replicas ───────────────────────────────────────────────
+  - job_name: religiogram-api
+    static_configs:
+      - targets:
+          - backend1:3000
+          - backend2:3000
+    metrics_path: /metrics
+    scheme: http
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # ── Kafka consumer-group lag (kafka-exporter) ──────────────────────────────
+  # Exposes per-topic / per-partition lag metrics:
+  #   kafka_consumergroup_lag{consumergroup,topic,partition}
+  #   kafka_consumergroup_lag_sum{consumergroup,topic}
+  #   kafka_topic_partition_current_offset{topic,partition}
+  #   kafka_topic_partition_oldest_offset{topic,partition}
+  - job_name: kafka-exporter
+    static_configs:
+      - targets: ['kafka-exporter:9308']
+    scheme: http
+
+  # ── ZooKeeper (optional) ───────────────────────────────────────────────────
+  # Confluent CP ZooKeeper exposes JMX metrics via a Prometheus JMX exporter
+  # side-car. Uncomment if you add the jmx_exporter agent to the ZooKeeper container.
+  # - job_name: zookeeper
+  #   static_configs:
+  #     - targets: ['zookeeper:9101']
+
+  # ── OpenSearch ────────────────────────────────────────────────────────────
+  # Uncomment if you add opensearch-prometheus-exporter.
+  # - job_name: opensearch
+  #   static_configs:
+  #     - targets: ['opensearch-exporter:9200']
+
+  # ── PostgreSQL (postgres_exporter) ────────────────────────────────────────
+  # Custom queries: config/postgres-exporter/queries.yaml
+  # Metrics: pg_stat_statements_top_slow, pg_active_connections,
+  #          pg_long_running_queries, pg_partition_row_counts, pg_table_bloat_estimate
+  # Alert rules: config/prometheus/rules/db-pool.yml + slow-query.yml
+  - job_name: postgres
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scheme: http
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  # - job_name: redis
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+
+  # ── Node / host metrics ────────────────────────────────────────────────────
+  # - job_name: node
+  #   static_configs:
+  #     - targets: ['node-exporter:9100']

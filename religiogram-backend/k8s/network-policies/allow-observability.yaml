@@ -1,0 +1,165 @@
+---
+# ── Prometheus — scrape all exporters ────────────────────────────────────────
+#
+# Prometheus must reach: api (3000), kafka-exporter (9308),
+#                        postgres-exporter (9187), node-exporter (9100)
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: religiogram
+  labels:
+    component: network-security
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: api
+      ports:
+        - protocol: TCP
+          port: 3000
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka-exporter
+      ports:
+        - protocol: TCP
+          port: 9308
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres-exporter
+      ports:
+        - protocol: TCP
+          port: 9187
+---
+# ── Grafana — query Prometheus ────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-grafana-to-prometheus
+  namespace: religiogram
+  labels:
+    component: network-security
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Grafana UI is accessed by engineers from inside the cluster or via port-forward
+    - from:
+        - podSelector:
+            matchLabels:
+              app: kong
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+---
+# ── kafka-exporter — egress to Kafka brokers ─────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kafka-exporter
+  namespace: religiogram
+  labels:
+    component: network-security
+spec:
+  podSelector:
+    matchLabels:
+      app: kafka-exporter
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9308
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 29092
+---
+# ── postgres-exporter — egress to PostgreSQL ─────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-exporter
+  namespace: religiogram
+  labels:
+    component: network-security
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres-exporter
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9187
+  egress:
+    # Direct connection to Postgres (bypasses PgBouncer — required for
+    # pg_stat_statements and advisory lock queries)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# ── partman CronJob — egress to API only ─────────────────────────────────────
+# The partman CronJob calls POST /v1/admin/ops/partman/run via the internal
+# API service. It does not need direct DB access.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-partman-cronjob
+  namespace: religiogram
+  labels:
+    component: network-security
+spec:
+  podSelector:
+    matchLabels:
+      app: partman-cronjob
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: api
+      ports:
+        - protocol: TCP
+          port: 3000

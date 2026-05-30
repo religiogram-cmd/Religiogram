@@ -1,0 +1,280 @@
+{
+  "_comment": [
+    "ReligioGram CloudFront Distribution — CDN configuration",
+    "",
+    "Deploy via AWS CLI:",
+    "  aws cloudfront create-distribution --distribution-config file://cloudfront-distribution.json",
+    "",
+    "Update an existing distribution (replace DISTRIBUTION_ID):",
+    "  CONFIG=$(aws cloudfront get-distribution-config --id DISTRIBUTION_ID)",
+    "  ETAG=$(echo $CONFIG | jq -r '.ETag')",
+    "  aws cloudfront update-distribution --id DISTRIBUTION_ID --if-match $ETAG \\",
+    "    --distribution-config file://cloudfront-distribution.json",
+    "",
+    "Origin groups:",
+    "  S3Origin        — S3 bucket for uploads/* and thumbnails/*",
+    "  ApiOrigin       — ALB / Kong gateway for /api/*",
+    "",
+    "Cache behaviors (evaluated in order — first match wins):",
+    "  1. thumbnails/*   — 1-year immutable cache (Lambda sets Cache-Control)",
+    "  2. uploads/*      — 30-day cache for original images",
+    "  3. /api/v1/temples*  — 60-second edge cache for public temple listings",
+    "  4. /api/v1/places*   — 60-second edge cache for public place listings",
+    "  5. /api/*         — no cache (API default), forward all headers",
+    "  6. Default (*)    — static assets, 1-day cache",
+    "",
+    "Replace placeholder values:",
+    "  YOUR_BUCKET_NAME      — S3 bucket (e.g. religiogram-uploads)",
+    "  YOUR_ALB_DNS_NAME     — Application Load Balancer DNS name",
+    "  YOUR_DOMAIN           — your custom domain (e.g. cdn.religiogram.in)",
+    "  YOUR_ACM_CERT_ARN     — ACM certificate ARN for YOUR_DOMAIN",
+    "  YOUR_PRICE_CLASS      — PriceClass_All | PriceClass_100 | PriceClass_200",
+    "  YOUR_LOG_BUCKET       — S3 bucket for CloudFront access logs"
+  ],
+  "CallerReference": "religiogram-distribution-v1",
+  "Comment": "ReligioGram CDN — thumbnails, uploads, API edge cache",
+  "DefaultRootObject": "",
+  "Enabled": true,
+  "HttpVersion": "http2and3",
+  "IsIPV6Enabled": true,
+  "PriceClass": "YOUR_PRICE_CLASS",
+
+  "Origins": {
+    "Quantity": 2,
+    "Items": [
+      {
+        "Id": "S3Origin",
+        "DomainName": "YOUR_BUCKET_NAME.s3.ap-south-1.amazonaws.com",
+        "S3OriginConfig": {
+          "OriginAccessIdentity": ""
+        },
+        "OriginAccessControlId": "YOUR_OAC_ID",
+        "ConnectionAttempts": 3,
+        "ConnectionTimeout": 10
+      },
+      {
+        "Id": "ApiOrigin",
+        "DomainName": "YOUR_ALB_DNS_NAME",
+        "CustomOriginConfig": {
+          "HTTPSPort": 443,
+          "HTTPPort": 80,
+          "OriginProtocolPolicy": "https-only",
+          "OriginSSLProtocols": {
+            "Quantity": 1,
+            "Items": ["TLSv1.2"]
+          },
+          "OriginReadTimeout": 30,
+          "OriginKeepaliveTimeout": 5
+        },
+        "ConnectionAttempts": 3,
+        "ConnectionTimeout": 10
+      }
+    ]
+  },
+
+  "CacheBehaviors": {
+    "Quantity": 5,
+    "Items": [
+      {
+        "_comment": "BEHAVIOR 1: thumbnails/* — immutable 1-year cache",
+        "_detail": [
+          "Lambda@Edge sets Cache-Control: public, max-age=31536000, immutable",
+          "No cookies, no query strings, no Authorization header forwarded.",
+          "Compress: true — serve WebP with Brotli/gzip transport compression.",
+          "Viewer protocol: redirect HTTP → HTTPS."
+        ],
+        "PathPattern": "thumbnails/*",
+        "TargetOriginId": "S3Origin",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "Compress": true,
+        "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+        "_cachePolicyNote": "CachingOptimized (AWS managed) — cache by default, no headers/cookies",
+        "OriginRequestPolicyId": "88a5eaf4-2fd4-4709-b370-b4c650ea3fcf",
+        "_originRequestPolicyNote": "CORS-S3Origin (AWS managed)",
+        "AllowedMethods": {
+          "Quantity": 2,
+          "Items": ["GET", "HEAD"],
+          "CachedMethods": {
+            "Quantity": 2,
+            "Items": ["GET", "HEAD"]
+          }
+        },
+        "MinTTL": 31536000,
+        "DefaultTTL": 31536000,
+        "MaxTTL": 31536000
+      },
+      {
+        "_comment": "BEHAVIOR 2: uploads/* — original images, 30-day cache",
+        "_detail": [
+          "Original user-uploaded images (pre-thumbnail processing).",
+          "Slightly shorter TTL than thumbnails — allows S3 object replacements",
+          "to propagate within 30 days via CloudFront invalidation."
+        ],
+        "PathPattern": "uploads/*",
+        "TargetOriginId": "S3Origin",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "Compress": true,
+        "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+        "AllowedMethods": {
+          "Quantity": 2,
+          "Items": ["GET", "HEAD"],
+          "CachedMethods": {
+            "Quantity": 2,
+            "Items": ["GET", "HEAD"]
+          }
+        },
+        "MinTTL": 0,
+        "DefaultTTL": 2592000,
+        "MaxTTL": 2592000
+      },
+      {
+        "_comment": "BEHAVIOR 3: /api/v1/temples* — 60s edge cache for public listings",
+        "_detail": [
+          "Public temple search/listing endpoints (unauthenticated GET requests).",
+          "Cache-Control: public, max-age=60 set by CacheControlInterceptor.",
+          "Do NOT forward Authorization header — these are public responses.",
+          "Query string forwarded: allow filtering by religion, city, etc.",
+          "Authenticated requests (with Authorization header) bypass this policy",
+          "via the OriginRequestPolicy forwarding Authorization → the header",
+          "presence causes a different cache key and routes to origin."
+        ],
+        "PathPattern": "/api/v1/temples*",
+        "TargetOriginId": "ApiOrigin",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "Compress": true,
+        "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+        "_cachePolicyNote": "CachingDisabled (AWS managed) — override with custom below",
+        "ForwardedValues": {
+          "QueryString": true,
+          "Cookies": { "Forward": "none" },
+          "Headers": {
+            "Quantity": 1,
+            "Items": ["Accept"]
+          }
+        },
+        "AllowedMethods": {
+          "Quantity": 2,
+          "Items": ["GET", "HEAD"],
+          "CachedMethods": {
+            "Quantity": 2,
+            "Items": ["GET", "HEAD"]
+          }
+        },
+        "MinTTL": 0,
+        "DefaultTTL": 60,
+        "MaxTTL": 60
+      },
+      {
+        "_comment": "BEHAVIOR 4: /api/v1/places* — 60s edge cache for public place listings",
+        "PathPattern": "/api/v1/places*",
+        "TargetOriginId": "ApiOrigin",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "Compress": true,
+        "ForwardedValues": {
+          "QueryString": true,
+          "Cookies": { "Forward": "none" },
+          "Headers": {
+            "Quantity": 1,
+            "Items": ["Accept"]
+          }
+        },
+        "AllowedMethods": {
+          "Quantity": 2,
+          "Items": ["GET", "HEAD"],
+          "CachedMethods": {
+            "Quantity": 2,
+            "Items": ["GET", "HEAD"]
+          }
+        },
+        "MinTTL": 0,
+        "DefaultTTL": 60,
+        "MaxTTL": 60
+      },
+      {
+        "_comment": "BEHAVIOR 5: /api/* — no cache (authenticated API traffic)",
+        "_detail": [
+          "All other API endpoints. No caching — always forward to origin.",
+          "Forward Authorization header (JWTs) for protected endpoints.",
+          "Allow all HTTP methods for POST/PUT/PATCH/DELETE."
+        ],
+        "PathPattern": "/api/*",
+        "TargetOriginId": "ApiOrigin",
+        "ViewerProtocolPolicy": "redirect-to-https",
+        "Compress": true,
+        "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+        "_cachePolicyNote": "CachingDisabled (AWS managed)",
+        "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+        "_originRequestPolicyNote": "AllViewerExceptHostHeader (AWS managed) — forwards all headers incl. Authorization",
+        "AllowedMethods": {
+          "Quantity": 7,
+          "Items": ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"],
+          "CachedMethods": {
+            "Quantity": 2,
+            "Items": ["GET", "HEAD"]
+          }
+        },
+        "MinTTL": 0,
+        "DefaultTTL": 0,
+        "MaxTTL": 0
+      }
+    ]
+  },
+
+  "DefaultCacheBehavior": {
+    "_comment": "DEFAULT: static assets (JS/CSS/fonts) — 1 day cache",
+    "TargetOriginId": "S3Origin",
+    "ViewerProtocolPolicy": "redirect-to-https",
+    "Compress": true,
+    "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
+    "AllowedMethods": {
+      "Quantity": 2,
+      "Items": ["GET", "HEAD"],
+      "CachedMethods": {
+        "Quantity": 2,
+        "Items": ["GET", "HEAD"]
+      }
+    },
+    "MinTTL": 0,
+    "DefaultTTL": 86400,
+    "MaxTTL": 86400
+  },
+
+  "Aliases": {
+    "Quantity": 1,
+    "Items": ["YOUR_DOMAIN"]
+  },
+
+  "ViewerCertificate": {
+    "ACMCertificateArn": "YOUR_ACM_CERT_ARN",
+    "SSLSupportMethod": "sni-only",
+    "MinimumProtocolVersion": "TLSv1.2_2021"
+  },
+
+  "Logging": {
+    "Enabled": true,
+    "IncludeCookies": false,
+    "Bucket": "YOUR_LOG_BUCKET.s3.amazonaws.com",
+    "Prefix": "cloudfront/"
+  },
+
+  "CustomErrorResponses": {
+    "Quantity": 2,
+    "Items": [
+      {
+        "_comment": "Return API 404s as-is (don't cache error responses)",
+        "ErrorCode": 404,
+        "ErrorCachingMinTTL": 0
+      },
+      {
+        "_comment": "S3 403 (OAC policy mismatch) → 404 to avoid leaking bucket structure",
+        "ErrorCode": 403,
+        "ResponseCode": 404,
+        "ResponsePagePath": "/404.html",
+        "ErrorCachingMinTTL": 30
+      }
+    ]
+  },
+
+  "WebACLId": "",
+  "_webACLNote": "Set to your AWS WAF v2 WebACL ARN for DDoS and bot protection (recommended in production)"
+}

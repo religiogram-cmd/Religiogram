@@ -1,0 +1,54 @@
+# ============================================================
+# Appendix D — systemd unit for ReligioGram BullMQ workers
+#
+# Install: cp religiogram-workers.service /etc/systemd/system/
+#          systemctl daemon-reload
+#          systemctl enable --now religiogram-workers
+#
+# Logs:    journalctl -u religiogram-workers -f
+# ============================================================
+
+[Unit]
+Description=ReligioGram BullMQ Workers (SMS, AI safety review, DLQ)
+Documentation=https://religiogram.in/docs/workers
+After=network.target redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=religiogram
+Group=religiogram
+WorkingDirectory=/opt/religiogram/backend
+
+# Load secrets from encrypted env file (produced by Vault/Doppler on deploy)
+EnvironmentFile=/opt/religiogram/backend/.env
+
+# NODE_ENV must be production; WORKER_ONLY=true skips the HTTP server
+Environment=NODE_ENV=production
+Environment=WORKER_ONLY=true
+Environment=CLUSTER=false
+
+ExecStart=/usr/bin/node \
+  --max-old-space-size=1024 \
+  dist/main.js
+
+# Restart policy — exponential back-off up to 30 s
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=120
+StartLimitBurst=10
+TimeoutStopSec=30
+
+# Resource limits
+LimitNOFILE=65535
+MemoryMax=1.5G
+CPUQuota=150%            # up to 1.5 cores for worker burst
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/religiogram/backend /tmp
+
+[Install]
+WantedBy=multi-user.target

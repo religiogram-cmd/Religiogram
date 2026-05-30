@@ -1,0 +1,124 @@
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  NotFoundException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { ProviderEntity, ProviderStatus } from './entities/provider.entity';
+import { ProviderServiceEntity } from './entities/provider-service.entity';
+import { Public } from '../auth/decorators/public.decorator';
+import { Throttle } from '@nestjs/throttler';
+import { CacheControl } from '../common/interceptors/cache-control.interceptor';
+
+/**
+ * Public read-only provider directory.
+ *
+ * GET /providers           — paginated list of approved providers
+ * GET /providers/:id       — single approved provider profile
+ *
+ * These routes carry @Public() so no JWT is required. They power the
+ * "Priests" screen visible to unauthenticated users in the app.
+ */
+@Controller({ path: 'providers', version: '1' })
+export class PublicProvidersController {
+  constructor(
+    @InjectRepository(ProviderEntity)
+    private readonly providers: Repository<ProviderEntity>,
+  ) {}
+
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Public()
+  @Get()
+  @CacheControl('public, max-age=60, stale-while-revalidate=120')
+  async list(
+    @Query('religion') religion?: string,
+    @Query('city') city?: string,
+    @Query('search') search?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit = '20',
+  ) {
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10)));
+
+    const qb = this.providers
+      .createQueryBuilder('p')
+      .leftJoinAndSelect('p.services', 'svc', 'svc.is_active = true')
+      .leftJoinAndSelect('svc.service', 'sm')
+      .where('p.status = :status', { status: ProviderStatus.Approved });
+
+    if (religion) {
+      qb.andWhere('p.religion = :religion', { religion: religion.toLowerCase() });
+    }
+    if (city) {
+      qb.andWhere('LOWER(p.city) LIKE :city', { city: `%${city.toLowerCase()}%` });
+    }
+    if (search) {
+      qb.andWhere(
+        '(LOWER(p.full_name) LIKE :q OR LOWER(p.bio) LIKE :q)',
+        { q: `%${search.toLowerCase()}%` },
+      );
+    }
+
+    if (cursor) {
+      try {
+        const { d, i } = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as { d: string; i: string };
+        qb.andWhere('(p.createdAt < :afterDate OR (p.createdAt = :afterDate AND p.id < :afterId))', { afterDate: d, afterId: i });
+      } catch { /* invalid cursor — start from beginning */ }
+    }
+    const items = await qb
+      .orderBy('p.rating_avg', 'DESC', 'NULLS LAST')
+      .addOrderBy('p.createdAt', 'DESC')
+      .addOrderBy('p.id', 'DESC')
+      .take(limitNum + 1)
+      .getMany();
+    const hasMore = items.length > limitNum;
+    if (hasMore) items.pop();
+    const last = items[items.length - 1];
+    const nextCursor = hasMore && last
+      ? Buffer.from(JSON.stringify({ d: last.createdAt?.toISOString?.() ?? '', i: last.id })).toString('base64url')
+      : null;
+
+    return {
+      items: items.map(this.serialize),
+      limit:   limitNum,
+      hasMore,
+      nextCursor,
+    };
+  }
+
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Public()
+  @Get(':id')
+  @CacheControl('public, max-age=60, stale-while-revalidate=120')
+  async getOne(@Param('id') id: string) {
+    const p = await this.providers.findOne({
+      where: { id, status: ProviderStatus.Approved },
+      relations: ['services', 'services.service', 'availability'],
+    });
+    if (!p) throw new NotFoundException('Provider not found');
+    return this.serialize(p);
+  }
+
+  private serialize(p: ProviderEntity) {
+    return {
+      id:              p.id,
+      fullName:        p.fullName,
+      city:            p.city,
+      religion:        p.religion,
+      experienceYears: p.experienceYears,
+      languages:       p.languages ?? [],
+      bio:             p.bio,
+      ratingAvg:       p.ratingAvg ? parseFloat(p.ratingAvg as string) : null,
+      ratingCount:     p.ratingCount,
+      services:        (p.services ?? []).map(s => ({
+        id:              s.id,
+        name:            s.service?.name ?? s.customName ?? 'Custom Service',
+        basePricePaise:  s.basePricePaise,
+        durationMinutes: s.durationMinutes,
+        mode:            s.mode,
+      })),
+    };
+  }
+}

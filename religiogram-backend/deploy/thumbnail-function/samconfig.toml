@@ -1,0 +1,27 @@
+# SAM deploy configuration for ReligioGram thumbnail function.
+# Run: sam build && sam deploy --config-env prod
+
+version = 0.1
+
+[default.global.parameters]
+stack_name = "religiogram-thumbnails"
+
+[prod.deploy.parameters]
+stack_name        = "religiogram-thumbnails"
+region            = "ap-south-1"
+confirm_changeset = true
+capabilities      = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+resolve_s3        = true
+s3_prefix         = "sam-deploys"
+
+parameter_overrides = [
+  "BucketName=religiogram-uploads",
+  "AlarmEmail=ops@religiogram.com"
+]
+
+# ── Sharp layer ARN ──────────────────────────────────────────────────────────
+# Find the latest arm64 ARN for ap-south-1 at:
+#   https://github.com/Umkus/lambda-layer-sharp/releases
+# Set as an additional CloudFormation parameter or hard-code in template.yaml.
+# Example (update version as needed):
+#   arn:aws:lambda:ap-south-1:1234567890:layer:sharp-arm64-nodejs20:12

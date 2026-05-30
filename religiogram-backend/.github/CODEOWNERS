@@ -1,0 +1,41 @@
+# CODEOWNERS — reviewers automatically requested on PRs touching these paths.
+# Syntax: <pattern>  <@owner or @team>
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: all changes require backend-leads review
+*                           @religiogram/backend-leads
+
+# Money paths — require payments team sign-off on every change
+src/wallet/                 @religiogram/payments-team @religiogram/backend-leads
+src/payout/                 @religiogram/payments-team @religiogram/backend-leads
+src/payments/               @religiogram/payments-team @religiogram/backend-leads
+src/bookings/               @religiogram/payments-team @religiogram/backend-leads
+src/consultation/           @religiogram/payments-team @religiogram/backend-leads
+
+# Auth + security
+src/auth/                   @religiogram/security-team @religiogram/backend-leads
+src/otp/                    @religiogram/security-team @religiogram/backend-leads
+src/common/middleware/      @religiogram/security-team @religiogram/backend-leads
+
+# AI module — requires AI team + privacy review
+src/ai-assistant/           @religiogram/ai-team @religiogram/privacy-team
+
+# Migrations — require DB leads
+src/migrations/             @religiogram/db-leads @religiogram/backend-leads
+
+# CI/CD + infra — require devops
+.github/                    @religiogram/devops
+k8s/                        @religiogram/devops
+deploy/                     @religiogram/devops
+docker-compose*.yml         @religiogram/devops
+Dockerfile                  @religiogram/devops
+infra/                      @religiogram/devops
+
+# Load tests — require perf team
+load/                       @religiogram/perf-team
+
+# Runbook — require on-call leads
+docs/runbook.md             @religiogram/oncall-leads @religiogram/devops
+
+# Frontend (if in same repo)
+# ../religiogram-frontend/   @religiogram/frontend-leads

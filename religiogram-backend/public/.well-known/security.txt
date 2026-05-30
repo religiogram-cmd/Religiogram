@@ -1,0 +1,21 @@
+# ReligioGram Security Contact
+# https://securitytxt.org
+#
+# Generated per RFC 9116: https://www.rfc-editor.org/rfc/rfc9116
+
+Contact: mailto:security@religiogram.in
+Contact: https://github.com/religiogram/religiogram/security/advisories/new
+
+Expires: 2026-12-31T23:59:59.000Z
+
+Encryption: https://religiogram.in/.well-known/pgp-key.txt
+
+Acknowledgments: https://religiogram.in/security/hall-of-fame
+
+Preferred-Languages: en, hi
+
+Canonical: https://religiogram.in/.well-known/security.txt
+
+Policy: https://religiogram.in/security/policy
+
+Hiring: https://religiogram.in/careers

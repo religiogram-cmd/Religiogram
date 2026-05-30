@@ -1,0 +1,105 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  Prometheus alert rules — PostgreSQL slow query detection
+#
+#  Depends on:
+#    postgres_exporter  with --extend.query-path=/etc/postgres-exporter/queries.yaml
+#    Custom query:      pg_stat_statements_top_slow (queries.yaml)
+#
+#  pg_stat_statements must be in shared_preload_libraries.
+#  Add to postgres service environment in docker-compose:
+#    POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+#  And in docker/init.sql:
+#    ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements';
+#    CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+#
+#  Metric names emitted by the custom query:
+#    pg_stat_statements_top_slow_mean_exec_time_ms{query_snippet}
+#    pg_stat_statements_top_slow_total_exec_time_ms{query_snippet}
+#    pg_stat_statements_top_slow_calls{query_snippet}
+#    pg_stat_statements_top_slow_cache_hit_pct{query_snippet}
+# ──────────────────────────────────────────────────────────────────────────────
+
+groups:
+  - name: slow_queries
+    interval: 60s    # pg_stat_statements accumulates; 1-minute evaluation is sufficient
+    rules:
+
+      # ── Mean execution time exceeds threshold ───────────────────────────────
+      # Fires when any query in pg_stat_statements (>10 calls) has a mean
+      # execution time above 500ms. This catches N+1 patterns, missing indexes,
+      # and lock contention that slows individual query executions.
+      - alert: PgSlowQueryWarning
+        expr: |
+          pg_stat_statements_top_slow_mean_exec_time_ms > 500
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Slow query detected: mean {{ $value }}ms"
+          description: >
+            A PostgreSQL query has maintained a mean execution time of
+            {{ $value }}ms (threshold: 500ms) for 5 minutes.
+            Query snippet: {{ $labels.query_snippet }}
+            Check for: missing indexes, table bloat, lock contention.
+            Run: EXPLAIN (ANALYZE, BUFFERS) <query>;
+
+      - alert: PgSlowQueryCritical
+        expr: |
+          pg_stat_statements_top_slow_mean_exec_time_ms > 2000
+        for: 3m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Critical slow query: mean {{ $value }}ms"
+          description: >
+            A PostgreSQL query has a mean execution time of {{ $value }}ms
+            (threshold: 2000ms) — this is impacting user-facing response times.
+            Query snippet: {{ $labels.query_snippet }}
+            Immediate action: check for full table scans, missing indexes,
+            or autovacuum bloat on involved tables.
+
+      # ── Cache hit ratio dropping ────────────────────────────────────────────
+      # A sudden drop in buffer cache hit rate for a frequently-called query
+      # means it has started hitting disk, often after a table grows beyond
+      # the shared_buffers working set.
+      - alert: PgQueryCacheHitLow
+        expr: |
+          pg_stat_statements_top_slow_cache_hit_pct{} < 80
+          and pg_stat_statements_top_slow_calls > 100
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Query cache hit rate {{ $value }}% (< 80%) for high-call query"
+          description: >
+            Query "{{ $labels.query_snippet }}" has a buffer cache hit rate of
+            {{ $value }}% with more than 100 calls.
+            Low cache hit rates cause disk I/O which dramatically increases
+            query latency. Consider:
+            - Increasing shared_buffers (currently ~128MB default)
+            - Adding a covering index to avoid heap fetches
+            - Partitioning to reduce working set size
+
+      # ── Total execution time dominance ─────────────────────────────────────
+      # A query with high total_exec_time is consuming a disproportionate share
+      # of database CPU time even if individual executions are fast. This often
+      # indicates an N+1 pattern.
+      - alert: PgHighTotalQueryTime
+        expr: |
+          increase(pg_stat_statements_top_slow_total_exec_time_ms[5m]) > 300000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Query consuming >5 min of DB CPU in last 5 minutes"
+          description: >
+            Query "{{ $labels.query_snippet }}" has accumulated
+            {{ $value }}ms of total execution time in the last 5 minutes
+            (>5 minutes of combined CPU time).
+            This query is likely called very frequently (N+1 pattern) or has
+            high variance in execution time. Review call sites and consider
+            batching or caching.

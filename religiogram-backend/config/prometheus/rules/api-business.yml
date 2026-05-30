@@ -1,0 +1,243 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  Prometheus alert rules — API health + business-critical invariants
+#
+#  Depends on:
+#    MetricsService   (src/metrics/metrics.service.ts)
+#    Prometheus scrape of religiogram-api pods on port 3000 /metrics
+#
+#  Metric naming convention: rg_<domain>_<name>{labels}
+# ──────────────────────────────────────────────────────────────────────────────
+
+groups:
+
+  # ── HTTP SLOs ──────────────────────────────────────────────────────────────
+  - name: api_http_slos
+    interval: 30s
+    rules:
+
+      # 5xx error rate > 1% for 3 minutes
+      - alert: ApiHighErrorRate
+        expr: |
+          sum(rate(rg_http_requests_total{status_code=~"5.."}[2m]))
+          /
+          sum(rate(rg_http_requests_total[2m])) > 0.01
+        for: 3m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "API 5xx error rate {{ $value | humanizePercentage }} (threshold: 1%)"
+          description: >
+            More than 1% of HTTP requests are returning 5xx responses.
+            Check: kubectl logs -l app=api --tail=100 | grep '"statusCode":5'
+            Current rate: {{ $value | humanizePercentage }}
+
+      - alert: ApiCriticalErrorRate
+        expr: |
+          sum(rate(rg_http_requests_total{status_code=~"5.."}[2m]))
+          /
+          sum(rate(rg_http_requests_total[2m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "API 5xx error rate critical: {{ $value | humanizePercentage }}"
+          description: >
+            More than 5% of HTTP requests are returning 5xx responses.
+            Immediate investigation required. Check application logs, DB pool,
+            and downstream service health.
+
+      # p99 latency > 2 seconds for 5 minutes
+      - alert: ApiHighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(rg_http_request_duration_ms_bucket[5m])) by (le, route)
+          ) > 2000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "API p99 latency {{ $value }}ms on route {{ $labels.route }}"
+          description: >
+            The 99th percentile response time for route "{{ $labels.route }}" has
+            been above 2000ms for 5 minutes. Check for slow DB queries, cache misses,
+            or downstream service latency.
+
+      # Zero RPS — potential service outage
+      - alert: ApiNoTraffic
+        expr: |
+          sum(rate(rg_http_requests_total[5m])) == 0
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "API receiving zero requests for 5 minutes"
+          description: >
+            No HTTP requests have been recorded in the last 5 minutes.
+            This may indicate: Kong gateway down, DNS failure, pod crash loop,
+            or a deployment issue. Check: kubectl get pods -n religiogram.
+
+  # ── Wallet correctness (CRITICAL — data integrity) ────────────────────────
+  - name: wallet_correctness
+    interval: 15s   # high-frequency: this alert must fire within seconds
+    rules:
+
+      # Duplicate idempotency key violation — must ALWAYS be 0.
+      # Any increment means two identical LedgerEntry rows were attempted,
+      # which would double-charge a user. This is a P0 data integrity incident.
+      - alert: WalletDuplicateIdempotencyViolation
+        expr: |
+          increase(rg_wallet_debit_duplicate_key_violations_total[1m]) > 0
+        for: 0m     # fire immediately — no grace period
+        labels:
+          severity: critical
+          team: payments
+          page: "true"
+        annotations:
+          summary: "CRITICAL: Wallet duplicate idempotency key violation detected"
+          description: >
+            rg_wallet_debit_duplicate_key_violations_total incremented by {{ $value }}
+            in the last minute. This means a wallet debit was attempted with a
+            duplicate idempotency key — a potential double-charge or race condition.
+            IMMEDIATE ACTION:
+            1. Identify the duplicate ledger_entry rows:
+               SELECT idempotency_key, COUNT(*) FROM ledger_entries
+               GROUP BY idempotency_key HAVING COUNT(*) > 1;
+            2. Check which user(s) were affected.
+            3. Initiate the refund + reconciliation runbook.
+            This alert pages the on-call team.
+
+      # Wallet debit error rate
+      - alert: WalletDebitHighFailureRate
+        expr: |
+          sum(rate(rg_wallet_debit_total{result="error"}[5m]))
+          /
+          sum(rate(rg_wallet_debit_total[5m])) > 0.02
+        for: 3m
+        labels:
+          severity: warning
+          team: payments
+        annotations:
+          summary: "Wallet debit failure rate {{ $value | humanizePercentage }}"
+          description: >
+            More than 2% of wallet debit operations are failing.
+            Common causes: DB lock contention, insufficient balance checks,
+            or downstream payment gateway errors.
+
+  # ── Consultation billing ──────────────────────────────────────────────────
+  - name: consultation_health
+    interval: 30s
+    rules:
+
+      # Active sessions above expected max (50 concurrent at launch capacity)
+      - alert: ConsultationSessionSpike
+        expr: |
+          rg_consultation_active_sessions > 200
+        for: 2m
+        labels:
+          severity: warning
+          team: product
+        annotations:
+          summary: "{{ $value }} active consultation sessions (threshold: 200)"
+          description: >
+            The number of active consultation sessions has exceeded 200.
+            Verify: DB pool capacity, Redis capacity for session state,
+            and Socket.io adapter backpressure.
+
+      # High consultation drop rate
+      - alert: ConsultationHighDropRate
+        expr: |
+          sum(rate(rg_consultation_drops_total[5m])) > 1
+        for: 3m
+        labels:
+          severity: warning
+          team: product
+        annotations:
+          summary: "Consultation drop rate {{ $value }}/s (>1/s threshold)"
+          description: >
+            More than 1 consultation session per second is being dropped.
+            Drop reasons: {{ $labels.reason }}
+            Check: network stability, WebSocket health, balance depletion events.
+
+  # ── Payments ───────────────────────────────────────────────────────────────
+  - name: payments_health
+    interval: 30s
+    rules:
+
+      # Payment failure rate > 5%
+      - alert: PaymentHighFailureRate
+        expr: |
+          sum(rate(rg_payment_failed_total[5m]))
+          /
+          (sum(rate(rg_payment_captured_total[5m])) + sum(rate(rg_payment_failed_total[5m])))
+          > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: payments
+        annotations:
+          summary: "Payment failure rate {{ $value | humanizePercentage }} (>5%)"
+          description: >
+            More than 5% of payment capture attempts are failing.
+            Check Razorpay dashboard for gateway errors, and review
+            rg_payment_failed_total label breakdown for failure reason.
+
+  # ── Fraud ──────────────────────────────────────────────────────────────────
+  - name: fraud_signals
+    interval: 60s
+    rules:
+
+      # Spike in fraud signals (velocity attacks, card testing)
+      - alert: FraudSignalSpike
+        expr: |
+          increase(rg_fraud_signals_total[5m]) > 50
+        for: 2m
+        labels:
+          severity: warning
+          team: trust-safety
+        annotations:
+          summary: "{{ $value }} fraud signals in last 5 minutes"
+          description: >
+            The fraud rule engine detected {{ $value }} fraud signals in 5 minutes.
+            Check for velocity attacks, card testing, or OTP abuse. Review the
+            fraud.signals table and consider temporary rate limit tightening.
+
+      # Mass account suspensions (potential false-positive wave)
+      - alert: FraudMassSuspensions
+        expr: |
+          increase(rg_fraud_suspensions_total[10m]) > 20
+        for: 1m
+        labels:
+          severity: critical
+          team: trust-safety
+        annotations:
+          summary: "{{ $value }} accounts suspended in 10 minutes"
+          description: >
+            {{ $value }} accounts have been suspended in the last 10 minutes.
+            This may indicate a false-positive wave from the fraud rule engine.
+            Review suspensions immediately before mass support tickets arrive.
+
+  # ── Notifications ─────────────────────────────────────────────────────────
+  - name: notifications_health
+    interval: 60s
+    rules:
+
+      - alert: NotificationHighFailureRate
+        expr: |
+          sum(rate(rg_notification_failure_total[5m]))
+          /
+          (sum(rate(rg_notification_dispatch_total[5m])) + sum(rate(rg_notification_failure_total[5m])))
+          > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Push notification failure rate {{ $value | humanizePercentage }} (>10%)"
+          description: >
+            More than 10% of push notifications are failing.
+            Check Firebase Admin SDK credentials (FIREBASE_SERVICE_ACCOUNT)
+            and FCM quota limits.

@@ -1,0 +1,44 @@
+{
+  "name": "religiogram-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "lint": "next lint",
+    "test": "jest --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@growthbook/growthbook": "^1.6.5",
+    "@sentry/nextjs": "^8.55.2",
+    "axios": "^1.16.1",
+    "date-fns": "^4.3.0",
+    "firebase": "^11.0.2",
+    "framer-motion": "^12.40.0",
+    "idb": "^8.0.3",
+    "jose": "^5.10.0",
+    "next": "^15.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "socket.io-client": "^4.8.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.0.0",
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^15.5.4",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.15",
+    "ts-jest": "^29.2.5",
+    "typescript": "5.6.3"
+  }
+}

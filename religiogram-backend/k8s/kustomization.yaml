@@ -1,0 +1,45 @@
+---
+# ── ReligioGram K8s Kustomization ─────────────────────────────────────────────
+#
+# Apply all manifests:
+#   kubectl apply -k k8s/
+#
+# Apply a single component:
+#   kubectl apply -f k8s/redis-cache/deployment.yaml
+#
+# Namespace: all resources deploy to "religiogram".
+# Ensure the namespace exists: kubectl create namespace religiogram
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: religiogram
+
+resources:
+  # ── API ────────────────────────────────────────────────────────
+  - api/deployment.yaml
+  - api/hpa.yaml
+
+  # ── Caching ──────────────────────────────────────────────────
+  - redis-cache/deployment.yaml
+
+  # ── Search ───────────────────────────────────────────────────
+  - opensearch/statefulset-node2.yaml
+
+  # ── Observability ─────────────────────────────────────────────
+  - kafka-exporter/deployment.yaml
+  - postgres-exporter/deployment.yaml
+
+  # ── Maintenance ───────────────────────────────────────────────
+  - partman/cronjob.yaml
+
+  # ── Network Policies ──────────────────────────────────────────
+  - network-policies/default-deny.yaml
+  - network-policies/allow-dns.yaml
+  - network-policies/allow-api.yaml
+  - network-policies/allow-datastores.yaml
+  - network-policies/allow-observability.yaml
+
+commonLabels:
+  managed-by: kustomize
+  project: religiogram

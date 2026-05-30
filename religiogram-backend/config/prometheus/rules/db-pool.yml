@@ -1,0 +1,145 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  Prometheus alert rules — PostgreSQL connection pool health
+#
+#  Depends on:
+#    postgres_exporter  scraping pg_stat_activity via pg_active_connections
+#    custom query       pg_long_running_queries (queries.yaml)
+#
+#  PgBouncer capacity model (from docker-compose / pgbouncer.ini):
+#    max_client_conn   = 500   (hard cap on incoming app connections)
+#    default_pool_size = 25    (server connections per db/user pair)
+#    reserve_pool_size = 10    (burst headroom)
+#
+#  Alert thresholds are intentionally conservative: warn early so there is
+#  time to investigate before the pool is fully exhausted.
+# ──────────────────────────────────────────────────────────────────────────────
+
+groups:
+  - name: db_pool
+    interval: 30s
+    rules:
+
+      # ── Active connection saturation ────────────────────────────────────────
+      # pg_active_connections_count = number of non-idle connections per
+      # database/user/state triplet exported by our custom query.
+      # Sum across all states to get total active sessions.
+      - alert: PgConnectionPoolWarning
+        expr: |
+          sum(pg_active_connections_count) by (database) > 350
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "PostgreSQL connection count high ({{ $value }} connections on {{ $labels.database }})"
+          description: >
+            The total number of PostgreSQL connections to database
+            "{{ $labels.database }}" has been above 350 (70% of
+            max_client_conn=500) for 2 minutes.
+            Check for connection leaks, slow queries holding connections open,
+            or PgBouncer pool exhaustion.
+            Current count: {{ $value }}.
+
+      - alert: PgConnectionPoolCritical
+        expr: |
+          sum(pg_active_connections_count) by (database) > 450
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "PostgreSQL connection pool near exhaustion ({{ $value }}/500 on {{ $labels.database }})"
+          description: >
+            PostgreSQL connections on "{{ $labels.database }}" have exceeded
+            450 (90% of max_client_conn=500). New connections will be rejected
+            once the limit is reached. Immediate action required:
+            1. Check pg_stat_activity for blocking/idle-in-transaction sessions.
+            2. Consider emergency pool increase or service restart.
+            Current count: {{ $value }}.
+
+      # ── Idle-in-transaction connections ────────────────────────────────────
+      # Idle-in-transaction connections hold locks and prevent autovacuum.
+      # A non-zero sustained count indicates application bugs (missing commit/rollback).
+      - alert: PgIdleInTransactionConnections
+        expr: |
+          sum(pg_active_connections_count{state="idle in transaction"}) by (database) > 5
+        for: 3m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "{{ $value }} idle-in-transaction connections on {{ $labels.database }}"
+          description: >
+            There are {{ $value }} connections in "idle in transaction" state on
+            "{{ $labels.database }}" for more than 3 minutes.
+            These connections hold row-level locks and block autovacuum.
+            Check application code for missing transaction commits or PgBouncer
+            idle_transaction_timeout setting.
+
+      # ── Long-running queries ───────────────────────────────────────────────
+      # Sourced from custom query pg_long_running_queries (threshold: 5 s).
+      - alert: PgLongRunningQueryWarning
+        expr: |
+          pg_long_running_queries_count > 0
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "{{ $value }} queries running longer than 5s"
+          description: >
+            {{ $value }} queries have been running for more than 5 seconds.
+            Longest running query duration: {{ $labels.max_duration_s }}s.
+            Check pg_stat_activity for blocking queries or missing indexes.
+
+      - alert: PgLongRunningQueryCritical
+        expr: |
+          pg_long_running_queries_max_duration_s > 30
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Query running for {{ $value }}s (threshold: 30s)"
+          description: >
+            A query has been running for {{ $value }} seconds on the database.
+            This is likely causing lock contention and degraded performance.
+            Run: SELECT pid, now()-query_start AS duration, query
+                 FROM pg_stat_activity
+                 WHERE state='active'
+                 ORDER BY duration DESC;
+            Consider: SELECT pg_cancel_backend(<pid>) or pg_terminate_backend(<pid>).
+
+      # ── Dead tuple bloat ────────────────────────────────────────────────────
+      # High dead_tuple_ratio means autovacuum is not keeping up.
+      # At >20% bloat, table/index scans are reading excessive dead pages.
+      - alert: PgTableBloatWarning
+        expr: |
+          pg_table_bloat_estimate_dead_tuple_ratio_pct > 20
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Table {{ $labels.table_name }} has {{ $value }}% dead tuple bloat"
+          description: >
+            Table "{{ $labels.schema_name }}.{{ $labels.table_name }}" has
+            {{ $value }}% dead tuple ratio (dead / live tuples).
+            This indicates autovacuum is not keeping up with write load.
+            Check autovacuum settings and consider manual VACUUM ANALYZE.
+            Total size: {{ $labels.total_size_mb }}MB.
+
+      # ── postgres_exporter availability ─────────────────────────────────────
+      - alert: PostgresExporterDown
+        expr: |
+          up{job="postgres"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "postgres_exporter is down"
+          description: >
+            The postgres_exporter scrape target has been unreachable for 2
+            minutes. Database metrics and pool alerts are not firing.
+            Check: docker compose ps postgres-exporter

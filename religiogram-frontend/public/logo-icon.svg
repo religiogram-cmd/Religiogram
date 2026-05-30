@@ -1,0 +1,27 @@
+<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gt" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#FFE566"/>
+      <stop offset="22%"  stop-color="#FAC520"/>
+      <stop offset="55%"  stop-color="#E0A010"/>
+      <stop offset="78%"  stop-color="#B87808"/>
+      <stop offset="100%" stop-color="#8A5C04"/>
+    </linearGradient>
+    <linearGradient id="gb" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#FFE566"/>
+      <stop offset="20%"  stop-color="#F0C018"/>
+      <stop offset="55%"  stop-color="#C89010"/>
+      <stop offset="100%" stop-color="#7A4C02"/>
+    </linearGradient>
+    <filter id="gd">
+      <feDropShadow dx="0.8" dy="1.8" stdDeviation="1.5" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+  <rect x="3" y="3" width="74" height="74" rx="14.3" fill="#1535C0" stroke="url(#gb)" stroke-width="6"/>
+  <text x="12" y="62" fill="url(#gt)" filter="url(#gd)"
+    font-family="'Nunito','Arial Black',Arial,sans-serif"
+    font-weight="900" font-size="55" letter-spacing="-1">r</text>
+  <text x="36" y="74" fill="url(#gt)" filter="url(#gd)"
+    font-family="'Nunito','Arial Black',Arial,sans-serif"
+    font-weight="900" font-size="46" letter-spacing="-1">G</text>
+</svg>

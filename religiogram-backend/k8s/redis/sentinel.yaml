@@ -1,0 +1,148 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  Redis Sentinel — 3-node HA failover for ReligioGram
+#
+#  FIX 7: K8s Redis Sentinel StatefulSet
+#
+#  Architecture:
+#    - 1 Redis master  (redis-master service, port 6379)
+#    - 2 Redis replicas (redis-replica service, port 6379)
+#    - 3 Sentinel pods  (redis-sentinel StatefulSet, port 26379)
+#
+#  Quorum = 2: requires 2 of 3 sentinels to agree before failover.
+#
+#  Application config (in religiogram-api-config ConfigMap):
+#    REDIS_SENTINEL_HOSTS: redis-sentinel-0.redis-sentinel:26379,...
+#    REDIS_SENTINEL_NAME:  religiogram-master
+#
+#  Prerequisites:
+#    1. Deploy a Redis master pod/StatefulSet named "redis-master" in namespace religiogram
+#    2. Apply this file: kubectl apply -f k8s/redis/sentinel.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-sentinel
+  namespace: religiogram
+  labels:
+    app: redis-sentinel
+    component: cache-ha
+spec:
+  serviceName: redis-sentinel
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis-sentinel
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: redis-sentinel
+        component: cache-ha
+    spec:
+      # Spread sentinels across nodes for HA
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: redis-sentinel
+
+      containers:
+        - name: redis-sentinel
+          image: redis:7-alpine
+          command: ["redis-sentinel", "/etc/redis/sentinel.conf"]
+          ports:
+            - containerPort: 26379
+              name: sentinel
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli -p 26379 ping | grep -q PONG
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli -p 26379 sentinel masters | grep -q religiogram-master
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: sentinel-config
+              mountPath: /etc/redis
+
+      volumes:
+        - name: sentinel-config
+          configMap:
+            name: redis-sentinel-config
+
+---
+# ── ConfigMap: Sentinel configuration ────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-sentinel-config
+  namespace: religiogram
+  labels:
+    app: redis-sentinel
+    component: cache-ha
+data:
+  sentinel.conf: |
+    # Monitor the Redis master
+    # Quorum = 2: requires 2 of 3 sentinels to agree on failover
+    sentinel monitor religiogram-master redis-master 6379 2
+
+    # Declare the master unreachable after 5 s of no response
+    sentinel down-after-milliseconds religiogram-master 5000
+
+    # Failover timeout: 60 s before retrying a failed failover
+    sentinel failover-timeout religiogram-master 60000
+
+    # Parallel syncs: only 1 replica syncs from new master at a time
+    # (avoids overloading the new master on failover)
+    sentinel parallel-syncs religiogram-master 1
+
+    # Announce address (needed in K8s where pod IPs are ephemeral)
+    # sentinels discover each other through the monitored master
+    sentinel announce-port 26379
+
+    # Logging
+    loglevel notice
+
+---
+# ── Headless Service for StatefulSet DNS ─────────────────────────────────────
+# Provides stable DNS: redis-sentinel-{0,1,2}.redis-sentinel.religiogram.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-sentinel
+  namespace: religiogram
+  labels:
+    app: redis-sentinel
+    component: cache-ha
+spec:
+  selector:
+    app: redis-sentinel
+  clusterIP: None    # headless — DNS only, no load balancing
+  ports:
+    - port: 26379
+      name: sentinel
+      targetPort: 26379

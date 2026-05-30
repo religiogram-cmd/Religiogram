@@ -1,0 +1,53 @@
+# ─── Secrets — NEVER commit these ───────────────────────────────────────────
+# Block every .env* variant. Only the template + example are allowed.
+.env
+.env.*
+!.env.example
+!.env.production.template
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cert
+jwt-private.key
+jwt-public.key
+secrets/
+
+# ─── Node ────────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# ─── Build outputs ───────────────────────────────────────────────────────────
+dist/
+build/
+out/
+.next/
+.turbo/
+coverage/
+.nyc_output/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# ─── Tests / tooling ─────────────────────────────────────────────────────────
+playwright-report/
+test-results/
+.husky/_/
+
+# ─── TypeORM generated ───────────────────────────────────────────────────────
+# (migration files are committed — the DB is not)
+
+# ─── Editor / IDE ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+
+# ─── OS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+
+# ─── Local-only files ────────────────────────────────────────────────────────
+*.local

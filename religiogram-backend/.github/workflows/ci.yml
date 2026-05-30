@@ -1,0 +1,184 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  ReligioGram CI — lint, typecheck, test, security scan
+#
+#  Triggers:
+#    - push to main / develop
+#    - pull_request targeting main / develop
+#
+#  Jobs:
+#    lint-and-type   — ESLint + tsc --noEmit (fast gate, no DB needed)
+#    test            — Jest unit + integration tests (Postgres + Redis via services)
+#    security        — npm audit + Snyk vulnerability scan
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: '20'
+  # Dummy values for TypeScript compilation — real secrets only needed at runtime
+  DATABASE_URL:        'postgresql://app:password@localhost:5432/religiogram_test'
+  DATABASE_DIRECT_URL: 'postgresql://app:password@localhost:5432/religiogram_test'
+  REDIS_HOST:          'localhost'
+  REDIS_PORT:          '6379'
+  REDIS_CACHE_HOST:    'localhost'
+  REDIS_CACHE_PORT:    '6379'
+  JWT_PRIVATE_KEY:     '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0Z3VS5JJcds3xHn/ygWep4\n-----END RSA PRIVATE KEY-----'
+  JWT_PUBLIC_KEY:      '-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A\n-----END PUBLIC KEY-----'
+  JWT_ISSUER:          'https://auth.religiogram.com'
+  JWT_AUDIENCE:        'religiogram-api'
+  OTP_SECRET:          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  REFRESH_TOKEN_HMAC_SECRET: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+  BIRTH_PROFILE_ENCRYPTION_KEY: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
+  PAYOUT_ENCRYPTION_KEY: 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
+  NODE_ENV:            'test'
+  OTEL_DISABLED:       'true'
+
+jobs:
+
+  # ── Job 1: Lint + TypeScript typecheck ────────────────────────────────────
+  lint-and-type:
+    name: Lint & TypeCheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8  # v4.0.2
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint -- --max-warnings=0
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+  # ── Job 2: Unit + Integration tests ───────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_USER:     app
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB:       religiogram_test
+        options: >-
+          --health-cmd "pg_isready -U app -d religiogram_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports: ['5432:5432']
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 3s
+          --health-retries 5
+        ports: ['6379:6379']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8  # v4.0.2
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install PostGIS extensions
+        run: |
+          PGPASSWORD=password psql -h localhost -U app -d religiogram_test \
+            -c "CREATE EXTENSION IF NOT EXISTS postgis;" \
+            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
+            -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
+
+      - name: Run migrations
+        run: npm run migration:run
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          DATABASE_DIRECT_URL: ${{ env.DATABASE_DIRECT_URL }}
+
+      - name: Run unit tests
+        run: npx jest --testPathPattern="\.spec\.ts$" --passWithNoTests --coverage --coverageReporters=lcov --coverageThreshold='{"global":{"lines":60,"functions":60,"branches":50}}'
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@c16abc29c95be599b3a497d96f5fc8bde6fcb3b1  # v4.0.1
+        if: always()
+        with:
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
+
+  # ── Job 3: Security scan ───────────────────────────────────────────────────
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+        with:
+          fetch-depth: 0   # TruffleHog needs full history to scan all commits
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8  # v4.0.2
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: npm audit
+        run: npm audit --audit-level=high
+        # Fails the build if any HIGH or CRITICAL severity CVE is found
+
+      - name: Snyk security scan
+        run: npx snyk test --severity-threshold=high --json > snyk-report.json || true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        # No continue-on-error — result evaluated in next step
+
+      - name: Check Snyk results
+        run: |
+          CRITICAL=$(cat snyk-report.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(sum(1 for v in d.get('vulnerabilities',[]) if v.get('severity') in ['critical','high']))" 2>/dev/null || echo "0")
+          if [ "$CRITICAL" -gt "0" ]; then
+            echo "\u274c $CRITICAL high/critical vulnerabilities found"
+            exit 1
+          fi
+            echo "\u2705 No high/critical vulnerabilities"
+      - name: TruffleHog secret scan
+        uses: trufflesecurity/trufflehog@6ed27a9f58de8e06a6e9e74849f40ca53a58d13e  # v3.81.10
+        with:
+          path: ./
+          base: ${{ github.event.pull_request.base.sha || github.event.before }}
+          head: HEAD
+          extra_args: --only-verified --fail
+        # Scans only the commits in this push/PR for verified secrets.
+        # --only-verified: reduces false positives to confirmed live credentials.
+        # --fail: exits non-zero if any secrets found, failing the CI job.

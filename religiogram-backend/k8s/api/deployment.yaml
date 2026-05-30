@@ -1,0 +1,295 @@
+---
+# ── ReligioGram API — Deployment ──────────────────────────────────────────────
+#
+# This is the target Deployment for:
+#   k8s/api/hpa.yaml      (HPA scaleTargetRef.name = "api")
+#   k8s/api/hpa.yaml      (PDB selector app=api)
+#   k8s/network-policies/ (podSelector app=api)
+#
+# Before applying:
+#   1. Push the image to your registry and update IMAGE_TAG below.
+#   2. Create the required secrets:
+#      kubectl create secret generic religiogram-api-secrets \
+#        --namespace religiogram \
+#        --from-env-file=.env
+#   3. Apply: kubectl apply -f k8s/api/deployment.yaml
+#
+# Rolling update strategy ensures zero downtime:
+#   maxSurge=1      — allows one extra pod during rollout
+#   maxUnavailable=0 — never reduces below minReplicas=2
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api          # must match HPA scaleTargetRef.name
+  namespace: religiogram
+  labels:
+    app: api
+    component: backend
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+spec:
+  replicas: 2        # base replicas — HPA adjusts between 2 and 10
+  selector:
+    matchLabels:
+      app: api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: api
+        component: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "3000"
+        prometheus.io/path:   "/metrics"
+        # Force a rolling restart when the ConfigMap or Secret changes
+        # by bumping this annotation in CI: kubectl patch deployment api -p '{"spec":...}'
+        checksum/config: "change-me-in-ci"
+    spec:
+      serviceAccountName: default
+      terminationGracePeriodSeconds: 30   # matches SHUTDOWN_TIMEOUT_MS=15000 + margin
+
+      # ── Anti-affinity: spread pods across different nodes ───────────────────
+      # Prevents all API pods from landing on the same node.
+      # "preferredDuringScheduling" (soft) so deployment still works on small clusters.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: api
+
+      # ── Init container: wait for PgBouncer to be ready ────────────────────
+      initContainers:
+        - name: wait-for-pgbouncer
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z pgbouncer 6432; do
+                echo "Waiting for PgBouncer..."; sleep 2;
+              done
+        - name: wait-for-redis
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z redis 6379; do
+                echo "Waiting for Redis..."; sleep 2;
+              done
+
+      containers:
+        - name: api
+          # v9 (P0-6 fix): no more `:latest`. CI MUST substitute the immutable
+          # image reference (preferably an SHA256 digest, fallback semver tag).
+          # Deploy pipeline replaces __IMAGE__ via `sed` / `kustomize edit set image`
+          # before `kubectl apply`. A literal `:latest` deploy is now impossible —
+          # the placeholder fails fast on apply if untemplated.
+          #
+          # Examples:
+          #   image: ghcr.io/religiogram/api@sha256:abcd…   (preferred — immutable)
+          #   image: ghcr.io/religiogram/api:v1.4.2         (acceptable — semver)
+          image: __IMAGE__
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+
+          # ── Environment ────────────────────────────────────────────────────
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+            # Inject all secrets from the religiogram-api-secrets Secret
+            # (DATABASE_URL, JWT keys, RAZORPAY keys, etc.)
+          envFrom:
+            - secretRef:
+                name: religiogram-api-secrets
+            - configMapRef:
+                name: religiogram-api-config
+                optional: true   # config map is optional; secrets take precedence
+
+          # ── Resource requests / limits ────────────────────────────────────
+          # Requests: what K8s scheduler reserves per pod.
+          # Limits:   hard ceiling — container is OOM-killed if it exceeds memory limit.
+          #
+          # Baseline sizing for ~500 RPS per pod (NestJS + Node.js):
+          #   CPU:    request 250m (0.25 core), limit 1000m (1 core)
+          #   Memory: request 256Mi, limit 512Mi
+          # Adjust up if p99 latency degrades under load tests.
+          resources:
+            requests:
+              cpu:    250m
+              memory: 256Mi
+            limits:
+              cpu:    "1"
+              memory: 512Mi
+
+          # ── Probes ────────────────────────────────────────────────────────
+          # v9 (P1-8): probes are deliberately separated.
+          #
+          #   /health       — cheap liveness check (process up, event loop responsive)
+          #   /health/ready — deep readiness check (DB pool, Redis, queue depth)
+          #
+          # Crucially, liveness MUST NOT check downstream dependencies. If the DB
+          # pool is exhausted, restarting every pod amplifies the incident
+          # instead of fixing it; we want such pods to fail readiness (removed
+          # from the LB) but stay running so on-call can debug.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            failureThreshold: 24   # v9: 24 × 5s = 120s, accommodates slow migrations on cold start
+            periodSeconds: 5
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 0
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Readiness probe: remove pod from Service endpoints if unhealthy.
+          # Uses /health/ready which checks DB pool, Redis, BullMQ queue depths.
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 3000
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 2
+
+          # ── Lifecycle hook: drain in-flight requests before SIGTERM ────────
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]   # allow load balancer to deregister
+
+          # ── Security context ──────────────────────────────────────────────
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000       # matches Dockerfile USER node
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # NestJS writes to /tmp
+            capabilities:
+              drop: ["ALL"]
+
+          # ── Volume mounts ─────────────────────────────────────────────────
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+      # Topology spread: balance pods evenly across availability zones
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: api
+---
+# ── Service — internal ClusterIP for pod-to-pod traffic ──────────────────────
+#
+# Kong and other internal services use this ClusterIP to reach the API.
+# Kong's upstream targets should point to this Service name: api.religiogram.svc
+#
+# NodePort / LoadBalancer is NOT needed — all external traffic goes through
+# the Kong Deployment which has its own Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: religiogram
+  labels:
+    app: api
+    component: backend
+spec:
+  selector:
+    app: api
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP
+---
+# ── ConfigMap — non-secret environment variables ──────────────────────────────
+# Secrets (JWT keys, DB passwords, API keys) live in religiogram-api-secrets.
+# Only plain configuration values belong here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: religiogram-api-config
+  namespace: religiogram
+  labels:
+    app: api
+    component: backend
+data:
+  NODE_ENV:                    "production"
+  PORT:                        "3000"
+  APP_NAME:                    "religiogram-api"
+  CORS_ORIGINS:                "https://app.religiogram.com,religiogram://"
+  DATABASE_VIA_PROXY:          "true"
+  DATABASE_POOL_SIZE:          "20"
+  DATABASE_SSL:                "true"
+  REDIS_HOST:                  "redis"
+  REDIS_PORT:                  "6379"
+  REDIS_TLS:                   "false"
+  REDIS_KEY_PREFIX:            "rg:"
+  REDIS_CACHE_HOST:            "redis-cache"
+  REDIS_CACHE_PORT:            "6379"
+  REDIS_SENTINEL_HOSTS:        "redis-sentinel-0.redis-sentinel:26379,redis-sentinel-1.redis-sentinel:26379,redis-sentinel-2.redis-sentinel:26379"
+  REDIS_SENTINEL_NAME:         "religiogram-master"
+  REDIS_CACHE_TLS:             "false"
+  JWT_ISSUER:                  "https://auth.religiogram.com"
+  JWT_AUDIENCE:                "religiogram-api"
+  JWT_ACCESS_TTL:              "900"
+  JWT_REFRESH_TTL:             "604800"
+  OTP_LENGTH:                  "6"
+  OTP_TTL:                     "300"
+  OTP_MAX_ATTEMPTS:            "5"
+  OTP_RESEND_COOLDOWN:         "30"
+  OTP_SMS_DAILY_CEILING:       "5"
+  RL_SEND_OTP_PHONE:           "3"
+  RL_SEND_OTP_IP:              "10"
+  RL_GLOBAL_PER_MIN:           "100"
+  SMS_PROVIDER:                "msg91"
+  THUMBNAIL_ENABLED:           "true"
+  AWS_S3_REGION:               "ap-south-1"
+  AWS_S3_BUCKET:               "religiogram-uploads"
+  CDN_BASE_URL:                "https://cdn.religiogram.in"
+  OTEL_SERVICE_NAME:           "religiogram-api"
+  OTEL_DISABLED:               "false"
+  FF_ENABLE_CHAT:              "true"
+  FF_ENABLE_BOOKING:           "true"
+  FF_ENABLE_CONSULTATION:      "true"
+  FF_ENABLE_DONATIONS:         "true"
+  FF_ENABLE_WALLET_TOPUP:      "true"
+  FF_ENABLE_ASYNC_FANOUT:      "false"
+  FEED_ASYNC_FANOUT_THRESHOLD: "500"
+  PUSH_PROCESSOR_CONCURRENCY:  "5"
+  CLUSTER:                     "false"   # K8s manages replicas externally
+  SHUTDOWN_TIMEOUT_MS:         "15000"
+  OPENSEARCH_NODE:             "http://opensearch:9200"
+  KAFKA_BROKERS:               "kafka:29092,kafka2:9093"
+  JAEGER_ENDPOINT:             "http://jaeger:14268/api/traces"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"

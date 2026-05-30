@@ -1,0 +1,83 @@
+---
+# ── partman CronJob ───────────────────────────────────────────────────────────
+#
+# Triggers the monthly partition creation job on the 1st of each month at 00:05 UTC.
+# Calls the admin endpoint POST /v1/admin/ops/partman/run which runs PartmanService
+# to create the next 3 months of child partitions for:
+#   bookings, ledger_entries, notifications, feed_items
+#
+# ⚠ Authentication:
+#   The request must carry a valid admin JWT token. Store the token in a K8s Secret
+#   named "partman-admin-token" with key "token". Rotate it when the admin account
+#   password is changed (see production runbook deploy/PRODUCTION_READINESS.md).
+#
+# ⚠ Idempotency:
+#   PartmanService uses CREATE TABLE IF NOT EXISTS, so re-running is safe.
+#   The manual trigger endpoint POST /v1/admin/ops/partman/run can also be called
+#   ad-hoc after a missed cron run.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: partman-create-partitions
+  namespace: religiogram
+  labels:
+    app: partman
+    component: maintenance
+spec:
+  # Run at 00:05 UTC on the 1st of each month — 5 minutes after midnight so
+  # the new month's partitions are available before any data arrives.
+  schedule: "5 0 1 * *"
+  timeZone: "UTC"
+  concurrencyPolicy: Forbid          # never run two instances simultaneously
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 3600      # allow up to 1 hour late start
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 300     # fail after 5 minutes
+      template:
+        metadata:
+          labels:
+            app: partman
+            component: maintenance
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: partman-trigger
+              image: curlimages/curl:8.6.0
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  echo "[partman-cron] Starting partition creation job at $(date -u)"
+                  RESPONSE=$(curl -sf -w "\n%{http_code}" \
+                    -X POST \
+                    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    "${API_BASE_URL}/v1/admin/ops/partman/run")
+                  HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+                  BODY=$(echo "$RESPONSE" | head -n -1)
+                  echo "[partman-cron] Response: HTTP $HTTP_CODE — $BODY"
+                  if [ "$HTTP_CODE" != "200" ]; then
+                    echo "[partman-cron] ERROR: unexpected HTTP status $HTTP_CODE"
+                    exit 1
+                  fi
+                  echo "[partman-cron] Done."
+              env:
+                - name: API_BASE_URL
+                  value: "http://api-1:3000/api"   # internal ClusterIP service
+                - name: ADMIN_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: partman-admin-token
+                      key: token
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi

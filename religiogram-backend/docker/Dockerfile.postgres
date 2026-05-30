@@ -1,0 +1,37 @@
+# ── Custom PostgreSQL image with pg_partman + PostGIS ─────────────────────────
+#
+# Extends postgis/postgis:16-3.4-alpine with:
+#   - pg_partman: automatic partition management
+#
+# Build and push to your registry:
+#   docker build -f docker/Dockerfile.postgres -t religiogram-postgres:16-partman .
+#
+# To use in docker-compose, replace the postgres service image with:
+#   image: religiogram-postgres:16-partman
+# or build inline:
+#   build:
+#     context: .
+#     dockerfile: docker/Dockerfile.postgres
+#
+# NOTE: The default docker-compose.yml uses postgis/postgis:16-3.4-alpine
+# (no pg_partman) for simplicity. pg_partman is only required if you call the
+# partman maintenance endpoint. In production, use the managed RDS approach
+# (pg_partman is available as an RDS extension — enable via parameter group).
+# ─────────────────────────────────────────────────────────────────────────────
+FROM postgis/postgis:16-3.4-alpine
+
+# Install pg_partman
+# Alpine PostgreSQL extension packages follow the naming convention:
+#   postgresql<major>-<extension>
+RUN apk add --no-cache postgresql16-partman || \
+    # Fallback: compile from source if apk package unavailable
+    (apk add --no-cache --virtual .build-deps \
+        build-base \
+        postgresql16-dev \
+        git \
+    && git clone --depth 1 --branch v5.0.1 https://github.com/pgpartman/pg_partman.git /tmp/pg_partman \
+    && cd /tmp/pg_partman \
+    && make NO_BGW=0 \
+    && make install NO_BGW=0 \
+    && apk del .build-deps \
+    && rm -rf /tmp/pg_partman)

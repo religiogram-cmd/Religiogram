@@ -1,0 +1,170 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  Alertmanager — ReligioGram notification routing
+#
+#  Replace placeholder values before deploying:
+#    SLACK_WEBHOOK_URL          — Slack incoming webhook URL
+#    PAGERDUTY_INTEGRATION_KEY  — PagerDuty Events API v2 integration key
+#    PAYMENTS_SLACK_WEBHOOK_URL — Dedicated #payments-alerts channel webhook
+#    SMTP_*                     — Email relay for low-priority digests
+#
+#  Alert routing logic:
+#    severity=critical  → PagerDuty (pages on-call) + Slack #alerts
+#    severity=warning   → Slack #alerts only (no page)
+#    team=payments       → also routes to #payments-alerts regardless of severity
+#    WalletDuplicate*   → PagerDuty immediately, 0m group_wait (P0 — never suppress)
+#
+#  Docker:   docker compose up alertmanager
+#  K8s:      kubectl apply -f k8s/alertmanager/ (add manifest when needed)
+#  UI:       http://localhost:9093
+# ──────────────────────────────────────────────────────────────────────────────
+
+global:
+  # How long to wait before re-sending a firing alert that hasn't resolved
+  resolve_timeout: 5m
+
+  # PR2: Use environment variable references instead of hardcoded placeholder
+  # strings. Alertmanager supports Go-template env expansion via $VAR syntax
+  # in YAML string values. Set these vars in your Docker/K8s secret before deploy.
+  # Required env vars:
+  #   SLACK_WEBHOOK_URL            — Slack incoming webhook (e.g. T00.../B00.../xxx)
+  #   PAGERDUTY_INTEGRATION_KEY    — PagerDuty Events API v2 routing key
+  #   PAYMENTS_SLACK_WEBHOOK_URL   — #payments-alerts channel webhook
+  #   SMTP_PASSWORD                — SMTP relay password
+  slack_api_url: '${SLACK_WEBHOOK_URL}'
+
+  # SMTP for email fallback (optional)
+  smtp_smarthost:     'smtp.gmail.com:587'
+  smtp_from:          'alerts@religiogram.app'
+  smtp_auth_username: 'alerts@religiogram.app'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+  smtp_require_tls:   true
+
+# ── Templates ────────────────────────────────────────────────────────────────
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# ── Inhibition rules ─────────────────────────────────────────────────────────
+# Suppress warning-level alerts when a critical alert for the same service
+# is already firing (avoids alert storms).
+inhibit_rules:
+  - source_matchers:
+      - 'severity="critical"'
+    target_matchers:
+      - 'severity="warning"'
+    equal: ['alertname', 'instance']
+
+# ── Routing tree ──────────────────────────────────────────────────────────────
+route:
+  # Top-level defaults
+  receiver: 'slack-warnings'
+  group_by: ['alertname', 'cluster', 'team']
+  group_wait:      30s    # wait 30s after first alert in a group before sending
+  group_interval:  5m     # wait 5m before sending new alerts in the same group
+  repeat_interval: 4h     # re-notify after 4h if still firing
+
+  routes:
+
+    # ── P0: Wallet duplicate idempotency key — page immediately, no grouping ──
+    - matchers:
+        - 'alertname="WalletDuplicateIdempotencyViolation"'
+      receiver: 'pagerduty-critical'
+      group_wait:      0s    # fire immediately — no suppression for P0
+      group_interval:  1m
+      repeat_interval: 30m
+      continue: true         # also send to payments channel
+
+    # ── Critical severity → PagerDuty + Slack ─────────────────────────────────
+    - matchers:
+        - 'severity="critical"'
+      receiver: 'pagerduty-critical'
+      group_wait:     10s
+      group_interval: 2m
+      repeat_interval: 1h
+      continue: true         # also fan out to matching child routes
+
+    # ── Payments team alerts → dedicated channel ──────────────────────────────
+    - matchers:
+        - 'team="payments"'
+      receiver: 'slack-payments'
+      continue: false
+
+    # ── Platform team warnings → #alerts ──────────────────────────────────────
+    - matchers:
+        - 'severity="warning"'
+      receiver: 'slack-warnings'
+
+# ── Receivers ─────────────────────────────────────────────────────────────────
+receivers:
+
+  # Default: Slack #alerts for warnings
+  - name: 'slack-warnings'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/${SLACK_WEBHOOK_URL}'
+        channel: '#alerts'
+        send_resolved: true
+        username: 'ReligioGram Alertmanager'
+        icon_emoji: ':bell:'
+        color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+        title: >-
+          [{{ .Status | toUpper }}{{ if eq .Status "firing" }} ({{ .Alerts.Firing | len }}){{ end }}]
+          {{ .GroupLabels.alertname }}
+        text: >-
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Severity:* {{ .Labels.severity }}
+          *Description:* {{ .Annotations.description }}
+          *Instance:* {{ .Labels.instance }}
+          *Since:* {{ .StartsAt | since }}
+          {{ end }}
+        footer: 'ReligioGram | {{ .CommonLabels.cluster }} | {{ .CommonLabels.env }}'
+
+  # Critical: PagerDuty pages on-call engineer
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - routing_key: '${PAGERDUTY_INTEGRATION_KEY}'
+        send_resolved: true
+        severity: '{{ if eq .CommonLabels.severity "critical" }}critical{{ else }}warning{{ end }}'
+        summary: '{{ .CommonAnnotations.summary }}'
+        description: '{{ .CommonAnnotations.description }}'
+        details:
+          cluster:   '{{ .CommonLabels.cluster }}'
+          env:       '{{ .CommonLabels.env }}'
+          team:      '{{ .CommonLabels.team }}'
+          alertname: '{{ .CommonLabels.alertname }}'
+        client:     'ReligioGram Alertmanager'
+        client_url: 'http://prometheus.religiogram.internal:9090'
+    # Also notify Slack for visibility
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/${SLACK_WEBHOOK_URL}'
+        channel: '#alerts'
+        send_resolved: true
+        username: 'ReligioGram Alertmanager'
+        icon_emoji: ':rotating_light:'
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        title: >-
+          :rotating_light: [CRITICAL{{ if eq .Status "firing" }} FIRING ({{ .Alerts.Firing | len }}){{ end }}]
+          {{ .GroupLabels.alertname }}
+        text: >-
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Instance:* {{ .Labels.instance }}
+          {{ end }}
+
+  # Payments team: dedicated #payments-alerts channel
+  - name: 'slack-payments'
+    slack_configs:
+      - api_url: '${PAYMENTS_SLACK_WEBHOOK_URL}'
+        channel: '#payments-alerts'
+        send_resolved: true
+        username: 'ReligioGram Payments'
+        icon_emoji: ':moneybag:'
+        color: '{{ if eq .Status "firing" }}{{ if eq .CommonLabels.severity "critical" }}danger{{ else }}warning{{ end }}{{ else }}good{{ end }}'
+        title: >-
+          [{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}
+        text: >-
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Severity:* {{ .Labels.severity }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}

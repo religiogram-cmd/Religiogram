@@ -1,0 +1,167 @@
+---
+# ── postgres_exporter — Deployment ────────────────────────────────────────────
+#
+# Exposes PostgreSQL internal metrics to Prometheus:
+#   • Default metrics: pg_stat_user_tables, pg_stat_bgwriter, pg_locks, etc.
+#   • Custom queries:  pg_stat_statements_top_slow, pg_active_connections,
+#                      pg_long_running_queries, pg_partition_row_counts,
+#                      pg_table_bloat_estimate
+#
+# DATA_SOURCE_NAME must point at the RDS endpoint DIRECTLY (not PgBouncer)
+# because pg_stat_statements requires a real session, not a transaction-pooled
+# connection.  In K8s this is injected via a Secret (see below).
+#
+# Alert rules that consume these metrics:
+#   config/prometheus/rules/db-pool.yml
+#   config/prometheus/rules/slow-query.yml
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-exporter
+  namespace: religiogram
+  labels:
+    app: postgres-exporter
+    component: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-exporter
+  template:
+    metadata:
+      labels:
+        app: postgres-exporter
+        component: observability
+      annotations:
+        # Prometheus auto-discovery via annotations
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "9187"
+        prometheus.io/path:   "/metrics"
+    spec:
+      serviceAccountName: default
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534   # nobody
+        fsGroup:   65534
+      containers:
+        - name: postgres-exporter
+          image: prometheuscommunity/postgres-exporter:v0.15.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --extend.query-path=/etc/postgres-exporter/queries.yaml
+            - --log.level=warn
+            - --web.listen-address=:9187
+            - --collector.stat_statements        # enable pg_stat_statements collector
+            - --collector.process_idle_timeout=5s
+          env:
+            # DATA_SOURCE_NAME is sourced from a K8s Secret so the DSN
+            # (with password) is never stored in plain-text manifests.
+            # Create the secret:
+            #   kubectl create secret generic postgres-exporter-dsn \
+            #     --namespace religiogram \
+            #     --from-literal=dsn='postgresql://exporter:password@rds-host:5432/religiogram?sslmode=require'
+            - name: DATA_SOURCE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-exporter-dsn
+                  key:  dsn
+          ports:
+            - name: metrics
+              containerPort: 9187
+              protocol: TCP
+          volumeMounts:
+            - name: queries
+              mountPath: /etc/postgres-exporter
+              readOnly: true
+          resources:
+            requests:
+              cpu:    50m
+              memory: 64Mi
+            limits:
+              cpu:    200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9187
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9187
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: queries
+          configMap:
+            name: postgres-exporter-queries
+---
+# ── ConfigMap — custom query definitions ──────────────────────────────────────
+# In production: sync from config/postgres-exporter/queries.yaml via CI.
+# For local apply, run:
+#   kubectl create configmap postgres-exporter-queries \
+#     --namespace religiogram \
+#     --from-file=queries.yaml=config/postgres-exporter/queries.yaml
+#
+# Keeping the content here as well so `kubectl apply -k k8s/` is fully
+# self-contained (CI pipeline replaces the placeholder with real content).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-exporter-queries
+  namespace: religiogram
+  labels:
+    app: postgres-exporter
+    component: observability
+data:
+  # Populated by CI via:
+  #   kubectl create configmap postgres-exporter-queries \
+  #     --from-file=queries.yaml=config/postgres-exporter/queries.yaml \
+  #     --dry-run=client -o yaml | kubectl apply -f -
+  queries.yaml: |
+    # See config/postgres-exporter/queries.yaml for full content.
+    # This stub is replaced by the CI pipeline at deploy time.
+---
+# ── Service — expose metrics port to Prometheus ───────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-exporter
+  namespace: religiogram
+  labels:
+    app: postgres-exporter
+    component: observability
+spec:
+  selector:
+    app: postgres-exporter
+  ports:
+    - name: metrics
+      port: 9187
+      targetPort: metrics
+      protocol: TCP
+  type: ClusterIP
+---
+# ── ServiceMonitor — Prometheus Operator auto-discovery ───────────────────────
+# Requires prometheus-operator (kube-prometheus-stack) to be installed.
+# If using plain Prometheus with static_configs, remove this resource and
+# rely on the prometheus.io/scrape annotation on the pod instead.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: postgres-exporter
+  namespace: religiogram
+  labels:
+    app: postgres-exporter
+    release: kube-prometheus-stack   # must match Prometheus operator's serviceMonitorSelector
+spec:
+  selector:
+    matchLabels:
+      app: postgres-exporter
+  endpoints:
+    - port: metrics
+      interval: 30s
+      scrapeTimeout: 20s
+      path: /metrics

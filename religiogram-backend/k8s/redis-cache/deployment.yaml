@@ -1,0 +1,87 @@
+---
+# ── redis-cache Deployment ────────────────────────────────────────────────────
+#
+# Dedicated Redis instance for HTTP response caching (CacheService).
+# Configured with allkeys-lru eviction policy — safe to evict since all cache
+# entries are re-fetchable from the DB on a miss.
+#
+# Kept separate from the main Redis (noeviction / BullMQ + throttle counters)
+# so HTTP cache pressure can never evict BullMQ jobs or rate-limit counters.
+#
+# Env vars consumed by the API pods:
+#   REDIS_CACHE_HOST: redis-cache
+#   REDIS_CACHE_PORT: "6379"
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-cache
+  namespace: religiogram
+  labels:
+    app: redis-cache
+    component: cache
+    tier: infrastructure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-cache
+  template:
+    metadata:
+      labels:
+        app: redis-cache
+        component: cache
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.2-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+          # allkeys-lru: safest eviction policy for a pure cache — oldest items
+          # are evicted when memory is full. Never blocks on OOM unlike noeviction.
+          args:
+            - redis-server
+            - --maxmemory
+            - "256mb"
+            - --maxmemory-policy
+            - allkeys-lru
+            - --save
+            - ""           # disable RDB persistence (pure cache, no durability needed)
+            - --appendonly
+            - "no"         # disable AOF persistence
+          resources:
+            requests:
+              cpu: 100m
+              memory: 300Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            exec:
+              command: [redis-cli, ping]
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: [redis-cli, ping]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cache
+  namespace: religiogram
+  labels:
+    app: redis-cache
+    component: cache
+spec:
+  selector:
+    app: redis-cache
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: redis
+  type: ClusterIP

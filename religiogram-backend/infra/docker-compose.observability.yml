@@ -1,0 +1,163 @@
+# ============================================================
+# Appendix E — Self-hosted observability stack
+# Runs on Hetzner CX11 (1 vCPU / 2 GB RAM / 40 GB SSD)
+#
+# Matches the ReligioGram Minimal-Cost Master Plan spec exactly:
+#   Grafana + Prometheus + Loki + Sentry + Uptime Kuma + Metabase + Alertmanager
+#
+# Start: docker compose -f docker-compose.observability.yml up -d
+# ============================================================
+
+version: '3.9'
+
+x-restart: &always
+  restart: unless-stopped
+
+networks:
+  observability:
+    driver: bridge
+
+volumes:
+  prometheus_data:  {}
+  grafana_data:     {}
+  alertmanager_data: {}
+  loki_data:        {}
+  kuma_data:        {}
+  metabase_data:    {}
+
+services:
+
+  # ── Prometheus ──────────────────────────────────────────────
+  prometheus:
+    <<: *always
+    image: prom/prometheus:v2.51.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+      - --web.enable-admin-api
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - prometheus_data:/prometheus
+    networks: [observability]
+
+  # ── Grafana ─────────────────────────────────────────────────
+  grafana:
+    <<: *always
+    image: grafana/grafana:10.4.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER:  ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?required}
+      GF_USERS_ALLOW_SIGN_UP:  "false"
+      GF_SERVER_ROOT_URL:      "https://grafana.religiogram.in"
+      GF_SMTP_ENABLED:         "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    networks: [observability]
+    depends_on: [prometheus]
+
+  # ── Alertmanager ────────────────────────────────────────────
+  alertmanager:
+    <<: *always
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --cluster.advertise-address=127.0.0.1:9093
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    networks: [observability]
+
+  # ── Loki (log aggregation) ───────────────────────────────────
+  # Receives structured JSON logs from all 4 Hetzner boxes via Promtail.
+  # Queryable in Grafana Explorer by request_id, route, user_id.
+  loki:
+    <<: *always
+    image: grafana/loki:2.9.5
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data:/loki
+    networks: [observability]
+
+  # ── Uptime Kuma (uptime monitoring) ─────────────────────────
+  # Hits /health on all 4 boxes every 30s.
+  # Pages Telegram on outage. Replaces PagerDuty (free forever).
+  uptime-kuma:
+    <<: *always
+    image: louislam/uptime-kuma:1
+    ports:
+      - "3001:3001"
+    volumes:
+      - kuma_data:/app/data
+    networks: [observability]
+
+  # ── Metabase OSS (business analytics) ───────────────────────
+  # Connects to Postgres read endpoint (10.0.0.2 = DB box private IP).
+  # Day-one dashboards: DAU, GMV today, bookings, refund rate 24h.
+  metabase:
+    <<: *always
+    image: metabase/metabase:v0.49.13
+    ports:
+      - "3002:3000"
+    environment:
+      MB_DB_TYPE:    postgres
+      MB_DB_DBNAME:  metabase
+      MB_DB_PORT:    "5432"
+      MB_DB_USER:    ${METABASE_DB_USER:-metabase}
+      MB_DB_PASS:    ${METABASE_DB_PASS:?required}
+      MB_DB_HOST:    "10.0.0.2"
+      JAVA_TIMEZONE: Asia/Kolkata
+    volumes:
+      - metabase_data:/metabase-data
+    networks: [observability]
+    depends_on: [prometheus]
+
+  # ── Node Exporter (host metrics) ────────────────────────────
+  node-exporter:
+    <<: *always
+    image: prom/node-exporter:v1.7.0
+    pid: host
+    network_mode: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.rootfs=/rootfs
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+
+  # ── Redis Exporter ──────────────────────────────────────────
+  redis-exporter:
+    <<: *always
+    image: oliver006/redis_exporter:v1.58.0
+    environment:
+      REDIS_ADDR:     "redis://10.0.0.2:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+    ports:
+      - "9121:9121"
+    networks: [observability]
+
+  # ── Postgres Exporter ───────────────────────────────────────
+  postgres-exporter:
+    <<: *always
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    environment:
+      DATA_SOURCE_NAME: "postgresql://monitoring:${DB_MONITORING_PASSWORD:?required}@10.0.0.2:5432/religiogram?sslmode=disable"
+    ports:
+      - "9187:9187"
+    networks: [observability]

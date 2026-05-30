@@ -1,0 +1,20 @@
+# RFC 9116 security.txt — P2-7
+# Standardised security disclosure file.
+# See https://securitytxt.org/ for the specification.
+#
+# Update the fields below before going live:
+#   - Contact: use a real security@ alias that forwards to your team
+#   - Expires: regenerate this file annually
+#   - Encryption: add your PGP key URL if you accept encrypted reports
+
+Contact: mailto:security@religiogram.app
+Expires: 2027-01-01T00:00:00.000Z
+Preferred-Languages: en, hi
+Canonical: https://religiogram.app/.well-known/security.txt
+
+# Scope: what we want researchers to test
+# Out-of-scope: third-party infrastructure (Cloudflare, Railway, Supabase)
+Policy: https://religiogram.app/security-policy
+
+# Acknowledgements page (add after first confirmed researcher fix)
+# Acknowledgments: https://religiogram.app/hall-of-fame

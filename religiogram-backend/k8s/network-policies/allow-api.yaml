@@ -1,0 +1,112 @@
+---
+# ── API pods ingress ──────────────────────────────────────────────────────────
+#
+# Allow inbound traffic to API pods (app=api) only from:
+#   1. Kong API gateway   (app=kong) — all proxied user traffic
+#   2. Prometheus scraper (app=prometheus) — /metrics scraping
+#   3. Kubernetes liveness/readiness probes (no pod selector — from node CIDR)
+#
+# Kong is the only public entry point. API pods must never be reached
+# directly from the internet or from other unrelated pods.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-ingress
+  namespace: religiogram
+  labels:
+    component: network-security
+spec:
+  podSelector:
+    matchLabels:
+      app: api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Traffic from Kong gateway
+    - from:
+        - podSelector:
+            matchLabels:
+              app: kong
+      ports:
+        - protocol: TCP
+          port: 3000
+
+    # Prometheus metrics scraping
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 3000
+
+  egress:
+    # PostgreSQL via PgBouncer
+    - to:
+        - podSelector:
+            matchLabels:
+              app: pgbouncer
+      ports:
+        - protocol: TCP
+          port: 6432
+
+    # Redis (queue + sessions)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+    # Redis cache
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis-cache
+      ports:
+        - protocol: TCP
+          port: 6379
+
+    # Kafka brokers
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 29092
+
+    # OpenSearch
+    - to:
+        - podSelector:
+            matchLabels:
+              app: opensearch
+      ports:
+        - protocol: TCP
+          port: 9200
+
+    # Jaeger collector (OTel traces)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: jaeger
+      ports:
+        - protocol: TCP
+          port: 14268   # Jaeger HTTP collector
+        - protocol: TCP
+          port: 4318    # OTLP/HTTP
+
+    # External HTTPS: SMS, Razorpay, FCM, S3, Sentry, GrowthBook
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8       # RFC 1918 private
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

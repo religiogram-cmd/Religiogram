@@ -1,0 +1,73 @@
+# .gitleaks.toml — Custom rules and allowlists for Gitleaks secret scanning.
+# Run locally: gitleaks detect --config .gitleaks.toml --source .
+# CI: see .github/workflows/ci.yml (TruffleHog covers incremental PR scans)
+# Full-history audit: gitleaks detect --config .gitleaks.toml --source . --log-opts="--all"
+
+title = "ReligioGram Secret Scanning Rules"
+
+[extend]
+# Use gitleaks default ruleset as the baseline
+useDefault = true
+
+[[rules]]
+id          = "religiogram-jwt-private"
+description = "ReligioGram JWT private key"
+regex       = '''-----BEGIN (RSA |EC |)PRIVATE KEY-----'''
+tags        = ["key", "jwt", "critical"]
+
+[[rules]]
+id          = "religiogram-razorpay-secret"
+description = "Razorpay secret key"
+regex       = '''rzp_(live|test)_[A-Za-z0-9]{14,}'''
+tags        = ["payment", "razorpay", "critical"]
+
+[[rules]]
+id          = "religiogram-otp-secret"
+description = "Long random hex that looks like an OTP or encryption secret"
+regex       = '''[A-Fa-f0-9]{64,}'''
+tags        = ["secret"]
+# Exclude test fixtures and example env file
+[rules.allowlist]
+paths       = [
+  '''\.env\.example''',
+  '''.*\.spec\.ts''',
+  '''.*\.test\.ts''',
+  '''docs/''',
+]
+
+[[rules]]
+id          = "religiogram-gemini-key"
+description = "Google AI / Gemini API key"
+regex       = '''AIza[0-9A-Za-z\-_]{35}'''
+tags        = ["ai", "google", "critical"]
+
+[[rules]]
+id          = "religiogram-aws-secret"
+description = "AWS secret access key"
+regex       = '''(?i)aws[_\-\s]*secret[_\-\s]*access[_\-\s]*key[\s]*[=:]\s*[A-Za-z0-9/\+=]{40}'''
+tags        = ["aws", "critical"]
+
+[allowlist]
+description = "Global allowlists"
+# Allow test fixtures with obviously-fake secrets
+regexes     = [
+  '''PLACEHOLDER''',
+  '''your[-_]secret[-_]here''',
+  '''change[-_]me''',
+  '''example[-_]value''',
+  '''<YOUR[-_].*>''',
+]
+paths       = [
+  '''node_modules/''',
+  '''dist/''',
+  '''\.env\.example''',
+  '''docs/runbook\.md''',
+  '''PRODUCTION_NOTES\.md''',
+]
+stopwords   = [
+  "placeholder",
+  "example",
+  "changeme",
+  "yourpassword",
+  "REPLACE_ME",
+]

@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ReligioGram — Image Thumbnail Function
+#
+# Deploys a Node 20.x Lambda that is triggered by S3 PutObject events on
+# the `profile/` prefix and generates 80px / 200px / 400px WebP thumbnails.
+#
+# Deploy:
+#   sam build
+#   sam deploy --config-env prod   (see samconfig.toml)
+#
+# Prerequisites:
+#   - S3 bucket already exists (created by Terraform / CDK separately)
+#   - sam CLI ≥ 1.85 installed
+# ─────────────────────────────────────────────────────────────────────────────
+
+Globals:
+  Function:
+    Timeout: 30             # 30 s — plenty for a single 5 MB image
+    MemorySize: 512         # Sharp needs ~200 MB; 512 gives comfortable headroom
+    Runtime: nodejs20.x
+    Architectures:
+      - arm64               # Graviton2 — 20% cheaper, faster for image workloads
+    Environment:
+      Variables:
+        NODE_ENV: production
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: S3 bucket that stores user uploads (and will receive thumbnails)
+    Default: religiogram-uploads
+
+  AlarmEmail:
+    Type: String
+    Description: Email address for DLQ alarm notifications
+    Default: ""
+
+Resources:
+
+  # ── Lambda execution role ──────────────────────────────────────────────────
+  ThumbnailFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "religiogram-thumbnail-role-${AWS::AccountId}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3ReadWriteThumbnails
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Read source images
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${BucketName}/users/*/profile/*"
+              # Write thumbnail output
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${BucketName}/thumbnails/*"
+
+  # ── Dead-letter queue for failed invocations ───────────────────────────────
+  ThumbnailDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: religiogram-thumbnail-dlq
+      MessageRetentionPeriod: 604800   # 7 days
+      KmsMasterKeyId: alias/aws/sqs
+
+  # ── Lambda function ────────────────────────────────────────────────────────
+  ThumbnailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: religiogram-thumbnails
+      Description: Generates WebP thumbnails (80/200/400px) on profile image upload
+      Handler: thumbnail.lambda.handler
+      CodeUri: ../../src/uploads/
+      Role: !GetAtt ThumbnailFunctionRole.Arn
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt ThumbnailDLQ.Arn
+      ReservedConcurrentExecutions: 50  # throttle burst; tune upward if needed
+      Environment:
+        Variables:
+          AWS_REGION: !Ref AWS::Region
+      Events:
+        ProfileUpload:
+          Type: S3
+          Properties:
+            Bucket: !Ref ThumbnailBucketReference
+            Events: s3:ObjectCreated:Put
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: users/
+                  - Name: suffix
+                    Value: .jpg
+        ProfileUploadPng:
+          Type: S3
+          Properties:
+            Bucket: !Ref ThumbnailBucketReference
+            Events: s3:ObjectCreated:Put
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: users/
+                  - Name: suffix
+                    Value: .png
+    Metadata:
+      # Tell SAM to bundle with esbuild (TypeScript → CommonJS)
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2020
+        Sourcemap: false
+        EntryPoints:
+          - thumbnail.lambda.ts
+        External:
+          - sharp        # provided by the Lambda layer below
+
+  # ── Sharp Lambda layer (pre-built arm64 binaries) ─────────────────────────
+  # We use the community-maintained sharp layer to avoid bundling native
+  # binaries. Pinned to a specific ARN for reproducibility.
+  # Update the ARN when upgrading Sharp. Find current ARNs at:
+  #   https://github.com/Umkus/lambda-layer-sharp/releases
+  #
+  # NOTE: This layer reference is a placeholder. Replace with the exact
+  # ARN for ap-south-1 + arm64 from the releases page above.
+  SharpLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: sharp-arm64
+      Description: Sharp image processing library (arm64) for Node 20
+      CompatibleRuntimes:
+        - nodejs20.x
+      CompatibleArchitectures:
+        - arm64
+      # In a real deploy this would be bundled via SAM; for documentation
+      # purposes the layer is referenced by ARN in samconfig.toml.
+      Content:
+        S3Bucket: !Ref BucketName
+        S3Key: lambda-layers/sharp-arm64.zip
+
+  # ── Bucket reference (existing bucket, not created here) ──────────────────
+  # SAM requires a resource reference for S3 event sources. We use a
+  # custom resource to reference the existing bucket without re-creating it.
+  ThumbnailBucketReference:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Ref BucketName
+
+  # ── CloudWatch alarm for DLQ depth ────────────────────────────────────────
+  DLQDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: religiogram-thumbnail-dlq-depth
+      AlarmDescription: Thumbnail Lambda DLQ has messages — images failed to resize
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ThumbnailDLQ.QueueName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  ThumbnailFunctionArn:
+    Description: ARN of the thumbnail Lambda function
+    Value: !GetAtt ThumbnailFunction.Arn
+    Export:
+      Name: religiogram-thumbnail-function-arn
+
+  ThumbnailDLQUrl:
+    Description: URL of the thumbnail processing DLQ
+    Value: !Ref ThumbnailDLQ

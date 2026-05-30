@@ -1,0 +1,127 @@
+---
+# ── OpenSearch Node 2 StatefulSet ─────────────────────────────────────────────
+#
+# Second node of the 2-node OpenSearch cluster.
+# Enables number_of_replicas=1 — each primary shard has a replica on the other node,
+# so the cluster tolerates the loss of one node without data loss.
+#
+# Cluster discovery:
+#   Both nodes must have the same cluster.name and reference each other in
+#   discovery.seed_hosts. The cluster.initial_master_nodes bootstraps the cluster
+#   once on first start; remove it after the cluster is formed (OpenSearch 2.x).
+#
+# Pod labels match opensearch-node2 Service for inter-node communication.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: opensearch-node2
+  namespace: religiogram
+  labels:
+    app: opensearch-node2
+    component: search
+    cluster: religiogram-os
+spec:
+  serviceName: opensearch-node2
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opensearch-node2
+  template:
+    metadata:
+      labels:
+        app: opensearch-node2
+        component: search
+        cluster: religiogram-os
+    spec:
+      # OpenSearch requires vm.max_map_count=262144 on the host.
+      # In K8s, set this via a DaemonSet or initContainer:
+      initContainers:
+        - name: sysctl
+          image: busybox
+          command: [sysctl, -w, vm.max_map_count=262144]
+          securityContext:
+            privileged: true
+      containers:
+        - name: opensearch
+          image: opensearchproject/opensearch:2.13.0
+          ports:
+            - containerPort: 9200
+              name: http
+            - containerPort: 9300
+              name: transport
+          env:
+            - name: cluster.name
+              value: religiogram-os
+            - name: node.name
+              value: opensearch-node2
+            # Discovery — both nodes must be reachable by their Service DNS names
+            - name: discovery.seed_hosts
+              value: "opensearch,opensearch-node2"
+            - name: cluster.initial_master_nodes
+              value: "opensearch,opensearch-node2"
+            - name: node.attr.rack
+              value: rack2
+            # Shard allocation: prefer shards on different racks
+            - name: cluster.routing.allocation.awareness.attributes
+              value: rack
+            - name: OPENSEARCH_JAVA_OPTS
+              value: "-Xms512m -Xmx512m"
+            - name: DISABLE_SECURITY_PLUGIN
+              value: "true"   # remove in production; use TLS + auth
+            - name: DISABLE_INSTALL_DEMO_CONFIG
+              value: "true"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 1500m
+              memory: 2Gi
+          volumeMounts:
+            - name: opensearch-data2
+              mountPath: /usr/share/opensearch/data
+          livenessProbe:
+            httpGet:
+              path: /_cluster/health?wait_for_status=yellow&timeout=5s
+              port: 9200
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health?wait_for_status=yellow&timeout=5s
+              port: 9200
+            initialDelaySeconds: 30
+            periodSeconds: 15
+  volumeClaimTemplates:
+    - metadata:
+        name: opensearch-data2
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: gp3    # adjust to your StorageClass
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opensearch-node2
+  namespace: religiogram
+  labels:
+    app: opensearch-node2
+    component: search
+spec:
+  selector:
+    app: opensearch-node2
+  ports:
+    - port: 9200
+      targetPort: 9200
+      name: http
+    - port: 9300
+      targetPort: 9300
+      name: transport
+  type: ClusterIP
+  # Headless service for pod-to-pod cluster communication
+  clusterIP: None

@@ -1,0 +1,74 @@
+# Local dev stack for ReligioGram backend.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml logs -f api
+#   docker compose -f docker-compose.dev.yml down
+#
+# The NestJS API is NOT containerised here — run it on the host with
+# `npm run start:dev` so source changes hot-reload via ts-node-dev. The
+# infrastructure (Postgres, Redis, coturn) is in containers and persists
+# across restarts via named volumes.
+#
+# Environment variables come from ./.env (copy .env.example → .env first).
+services:
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: religiogram
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U app -d religiogram']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata_dev:/data
+
+  # coturn — local TURN server so WebRTC voice/video in consultation works.
+  # Production should use a managed TURN (Twilio / Cloudflare / Metered).
+  # For local dev, these credentials are intentionally simple; rotate before
+  # exposing on a public IP.
+  coturn:
+    image: instrumentisto/coturn:4.6
+    restart: unless-stopped
+    network_mode: host  # required so peer-relayed UDP works on localhost
+    command:
+      - '-n'                                # no config file — fully CLI-driven
+      - '--lt-cred-mech'                    # long-term credentials
+      - '--use-auth-secret'
+      - '--static-auth-secret=dev-turn-shared-secret-change-me'
+      - '--realm=religiogram.local'
+      - '--listening-port=3478'
+      - '--tls-listening-port=5349'
+      - '--min-port=49152'
+      - '--max-port=49200'                  # narrow port range = predictable
+      - '--no-cli'                          # disable telnet console
+      - '--no-tlsv1'
+      - '--no-tlsv1_1'
+      - '--log-file=stdout'
+
+  # Optional: a redis-cache instance on a separate port if you want to test
+  # the dual-Redis split (sessions on 6379, cache on 6380). Uncomment to use.
+  # redis-cache:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+  #   command: ['redis-server', '--appendonly', 'no', '--maxmemory', '256mb', '--maxmemory-policy', 'allkeys-lru']
+  #   ports:
+  #     - '6380:6379'
+
+volumes:
+  pgdata_dev:
+  redisdata_dev:

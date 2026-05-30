@@ -1,0 +1,327 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  ReligioGram Deploy — Docker build → ECR push → kubectl apply
+#
+#  Triggers:
+#    - push to main (production deploy)
+#    - push to develop (staging deploy)
+#    - manual dispatch (with environment selector)
+#
+#  Required GitHub Secrets:
+#    AWS_ACCESS_KEY_ID         — IAM user with ECR push + EKS access
+#    AWS_SECRET_ACCESS_KEY
+#    AWS_REGION                — e.g. ap-south-1
+#    ECR_REGISTRY              — e.g. 123456789.dkr.ecr.ap-south-1.amazonaws.com
+#    ECR_REPOSITORY            — e.g. religiogram-api
+#    EKS_CLUSTER_NAME          — e.g. religiogram-prod
+#    KUBECONFIG_BASE64         — base64-encoded ~/.kube/config for the cluster
+#
+#  Pipeline:
+#    1. Run CI checks (imports ci.yml reusable workflow)
+#    2. Build Docker image with SHA tag + environment tag
+#    3. Push to Amazon ECR
+#    4. Update k8s/api/deployment.yaml image tag
+#    5. kubectl apply -k k8s/
+#    6. Wait for rollout completion
+#    7. Run smoke test against /health
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main       # → production
+      - develop    # → staging
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options: [staging, production]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+
+  # ── Job 1: CI gate (must pass before deploy) ──────────────────────────────
+  ci:
+    name: CI Gate
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  # ── Job 2: Build + Push Docker image ─────────────────────────────────────
+  build-and-push:
+    name: Build & Push
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      image_tag:     ${{ steps.meta.outputs.image_tag }}
+      full_image:    ${{ steps.meta.outputs.full_image }}
+      environment:   ${{ steps.env.outputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          SHA="${{ github.sha }}"
+          SHORT_SHA="${SHA:0:8}"
+          ENV="${{ steps.env.outputs.environment }}"
+          TAG="${ENV}-${SHORT_SHA}"
+          FULL="${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${TAG}"
+          echo "image_tag=${TAG}"   >> $GITHUB_OUTPUT
+          echo "full_image=${FULL}" >> $GITHUB_OUTPUT
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502  # v4.0.2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b8b5e1dfcc25d5c1a79dde68a1df35d3fc1eb  # v2.0.1
+
+      - name: Set up Docker Buildx (for layer caching)
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb  # v3.3.0
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@af925a44696b95ef553f52d0f678b1d8730bef71  # v5.3.0
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.full_image }}
+            ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.env.outputs.environment }}-latest
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+            BUILD_ENV=${{ steps.env.outputs.environment }}
+
+      - name: Scan container image (Trivy)
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8  # v0.20.0
+        with:
+          image-ref: ${{ steps.meta.outputs.full_image }}
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@1b1aada464948af03b950897e5eb522f475603c1  # v3.24.0
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@b6a39da80722a2cb0ef284754c4a12d4d14d8700  # v0.15.10
+        with:
+          image: ${{ steps.meta.outputs.full_image }}
+          artifact-name: sbom-${{ github.sha }}.spdx.json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM as artifact
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808  # v4.3.4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.spdx.json
+          retention-days: 90
+
+  # ── Job 3: Deploy to Kubernetes ───────────────────────────────────────────
+  deploy:
+    name: Deploy to ${{ needs.build-and-push.outputs.environment }}
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: ${{ needs.build-and-push.outputs.environment }}
+      url: ${{ needs.build-and-push.outputs.environment == 'production' && 'https://api.religiogram.com/health' || 'https://api-staging.religiogram.com/health' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332  # v4.1.7
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502  # v4.0.2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Set up kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_BASE64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@3e0aec4d80787158d6827d3de0ed6619197d6ab7  # v3.2
+        with:
+          version: 'v1.29.0'
+
+      - name: Verify cluster connectivity
+        run: kubectl get nodes --no-headers
+
+      - name: Substitute image tag in Deployment manifest
+        run: |
+          sed -i "s|image: religiogram-api:latest|image: ${{ needs.build-and-push.outputs.full_image }}|g" \
+            k8s/api/deployment.yaml
+          # Bump the checksum annotation to force a rolling restart
+          CHECKSUM=$(echo "${{ needs.build-and-push.outputs.image_tag }}" | sha256sum | cut -c1-8)
+          sed -i "s|checksum/config: \"change-me-in-ci\"|checksum/config: \"${CHECKSUM}\"|g" \
+            k8s/api/deployment.yaml
+
+      - name: Apply ConfigMap for postgres-exporter queries
+        run: |
+          kubectl create configmap postgres-exporter-queries \
+            --namespace religiogram \
+            --from-file=queries.yaml=config/postgres-exporter/queries.yaml \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Run database migrations
+        run: |
+          # Create a one-off migration job from the new image
+          cat <<EOF | kubectl apply -f -
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: migration-${{ github.sha }}
+            namespace: religiogram
+          spec:
+            ttlSecondsAfterFinished: 300
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: migrator
+                    image: ${{ needs.build-and-push.outputs.full_image }}
+                    command: ["npm", "run", "migration:run"]
+                    envFrom:
+                      - secretRef:
+                          name: religiogram-secrets
+          EOF
+          # Wait up to 5 minutes for migrations to complete
+          kubectl wait job/migration-${{ github.sha }} \
+            --for=condition=complete \
+            --timeout=300s \
+            --namespace religiogram || {
+              echo "Migration job failed!"
+              kubectl logs -l job-name=migration-${{ github.sha }} --namespace religiogram
+              exit 1
+            }
+
+      - name: Apply all K8s manifests
+        run: |
+          kubectl apply -k k8s/
+          echo "Applied kustomization. Waiting for rollout..."
+
+      - name: Wait for API rollout
+        run: |
+          kubectl rollout status deployment/api \
+            --namespace religiogram \
+            --timeout=300s
+
+      - name: Smoke test
+        run: |
+          ENV="${{ needs.build-and-push.outputs.environment }}"
+          if [[ "$ENV" == "production" ]]; then
+            URL="https://api.religiogram.com/health"
+          else
+            URL="https://api-staging.religiogram.com/health"
+          fi
+          echo "Smoke testing ${URL}"
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "${URL}" || echo "000")
+            if [[ "$STATUS" == "200" ]]; then
+              echo "Smoke test passed (HTTP 200)"
+              exit 0
+            fi
+            echo "Attempt ${i}: got HTTP ${STATUS}, retrying in 10s..."
+            sleep 10
+          done
+          echo "Smoke test FAILED after 5 attempts"
+          exit 1
+
+
+
+      - name: k6 smoke test against staging
+        if: needs.build-and-push.outputs.environment == 'staging'
+        uses: grafana/k6-action@4a6b9900c8d502fc34e3b00c2c5e4ab51c50d2e0  # v0.3.1
+        # Uses pre-built k6 Docker image — no apt-get install, saves ~60s per deploy
+        with:
+          filename: load/smoke.k6.js
+          flags: --no-color --exit-on-running -e BASE_URL=https://api-staging.religiogram.com
+          fail_on_threshold: true   # exits non-zero if any k6 threshold is breached
+        env:
+          TEST_TOKEN: ${{ secrets.CI_SMOKE_TEST_TOKEN }}
+        # Fail the deploy if smoke p95 > 500ms or error rate > 1%
+
+      - name: Rollback on smoke test failure
+        if: failure()
+        run: |
+          echo "Smoke test failed — rolling back deployment"
+          kubectl rollout undo deployment/api --namespace religiogram
+          kubectl rollout status deployment/api --namespace religiogram --timeout=120s
+
+      - name: Notify Slack on success
+        if: success()
+        uses: slackapi/slack-github-action@37ebaef184d7626c5f204ab8d3baff4262dd30f0  # v1.26.0
+        with:
+          payload: |
+            {
+              "text": ":white_check_mark: *Deployed* `${{ needs.build-and-push.outputs.image_tag }}` to *${{ needs.build-and-push.outputs.environment }}*",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":white_check_mark: *${{ needs.build-and-push.outputs.environment }}* deploy succeeded\n*Image:* `${{ needs.build-and-push.outputs.image_tag }}`\n*Commit:* <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>\n*Author:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL:  ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@37ebaef184d7626c5f204ab8d3baff4262dd30f0  # v1.26.0
+        with:
+          payload: |
+            {
+              "text": ":x: *Deploy FAILED* for `${{ needs.build-and-push.outputs.image_tag }}` on *${{ needs.build-and-push.outputs.environment }}*",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":x: *${{ needs.build-and-push.outputs.environment }}* deploy *failed*\n*Image:* `${{ needs.build-and-push.outputs.image_tag }}`\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>\n*Author:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL:  ${{ secrets.SLACK_DEPLOY_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK

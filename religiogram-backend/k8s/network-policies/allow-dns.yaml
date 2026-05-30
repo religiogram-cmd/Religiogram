@@ -1,0 +1,35 @@
+---
+# ── Allow DNS egress ──────────────────────────────────────────────────────────
+#
+# All pods need to resolve DNS (port 53 UDP/TCP to kube-dns).
+# Without this, all container DNS lookups silently fail after default-deny
+# is applied, breaking service discovery.
+#
+# kube-dns lives in the kube-system namespace on ClusterIP 10.96.0.10
+# (standard kubeadm) and on pods labelled k8s-app=kube-dns.
+# We match by namespace + label instead of IP so the policy is portable.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: religiogram
+  labels:
+    component: network-security
+spec:
+  podSelector: {}   # all pods
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

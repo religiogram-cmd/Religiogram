@@ -1,0 +1,116 @@
+---
+# ── kafka-exporter Deployment ─────────────────────────────────────────────────
+#
+# Exposes Kafka broker + consumer-group lag metrics for Prometheus.
+# Prometheus scrape config: config/prometheus/prometheus.yml (job: kafka-exporter)
+# Alert rules:             config/prometheus/rules/kafka-lag.yml
+# Grafana dashboard:       config/grafana/provisioning/dashboards/kafka-lag.json
+#
+# Key metrics:
+#   kafka_consumergroup_lag{consumergroup,topic,partition}   — per-partition lag
+#   kafka_consumergroup_lag_sum{consumergroup,topic}          — summed lag per topic
+#   kafka_topic_partition_under_replicated_partition          — broker health
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-exporter
+  namespace: religiogram
+  labels:
+    app: kafka-exporter
+    component: monitoring
+    tier: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-exporter
+  template:
+    metadata:
+      labels:
+        app: kafka-exporter
+        component: monitoring
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9308"
+        prometheus.io/path: /metrics
+    spec:
+      containers:
+        - name: kafka-exporter
+          image: danielqsj/kafka-exporter:v1.7.0
+          args:
+            - --kafka.server=$(KAFKA_BOOTSTRAP_SERVERS_0)
+            - --kafka.server=$(KAFKA_BOOTSTRAP_SERVERS_1)
+            - --kafka.version=3.5.0
+            - --web.listen-address=:9308
+            - --web.telemetry-path=/metrics
+            - --topic.filter=.*
+            - --group.filter=.*
+            - --log.level=warn
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS_0
+              value: "kafka:29092"
+            - name: KAFKA_BOOTSTRAP_SERVERS_1
+              value: "kafka2:9093"
+          ports:
+            - containerPort: 9308
+              name: metrics
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 9308
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9308
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-exporter
+  namespace: religiogram
+  labels:
+    app: kafka-exporter
+    component: monitoring
+spec:
+  selector:
+    app: kafka-exporter
+  ports:
+    - port: 9308
+      targetPort: 9308
+      name: metrics
+  type: ClusterIP
+---
+# ── ServiceMonitor for Prometheus Operator ────────────────────────────────────
+# If you use the kube-prometheus-stack Helm chart, the Prometheus Operator will
+# automatically discover this ServiceMonitor and scrape kafka-exporter.
+# Remove this resource if you manage prometheus.yml manually.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-exporter
+  namespace: religiogram
+  labels:
+    app: kafka-exporter
+    release: kube-prometheus-stack   # must match prometheusSpec.serviceMonitorSelector
+spec:
+  selector:
+    matchLabels:
+      app: kafka-exporter
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+      scheme: http

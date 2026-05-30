@@ -1,0 +1,345 @@
+{
+  "annotations": { "list": [] },
+  "description": "ReligioGram API — HTTP SLOs, wallet correctness, bookings, consultations, payments, fraud, notifications",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Kafka Lag",  "url": "/d/rg-kafka-lag/religiogram-kafka-lag",         "type": "dashboards" },
+    { "title": "PostgreSQL", "url": "/d/rg-postgres-overview/religiogram-postgresql-overview", "type": "dashboards" }
+  ],
+  "panels": [
+
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 200, "title": "HTTP SLOs", "type": "row" },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Total HTTP requests per second across all pods.",
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1, "type": "stat",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "title": "Request Rate",
+      "targets": [{ "expr": "sum(rate(rg_http_requests_total[2m]))", "legendFormat": "RPS", "refId": "A" }]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Percentage of 5xx responses. Alert: >1% warn, >5% critical.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 0.01 },
+            { "color": "red",    "value": 0.05 }
+          ] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2, "type": "stat",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "title": "Error Rate (5xx)",
+      "targets": [{
+        "expr": "sum(rate(rg_http_requests_total{status_code=~\"5..\"}[2m])) / sum(rate(rg_http_requests_total[2m]))",
+        "legendFormat": "Error %", "refId": "A"
+      }]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "p99 response time. Alert: >2000ms.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 500 },
+            { "color": "red",    "value": 2000 }
+          ] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 3, "type": "stat",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "title": "p99 Latency",
+      "targets": [{
+        "expr": "histogram_quantile(0.99, sum(rate(rg_http_request_duration_ms_bucket[5m])) by (le))",
+        "legendFormat": "p99", "refId": "A"
+      }]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "p50 (median) response time.",
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 4, "type": "stat",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "title": "p50 Latency",
+      "targets": [{
+        "expr": "histogram_quantile(0.50, sum(rate(rg_http_request_duration_ms_bucket[5m])) by (le))",
+        "legendFormat": "p50", "refId": "A"
+      }]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "HTTP requests per second by status code bucket over time.",
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "2xx" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "4xx" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "5xx" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "id": 5, "type": "timeseries",
+      "title": "Request Rate by Status",
+      "targets": [
+        { "expr": "sum(rate(rg_http_requests_total{status_code=~\"2..\"}[2m]))", "legendFormat": "2xx", "refId": "A" },
+        { "expr": "sum(rate(rg_http_requests_total{status_code=~\"4..\"}[2m]))", "legendFormat": "4xx", "refId": "B" },
+        { "expr": "sum(rate(rg_http_requests_total{status_code=~\"5..\"}[2m]))", "legendFormat": "5xx", "refId": "C" }
+      ]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Latency percentiles over time.",
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "id": 6, "type": "timeseries",
+      "title": "Response Time Percentiles",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(rg_http_request_duration_ms_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(rg_http_request_duration_ms_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(rg_http_request_duration_ms_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "id": 201, "title": "💰 Wallet Correctness (CRITICAL)", "type": "row" },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "MUST BE ZERO AT ALL TIMES. Any increment = double-charge incident. Pages on-call immediately.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "red",   "value": 1 }
+          ] },
+          "mappings": [{ "type": "value", "options": { "0": { "text": "OK", "color": "green" } } }]
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 14 },
+      "id": 20, "type": "stat",
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background", "graphMode": "none" },
+      "title": "Duplicate Idempotency Key Violations (MUST = 0)",
+      "targets": [{
+        "expr": "increase(rg_wallet_debit_duplicate_key_violations_total[24h])",
+        "legendFormat": "Violations (24h)", "refId": "A"
+      }]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Wallet debit operations per second, split by result (success / error).",
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 5, "w": 9, "x": 6, "y": 14 },
+      "id": 21, "type": "timeseries",
+      "title": "Wallet Debit Rate",
+      "targets": [
+        { "expr": "sum(rate(rg_wallet_debit_total{result=\"success\"}[2m]))", "legendFormat": "success", "refId": "A" },
+        { "expr": "sum(rate(rg_wallet_debit_total{result=\"error\"}[2m]))",   "legendFormat": "error",   "refId": "B" }
+      ]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Wallet debit transaction duration percentiles.",
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "gridPos": { "h": 5, "w": 9, "x": 15, "y": 14 },
+      "id": 22, "type": "timeseries",
+      "title": "Wallet Debit Duration",
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum(rate(rg_wallet_debit_duration_ms_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "A" },
+        { "expr": "histogram_quantile(0.99, sum(rate(rg_wallet_debit_duration_ms_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "B" }
+      ]
+    },
+
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 19 },
+      "id": 202, "title": "Bookings & Consultations", "type": "row" },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Active consultation sessions right now.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 100 },
+            { "color": "red",    "value": 200 }
+          ] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 20 },
+      "id": 30, "type": "stat",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "title": "Active Consultations",
+      "targets": [{ "expr": "rg_consultation_active_sessions", "legendFormat": "Active", "refId": "A" }]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Bookings created per minute.",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 20 },
+      "id": 31, "type": "stat",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "title": "Bookings / min",
+      "targets": [{ "expr": "sum(rate(rg_booking_created_total[1m])) * 60", "legendFormat": "Bookings/min", "refId": "A" }]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Booking completion rate (completed / created over 1h).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red",    "value": null },
+            { "color": "yellow", "value": 0.6 },
+            { "color": "green",  "value": 0.8 }
+          ] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 20 },
+      "id": 32, "type": "stat",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "title": "Booking Completion Rate",
+      "targets": [{
+        "expr": "sum(rate(rg_booking_completed_total[1h])) / sum(rate(rg_booking_created_total[1h]))",
+        "legendFormat": "Completion %", "refId": "A"
+      }]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Consultation session drop rate per second.",
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 20 },
+      "id": 33, "type": "stat",
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "title": "Session Drop Rate",
+      "targets": [{ "expr": "sum(rate(rg_consultation_drops_total[2m]))", "legendFormat": "Drops/s", "refId": "A" }]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Bookings created vs completed vs cancelled over time.",
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 34, "type": "timeseries",
+      "title": "Booking Funnel",
+      "targets": [
+        { "expr": "sum(rate(rg_booking_created_total[5m]))",   "legendFormat": "Created",   "refId": "A" },
+        { "expr": "sum(rate(rg_booking_completed_total[5m]))", "legendFormat": "Completed", "refId": "B" },
+        { "expr": "sum(rate(rg_booking_cancelled_total[5m]))", "legendFormat": "Cancelled", "refId": "C" },
+        { "expr": "sum(rate(rg_booking_payment_failed_total[5m]))", "legendFormat": "Payment Failed", "refId": "D" }
+      ]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Active consultation sessions and billing tick rate over time.",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 35, "type": "timeseries",
+      "title": "Consultation Sessions",
+      "targets": [
+        { "expr": "rg_consultation_active_sessions", "legendFormat": "Active Sessions", "refId": "A" },
+        { "expr": "sum(rate(rg_consultation_ticks_total[1m])) * 60", "legendFormat": "Billing Ticks/min", "refId": "B" },
+        { "expr": "sum(rate(rg_consultation_drops_total[1m])) * 60", "legendFormat": "Drops/min", "refId": "C" }
+      ]
+    },
+
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "id": 203, "title": "Payments & Fraud", "type": "row" },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Payment capture and failure rates over time.",
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "id": 40, "type": "timeseries",
+      "title": "Payment Capture Rate",
+      "targets": [
+        { "expr": "sum(rate(rg_payment_captured_total[2m]))", "legendFormat": "Captured", "refId": "A" },
+        { "expr": "sum(rate(rg_payment_failed_total[2m]))",   "legendFormat": "Failed",   "refId": "B" }
+      ]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Fraud signal detections and account suspensions.",
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+      "id": 41, "type": "timeseries",
+      "title": "Fraud Engine Activity",
+      "targets": [
+        { "expr": "sum(rate(rg_fraud_signals_total[5m]))",      "legendFormat": "Signals/s",     "refId": "A" },
+        { "expr": "sum(rate(rg_fraud_suspensions_total[5m]))",  "legendFormat": "Suspensions/s", "refId": "B" }
+      ]
+    },
+
+    { "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "id": 204, "title": "Search & Notifications", "type": "row" },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "OpenSearch query rate and p99 latency.",
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 42 },
+      "id": 50, "type": "timeseries",
+      "title": "Search Latency",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(rg_search_latency_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(rg_search_latency_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(rg_search_latency_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+
+    {
+      "datasource": { "type": "prometheus" },
+      "description": "Push notification dispatch and failure rates.",
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 42 },
+      "id": 51, "type": "timeseries",
+      "title": "Push Notification Throughput",
+      "targets": [
+        { "expr": "sum(rate(rg_notification_dispatch_total[2m]))", "legendFormat": "Dispatched", "refId": "A" },
+        { "expr": "sum(rate(rg_notification_failure_total[2m]))",  "legendFormat": "Failed",     "refId": "B" }
+      ]
+    }
+
+  ],
+  "refresh": "15s",
+  "schemaVersion": 38,
+  "tags": ["api", "slo", "business", "religiogram"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "ReligioGram — API Overview",
+  "uid": "rg-api-overview",
+  "version": 1
+}

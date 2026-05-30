@@ -1,0 +1,169 @@
+---
+# ──────────────────────────────────────────────────────────────────────────────
+#  ReligioGram — Kafka consumer-lag alert rules
+#
+#  Metrics exposed by kafka-exporter (danielqsj/kafka-exporter):
+#    kafka_consumergroup_lag{consumergroup, topic, partition}
+#      Current lag for a single partition (leader offset − consumer offset).
+#    kafka_consumergroup_lag_sum{consumergroup, topic}
+#      Sum of per-partition lags across all partitions of a topic.
+#
+#  Severity definitions:
+#    warning  — lag growing; investigate within 30 minutes
+#    critical — lag dangerously high; page on-call immediately
+#
+#  Silencing during deployments:
+#    When deploying, silence the "warning" alerts for 15 minutes via
+#    Alertmanager inhibition rules or a manual silence.
+# ──────────────────────────────────────────────────────────────────────────────
+groups:
+
+  - name: kafka_consumer_lag
+    interval: 30s
+    rules:
+
+      # ── Warning: lag > 10 000 messages sustained for 5 minutes ───────────
+      # At 1M users this corresponds to roughly 10–30 seconds of processing
+      # backlog depending on message rate. Investigate consumer health.
+      - alert: KafkaConsumerLagWarning
+        expr: |
+          kafka_consumergroup_lag_sum > 10000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: >-
+            Kafka consumer lag is elevated
+            (group={{ $labels.consumergroup }}, topic={{ $labels.topic }})
+          description: >-
+            Consumer group "{{ $labels.consumergroup }}" on topic "{{ $labels.topic }}"
+            has accumulated {{ $value | humanize }} unprocessed messages for > 5 minutes.
+            Current lag sum: {{ $value }}.
+            Check consumer pod health, CPU/memory, and downstream dependencies
+            (DB, Redis, external APIs).
+          runbook: https://github.com/religiogram/religiogram-backend/blob/main/deploy/PRODUCTION_READINESS.md#kafka-consumer-lag
+
+      # ── Critical: lag > 100 000 messages sustained for 2 minutes ─────────
+      # At 1M users this represents 2–5 minutes of unprocessed events.
+      # Fan-out, notifications, and billing events are delayed. Page immediately.
+      - alert: KafkaConsumerLagCritical
+        expr: |
+          kafka_consumergroup_lag_sum > 100000
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: >-
+            CRITICAL: Kafka consumer lag is very high
+            (group={{ $labels.consumergroup }}, topic={{ $labels.topic }})
+          description: >-
+            Consumer group "{{ $labels.consumergroup }}" on topic "{{ $labels.topic }}"
+            has {{ $value | humanize }} unprocessed messages for > 2 minutes.
+            This is a critical backlog — user-facing features may be degraded:
+            • feed fan-out delayed (rg.social topic)
+            • push notifications delayed (rg.notifications topic)
+            • billing events delayed (rg.billing topic)
+            Immediately check: consumer pod logs, DLQ depth, and broker health.
+          runbook: https://github.com/religiogram/religiogram-backend/blob/main/deploy/PRODUCTION_READINESS.md#kafka-consumer-lag
+
+      # ── Warning: consumer group has no committed offset (new group / stalled) ─
+      # A group with zero committed offset may be newly deployed (OK) or stalled.
+      # Wait 10 minutes before alerting to allow normal startup.
+      - alert: KafkaConsumerGroupNoOffset
+        expr: |
+          kafka_consumergroup_lag > 0
+          unless
+          kafka_consumergroup_current_offset > 0
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: >-
+            Kafka consumer group has no committed offset
+            (group={{ $labels.consumergroup }}, topic={{ $labels.topic }})
+          description: >-
+            Consumer group "{{ $labels.consumergroup }}" shows lag on topic
+            "{{ $labels.topic }}" but has never committed a consumer offset.
+            This may indicate a newly started group that hasn't processed any
+            messages yet, or a consumer that is failing before commit.
+          runbook: https://github.com/religiogram/religiogram-backend/blob/main/deploy/PRODUCTION_READINESS.md#kafka-consumer-lag
+
+  # ── Kafka broker health ────────────────────────────────────────────────────
+  - name: kafka_broker_health
+    interval: 30s
+    rules:
+
+      # Alert if kafka-exporter itself is down (scrape fails)
+      - alert: KafkaExporterDown
+        expr: up{job="kafka-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: Kafka exporter is down — consumer lag metrics unavailable
+          description: >-
+            The kafka-exporter target at {{ $labels.instance }} has been unreachable
+            for > 2 minutes. Consumer lag alerting is BLIND. Check the kafka-exporter
+            container and network connectivity to the Kafka brokers.
+
+      # Alert if any broker goes offline (topic under-replicated partitions proxy)
+      - alert: KafkaUnderReplicatedPartitions
+        expr: kafka_topic_partition_under_replicated_partition > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: >-
+            Kafka has under-replicated partitions
+            (topic={{ $labels.topic }})
+          description: >-
+            Topic "{{ $labels.topic }}" has {{ $value }} under-replicated partitions.
+            This means a broker is behind or offline. Data is safe (leader has all data)
+            but durability is reduced until replication catches up.
+            Check broker logs: docker compose logs kafka kafka2
+
+  # ── API-level metrics ──────────────────────────────────────────────────────
+  - name: religiogram_api
+    interval: 30s
+    rules:
+
+      # High error rate (5xx) on the API
+      - alert: ApiHighErrorRate
+        expr: |
+          (
+            sum(rate(http_request_duration_ms_count{status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_request_duration_ms_count[5m]))
+          ) > 0.01
+        for: 3m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: API 5xx error rate > 1%
+          description: >-
+            More than 1% of API requests are returning 5xx errors over the last 5 minutes.
+            Current rate: {{ $value | humanizePercentage }}.
+            Check application logs and recent deployments.
+
+      # P99 latency > 2 seconds
+      - alert: ApiHighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(http_request_duration_ms_bucket[5m]))
+          ) > 2000
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: API P99 latency > 2 s
+          description: >-
+            The 99th percentile API response time has been above 2 000 ms for > 5 minutes.
+            Current P99: {{ $value | humanizeDuration }}.
+            Check DB query plans, Redis cache hit rate, and external API latencies.

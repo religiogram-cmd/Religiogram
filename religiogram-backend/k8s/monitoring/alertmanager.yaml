@@ -1,0 +1,243 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  Alertmanager K8s Deployment
+#
+#  FIX: Alertmanager does not expand ${VAR} shell-style placeholders at runtime.
+#  Solution: An init container runs envsubst to render the config template into
+#  a writable emptyDir volume before the main container starts.
+#
+#  The config template (config/alertmanager/alertmanager.yml) is mounted read-only
+#  as "config-template". The init container writes the rendered file to
+#  "config-rendered", which the main Alertmanager container reads.
+#
+#  Secrets are injected via the alertmanager-secrets Secret (see alertmanager-secrets.yaml).
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: religiogram
+  labels:
+    app: alertmanager
+    component: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+        component: observability
+    spec:
+      initContainers:
+        - name: config-renderer
+          image: bhgedigital/envsubst:v1.2.0
+          command:
+            - /bin/sh
+            - -c
+            - envsubst < /config-template/alertmanager.yml > /config/alertmanager.yml
+          volumeMounts:
+            - name: config-template
+              mountPath: /config-template
+            - name: config-rendered
+              mountPath: /config
+          envFrom:
+            - secretRef:
+                name: alertmanager-secrets
+
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.27.0
+          args:
+            - '--config.file=/etc/alertmanager/alertmanager.yml'
+            - '--storage.path=/alertmanager'
+            - '--web.external-url=http://alertmanager.religiogram.svc.cluster.local:9093'
+            - '--log.level=warn'
+          ports:
+            - name: http
+              containerPort: 9093
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - name: config-rendered   # rendered config (not template)
+              mountPath: /etc/alertmanager
+            - name: alertmanager-storage
+              mountPath: /alertmanager
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9093
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9093
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+      volumes:
+        - name: config-template
+          configMap:
+            name: alertmanager-config-template
+        - name: config-rendered
+          emptyDir: {}
+        - name: alertmanager-storage
+          emptyDir: {}
+
+---
+# ConfigMap holding the raw template (with ${VAR} placeholders).
+# The init container renders this into config-rendered volume.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config-template
+  namespace: religiogram
+  labels:
+    app: alertmanager
+    component: observability
+data:
+  alertmanager.yml: |
+    # Template rendered by init container via envsubst.
+    # Do not edit the rendered /etc/alertmanager/alertmanager.yml directly.
+    # Edit this ConfigMap instead, then restart the pod to re-render.
+    # See config/alertmanager/alertmanager.yml for the full template source.
+    global:
+      resolve_timeout: 5m
+      slack_api_url: '${SLACK_WEBHOOK_URL}'
+      smtp_smarthost:     'smtp.gmail.com:587'
+      smtp_from:          'alerts@religiogram.app'
+      smtp_auth_username: 'alerts@religiogram.app'
+      smtp_auth_password: '${SMTP_PASSWORD}'
+      smtp_require_tls:   true
+
+    templates:
+      - '/etc/alertmanager/templates/*.tmpl'
+
+    inhibit_rules:
+      - source_matchers:
+          - 'severity="critical"'
+        target_matchers:
+          - 'severity="warning"'
+        equal: ['alertname', 'instance']
+
+    route:
+      receiver: 'slack-warnings'
+      group_by: ['alertname', 'cluster', 'team']
+      group_wait:      30s
+      group_interval:  5m
+      repeat_interval: 4h
+      routes:
+        - matchers:
+            - 'alertname="WalletDuplicateIdempotencyViolation"'
+          receiver: 'pagerduty-critical'
+          group_wait:      0s
+          group_interval:  1m
+          repeat_interval: 30m
+          continue: true
+        - matchers:
+            - 'severity="critical"'
+          receiver: 'pagerduty-critical'
+          group_wait:     10s
+          group_interval: 2m
+          repeat_interval: 1h
+          continue: true
+        - matchers:
+            - 'team="payments"'
+          receiver: 'slack-payments'
+          continue: false
+        - matchers:
+            - 'severity="warning"'
+          receiver: 'slack-warnings'
+
+    receivers:
+      - name: 'slack-warnings'
+        slack_configs:
+          - api_url: 'https://hooks.slack.com/services/${SLACK_WEBHOOK_URL}'
+            channel: '#alerts'
+            send_resolved: true
+            username: 'ReligioGram Alertmanager'
+            icon_emoji: ':bell:'
+            color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
+            title: >-
+              [{{ .Status | toUpper }}{{ if eq .Status "firing" }} ({{ .Alerts.Firing | len }}){{ end }}]
+              {{ .GroupLabels.alertname }}
+            text: >-
+              {{ range .Alerts }}
+              *Alert:* {{ .Annotations.summary }}
+              *Severity:* {{ .Labels.severity }}
+              *Description:* {{ .Annotations.description }}
+              *Instance:* {{ .Labels.instance }}
+              {{ end }}
+
+      - name: 'pagerduty-critical'
+        pagerduty_configs:
+          - routing_key: '${PAGERDUTY_INTEGRATION_KEY}'
+            send_resolved: true
+            severity: '{{ if eq .CommonLabels.severity "critical" }}critical{{ else }}warning{{ end }}'
+            summary: '{{ .CommonAnnotations.summary }}'
+            description: '{{ .CommonAnnotations.description }}'
+            details:
+              cluster:   '{{ .CommonLabels.cluster }}'
+              env:       '{{ .CommonLabels.env }}'
+              team:      '{{ .CommonLabels.team }}'
+              alertname: '{{ .CommonLabels.alertname }}'
+            client:     'ReligioGram Alertmanager'
+            client_url: 'http://prometheus.religiogram.svc.cluster.local:9090'
+        slack_configs:
+          - api_url: 'https://hooks.slack.com/services/${SLACK_WEBHOOK_URL}'
+            channel: '#alerts'
+            send_resolved: true
+            username: 'ReligioGram Alertmanager'
+            icon_emoji: ':rotating_light:'
+            color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+            title: >-
+              :rotating_light: [CRITICAL{{ if eq .Status "firing" }} FIRING ({{ .Alerts.Firing | len }}){{ end }}]
+              {{ .GroupLabels.alertname }}
+            text: >-
+              {{ range .Alerts }}
+              *Alert:* {{ .Annotations.summary }}
+              *Description:* {{ .Annotations.description }}
+              *Instance:* {{ .Labels.instance }}
+              {{ end }}
+
+      - name: 'slack-payments'
+        slack_configs:
+          - api_url: '${PAYMENTS_SLACK_WEBHOOK_URL}'
+            channel: '#payments-alerts'
+            send_resolved: true
+            username: 'ReligioGram Payments'
+            icon_emoji: ':moneybag:'
+            color: '{{ if eq .Status "firing" }}{{ if eq .CommonLabels.severity "critical" }}danger{{ else }}warning{{ end }}{{ else }}good{{ end }}'
+            title: >-
+              [{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}
+            text: >-
+              {{ range .Alerts }}
+              *Alert:* {{ .Annotations.summary }}
+              *Severity:* {{ .Labels.severity }}
+              *Description:* {{ .Annotations.description }}
+              {{ end }}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: religiogram
+  labels:
+    app: alertmanager
+    component: observability
+spec:
+  selector:
+    app: alertmanager
+  ports:
+    - name: http
+      port: 9093
+      targetPort: 9093
+  type: ClusterIP

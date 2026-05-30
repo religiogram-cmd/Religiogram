@@ -1,0 +1,113 @@
+---
+# ── HorizontalPodAutoscaler — API pods ────────────────────────────────────────
+#
+# Scales the api Deployment (which wraps api-1 and api-2 replicas) between
+# 2 and 10 pods based on CPU utilization.
+#
+# Scale-out triggers (OR logic — any one condition triggers scale-out):
+#   1. Average CPU utilization > 70% across all pods
+#   2. Custom metric: http_requests_per_second > 500 / pod
+#      (requires prometheus-adapter to be installed; see below)
+#
+# Scale-in is delayed 5 minutes (stabilizationWindowSeconds=300) to prevent
+# flapping during bursty traffic patterns.
+#
+# ── Prerequisites ────────────────────────────────────────────────────────────
+# For the custom RPS metric to work, you must install the Prometheus Adapter:
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm install prometheus-adapter prometheus-community/prometheus-adapter \
+#     --namespace monitoring \
+#     --set prometheus.url=http://prometheus.religiogram.svc.cluster.local \
+#     --set prometheus.port=9090
+#
+# Then add a custom metric rule to the adapter config:
+#   - seriesQuery: 'http_request_duration_ms_count{namespace!="",pod!=""}'
+#     resources:
+#       overrides:
+#         namespace: {resource: "namespace"}
+#         pod: {resource: "pod"}
+#     name:
+#       matches: "^(.*)_count"
+#       as: "http_requests_per_second"
+#     metricsQuery: 'sum(rate(<<.Series>>{<<.LabelMatchers>>}[2m])) by (<<.GroupBy>>)'
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-hpa
+  namespace: religiogram
+  labels:
+    app: api
+    component: autoscaling
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api            # must match the Deployment name in your api manifest
+
+  minReplicas: 2
+  maxReplicas: 20  # lakh-scale: supports up to 20 API pods
+
+  metrics:
+    # ── Metric 1: CPU utilization ─────────────────────────────────────────────
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # ── Metric 2: HTTP requests per second (custom — requires prometheus-adapter)
+    # Remove this block if prometheus-adapter is not installed.
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "500"   # scale out when any pod exceeds 500 RPS
+
+  behavior:
+    # Scale OUT fast — add pods quickly under load
+    scaleUp:
+      stabilizationWindowSeconds: 60     # wait 1 min of sustained load before scaling out
+      policies:
+        - type: Pods
+          value: 2                       # add at most 2 pods per scaling event
+          periodSeconds: 60
+        - type: Percent
+          value: 100                     # or double the current count, whichever is larger
+          periodSeconds: 60
+      selectPolicy: Max
+
+    # Scale IN slowly — avoid flapping
+    scaleDown:
+      stabilizationWindowSeconds: 300    # wait 5 min of low load before scaling in
+      policies:
+        - type: Pods
+          value: 1                       # remove at most 1 pod per scaling event
+          periodSeconds: 120
+      selectPolicy: Min
+---
+# ── PodDisruptionBudget — prevent all pods going down during rolling deploys ──
+#
+# minAvailable=1 ensures at least 1 API pod is always running during:
+#   • Rolling deployments (kubectl rollout restart)
+#   • Node maintenance (kubectl drain)
+#   • Cluster autoscaler node removal
+#
+# This prevents 100% downtime during cluster operations when only 2 replicas
+# are running (which happens at minimum scale).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-pdb
+  namespace: religiogram
+  labels:
+    app: api
+    component: availability
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: api

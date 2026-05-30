@@ -1,0 +1,54 @@
+# ── Source / build artefacts ──────────────────────────────────────────────────
+node_modules
+dist
+coverage
+*.tgz
+
+# ── Version control ───────────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+
+# ── Secrets — NEVER bake into image ──────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+secrets/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Test artefacts ────────────────────────────────────────────────────────────
+test/
+**/*.spec.ts
+**/*.e2e-spec.ts
+jest.config.*
+jest-e2e.json
+
+# ── Documentation ─────────────────────────────────────────────────────────────
+*.md
+docs/
+
+# ── IDE / editor configs ───────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ── Docker files (don't recurse into themselves) ──────────────────────────────
+Dockerfile
+Dockerfile.*
+docker-compose*.yml
+.dockerignore
+
+# ── CI / deploy tooling ───────────────────────────────────────────────────────
+.github/
+deploy/
+k8s/
+scripts/

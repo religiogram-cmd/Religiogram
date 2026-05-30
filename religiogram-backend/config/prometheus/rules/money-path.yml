@@ -1,0 +1,220 @@
+# ──────────────────────────────────────────────────────────────────────────────
+#  PR3: Money-path Prometheus alert rules
+#
+#  Covers the gaps identified in the v11 audit:
+#    • Cost-lock budget exhaustion (AI + OTP spend)
+#    • BullMQ dead-letter queue (DLQ) depth
+#    • Refund and payout success rate
+#    • Queue depth (backlog for refunds / payouts / webhooks)
+#    • Wallet reconciliation drift
+#
+#  Metric names must match what the NestJS services emit.
+# ──────────────────────────────────────────────────────────────────────────────
+
+groups:
+
+  # ── Cost Lock ─────────────────────────────────────────────────────────────
+  - name: cost_lock
+    rules:
+
+      - alert: AiDailyBudgetNearExhaustion
+        expr: |
+          rg_cost_lock_ai_spend_paise_total
+          / ignoring(job) rg_cost_lock_ai_limit_paise
+          > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "AI daily budget >90% consumed"
+          description: >-
+            AI spend has exceeded 90% of the daily cost-lock limit.
+            Automatic lockout will occur at 100%. Check ai_orchestrator logs.
+
+      - alert: AiDailyBudgetExhausted
+        expr: |
+          rg_cost_lock_ai_spend_paise_total
+          >= ignoring(job) rg_cost_lock_ai_limit_paise
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "AI daily budget EXHAUSTED — all AI features locked"
+          description: >-
+            The daily AI cost cap has been hit. All AI endpoints are now
+            returning 429. Rotate limit or wait for midnight UTC reset.
+
+      - alert: OtpDailyBudgetNearExhaustion
+        expr: |
+          rg_cost_lock_otp_spend_total
+          / ignoring(job) rg_cost_lock_otp_limit
+          > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "OTP daily budget >85% consumed"
+          description: >-
+            OTP SMS spend is nearing the daily ceiling. New OTP sends may start
+            failing for users who hit their per-user cap.
+
+  # ── Dead Letter Queue ──────────────────────────────────────────────────────
+  - name: dlq
+    rules:
+
+      - alert: DlqDepthHigh
+        expr: rg_bullmq_dlq_depth > 50
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "BullMQ DLQ depth > 50 (queue={{ $labels.queue }})"
+          description: >-
+            The dead-letter queue for {{ $labels.queue }} has {{ $value }}
+            failed jobs. Investigate via GET /v1/admin/dlq. Replay with
+            POST /v1/admin/dlq/:id/replay.
+
+      - alert: DlqDepthCritical
+        expr: rg_bullmq_dlq_depth > 200
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "BullMQ DLQ CRITICAL: {{ $value }} jobs in {{ $labels.queue }}"
+          description: >-
+            Over 200 failed jobs in DLQ {{ $labels.queue }}. This typically
+            indicates a systemic failure (DB down, external API unreachable).
+            Immediate investigation required.
+
+  # ── Refund Success Rate ────────────────────────────────────────────────────
+  - name: refunds
+    rules:
+
+      - alert: RefundSuccessRateLow
+        expr: |
+          rate(rg_refund_completed_total[10m])
+          / (rate(rg_refund_completed_total[10m]) + rate(rg_refund_failed_total[10m]) + 1e-9)
+          < 0.95
+        for: 10m
+        labels:
+          severity: warning
+          team: payments
+        annotations:
+          summary: "Refund success rate < 95% over last 10 minutes"
+          description: >-
+            Refund failure rate has elevated above 5%. This may indicate
+            Razorpay API issues or wallet credit failures. Check refund
+            processor logs and the DLQ.
+
+      - alert: RefundSuccessRateCritical
+        expr: |
+          rate(rg_refund_completed_total[10m])
+          / (rate(rg_refund_completed_total[10m]) + rate(rg_refund_failed_total[10m]) + 1e-9)
+          < 0.80
+        for: 5m
+        labels:
+          severity: critical
+          team: payments
+        annotations:
+          summary: "Refund success rate CRITICAL: < 80%"
+          description: >-
+            More than 20% of refunds are failing. Customers are not receiving
+            their money. Check Razorpay status page and refund processor DLQ
+            immediately.
+
+  # ── Payout Success Rate ────────────────────────────────────────────────────
+  - name: payouts
+    rules:
+
+      - alert: PayoutSuccessRateLow
+        expr: |
+          rate(rg_payout_completed_total[30m])
+          / (rate(rg_payout_completed_total[30m]) + rate(rg_payout_failed_total[30m]) + 1e-9)
+          < 0.98
+        for: 15m
+        labels:
+          severity: warning
+          team: payments
+        annotations:
+          summary: "Payout success rate < 98% over last 30 minutes"
+          description: >-
+            Payout failure rate > 2%. Provider settlements may be delayed.
+            Check RazorpayX API and payout processor logs.
+
+      - alert: PayoutBatchStuck
+        expr: |
+          rg_payout_batch_age_seconds{status="in_settlement"} > 3600
+        for: 5m
+        labels:
+          severity: critical
+          team: payments
+        annotations:
+          summary: "Payout batch {{ $labels.batch_id }} stuck in IN_SETTLEMENT > 1h"
+          description: >-
+            A payout batch has been in IN_SETTLEMENT status for over 1 hour.
+            This suggests the Razorpay call succeeded but the status update
+            failed, or the batch processor is hung. Check payout.service logs.
+
+  # ── BullMQ Queue Depth ─────────────────────────────────────────────────────
+  - name: queue_depth
+    rules:
+
+      - alert: RefundQueueBacklogHigh
+        expr: rg_bullmq_waiting_total{queue="refunds"} > 500
+        for: 5m
+        labels:
+          severity: warning
+          team: payments
+        annotations:
+          summary: "Refund queue backlog > 500 ({{ $value }} waiting)"
+          description: >-
+            The refunds BullMQ queue has a backlog of {{ $value }} jobs.
+            Workers may be under-scaled or the processor is stuck. Check
+            refund processor health.
+
+      - alert: WebhookQueueBacklogHigh
+        expr: rg_bullmq_waiting_total{queue="webhook-events"} > 1000
+        for: 5m
+        labels:
+          severity: warning
+          team: payments
+        annotations:
+          summary: "Webhook queue backlog > 1000 ({{ $value }} waiting)"
+          description: >-
+            Razorpay webhooks are queuing up faster than they are being
+            processed. Check webhook processor health and consider scaling up.
+
+  # ── Wallet Reconciliation Drift ────────────────────────────────────────────
+  - name: wallet_recon
+    rules:
+
+      - alert: WalletReconDriftHigh
+        expr: abs(rg_wallet_recon_drift_paise) > 10000
+        for: 10m
+        labels:
+          severity: warning
+          team: payments
+        annotations:
+          summary: "Wallet reconciliation drift > ₹100 ({{ $value }} paise)"
+          description: >-
+            The difference between the sum of ledger entries and wallet balances
+            exceeds ₹100. This may indicate a missed credit/debit or a race
+            condition in the wallet engine. Review recent reconciliation logs.
+
+      - alert: WalletReconDriftCritical
+        expr: abs(rg_wallet_recon_drift_paise) > 100000
+        for: 5m
+        labels:
+          severity: critical
+          team: payments
+        annotations:
+          summary: "Wallet reconciliation CRITICAL drift > ₹1000"
+          description: >-
+            Wallet reconciliation drift exceeds ₹1000. Data integrity is at
+            risk. Halt new payouts and investigate immediately.
+            P0 incident — page on-call lead.
