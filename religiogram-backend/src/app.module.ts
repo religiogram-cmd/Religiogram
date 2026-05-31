@@ -18,7 +18,6 @@ import { UploadsModule } from './uploads/uploads.module';
 import { TemplesModule } from './temples/temples.module';
 import { PlacesModule } from './places/places.module';
 import { PriestsModule } from './priests/priests.module';
-import { OpenSearchModule } from './opensearch/opensearch.module';
 import { ReportsModule } from './reports/reports.module';
 import { AdminModule } from './admin/admin.module';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -243,7 +242,6 @@ import { MemoryMonitor } from './common/health/memory-monitor.service';
     EventsModule,
     PartmanModule,
     RedisModule,
-    OpenSearchModule,
     AlertsModule,
     EmailModule,
     AppCacheModule,
@@ -346,4 +344,5 @@ export class AppModule implements NestModule {
     consumer.apply(ReadAffinityMiddleware).forRoutes('*');
   }
 }
+
 

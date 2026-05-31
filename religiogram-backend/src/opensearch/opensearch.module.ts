@@ -1,11 +1,10 @@
-import { Global, Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Client } from '@opensearch-project/opensearch';
 import { ProviderIndexService } from './provider-index.service';
 
 export const OPENSEARCH_CLIENT = 'OPENSEARCH_CLIENT';
 
-@Global()
 @Module({
   imports: [ConfigModule],
   providers: [
@@ -24,3 +23,4 @@ export const OPENSEARCH_CLIENT = 'OPENSEARCH_CLIENT';
   exports: [OPENSEARCH_CLIENT, ProviderIndexService],
 })
 export class OpenSearchModule {}
+
