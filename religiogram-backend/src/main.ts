@@ -1,4 +1,4 @@
-// MUST be the very first import — OTel patches http/https/pg/ioredis before
+﻿// MUST be the very first import â€” OTel patches http/https/pg/ioredis before
 // NestJS requires them, ensuring outbound spans carry W3C traceparent headers.
 import './tracing';
 
@@ -27,7 +27,7 @@ if (process.env.SENTRY_DSN) {
       const name: string = (ctx.name ?? '') as string;
       const moneyPath = /\/(payments|wallet|bookings|payouts)\//i;
       if (moneyPath.test(name)) {
-        return 1.0; // 100 % — never miss a money-path trace
+        return 1.0; // 100 % â€” never miss a money-path trace
       }
       return 0.1;   // 10 % default
     },
@@ -135,15 +135,15 @@ import { LoadSheddingMiddleware } from './common/middleware/load-shedding.middle
 
 const logger = new Logger('Bootstrap');
 
-/* ─── Process-level safety net ────────────────────────────────────────────
+/* â”€â”€â”€ Process-level safety net â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *  These catch async errors that escape all try/catch blocks and would
  *  otherwise silently swallow exceptions or crash the pod without a trace.
- * ─────────────────────────────────────────────────────────────────────── */
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 process.on('unhandledRejection', (reason: unknown) => {
   logger.error(
     `Unhandled promise rejection: ${reason instanceof Error ? reason.stack : String(reason)}`,
   );
-  // Do NOT exit — NestJS + Express will handle the in-flight request
+  // Do NOT exit â€” NestJS + Express will handle the in-flight request
   // through the global exception filter. Exiting here would drop live traffic.
 });
 
@@ -156,11 +156,11 @@ process.on('uncaughtException', (err: Error) => {
 });
 
 async function bootstrap(): Promise<void> {
-  /* ── §4.3 Hard env-var enforcement ─────────────────────────────────────────
+  /* â”€â”€ Â§4.3 Hard env-var enforcement â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    *  Refuse to boot in production if any required secret is absent.
    *  Better to crash at startup with a clear message than to serve partial
    *  requests and discover the gap at 2 AM under live traffic.
-   * ────────────────────────────────────────────────────────────────────────*/
+   * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€*/
   if (process.env.NODE_ENV === 'production') {
     const required = [
       'DATABASE_URL', 'REDIS_URL', 'JWT_PRIVATE_KEY', 'JWT_PUBLIC_KEY',
@@ -223,24 +223,24 @@ async function bootstrap(): Promise<void> {
 
   const config = app.get(ConfigService);
 
-  // ── Trust proxy hops (v6 P3): env-tunable for CloudFront -> ALB topologies ──
+  // â”€â”€ Trust proxy hops (v6 P3): env-tunable for CloudFront -> ALB topologies â”€â”€
   // Default 1 = ALB / nginx only. Set TRUST_PROXY_HOPS=2 if you're behind
   // CloudFront -> ALB (or any 2-hop chain) so req.ip resolves correctly past
   // both hops. Higher than 3 is almost never correct.
   app.set('trust proxy', Math.max(1, Math.min(3, parseInt(process.env.TRUST_PROXY_HOPS ?? '1', 10))));
 
-  // ── Request-ID middleware — must be FIRST so all subsequent layers see it ──
+  // â”€â”€ Request-ID middleware â€” must be FIRST so all subsequent layers see it â”€â”€
   app.use(RequestIdMiddleware.middleware);
 
-  // ── Load shedding — before security headers so it runs early ──
+  // â”€â”€ Load shedding â€” before security headers so it runs early â”€â”€
   const loadShedder = new LoadSheddingMiddleware();
   app.use(loadShedder.use.bind(loadShedder));
 
-  // ── Security headers (HSTS, CSP, X-Frame, etc.) ──
+  // â”€â”€ Security headers (HSTS, CSP, X-Frame, etc.) â”€â”€
   const secHeaders = new SecurityHeadersMiddleware(config);
   app.use(secHeaders.use.bind(secHeaders));
 
-  // ── Security ──
+  // â”€â”€ Security â”€â”€
   app.use(helmet({
     contentSecurityPolicy: false,      // custom SecurityHeadersMiddleware owns this
     crossOriginEmbedderPolicy: false,  // custom SecurityHeadersMiddleware owns this
@@ -254,7 +254,7 @@ async function bootstrap(): Promise<void> {
   app.use(json({ limit: '100kb' }));
   app.use(urlencoded({ extended: true, limit: '100kb' }));
 
-  // ── Validation ──
+  // â”€â”€ Validation â”€â”€
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -265,11 +265,11 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  // ── URI versioning (/v1/…) ──
+  // â”€â”€ URI versioning (/v1/â€¦) â”€â”€
   app.enableVersioning({ type: VersioningType.URI });
 
-  // ── CORS ──
-  // P0-4: In production, CORS_ORIGINS MUST be explicitly set — never use wildcard.
+  // â”€â”€ CORS â”€â”€
+  // P0-4: In production, CORS_ORIGINS MUST be explicitly set â€” never use wildcard.
   // Failing to set this in production means all origins are allowed, which is a
   // security risk for a financial-transaction app. Fail fast at startup instead.
   const allowedOrigins = config.get<string[]>('app.corsOrigins', []);
@@ -289,7 +289,7 @@ async function bootstrap(): Promise<void> {
     exposedHeaders: ['X-Request-Id'],
   });
 
-  // ── Swagger (non-production only) ──
+  // â”€â”€ Swagger (non-production only) â”€â”€
   if (process.env.NODE_ENV !== 'production') {
     const { SwaggerModule, DocumentBuilder } = await import('@nestjs/swagger');
     const swaggerConfig = new DocumentBuilder()
@@ -314,7 +314,7 @@ async function bootstrap(): Promise<void> {
     const swaggerPass = process.env.SWAGGER_PASS;
     if ((swaggerUser && !swaggerPass) || (!swaggerUser && swaggerPass)) {
       logger.warn(
-        'Swagger UI will be unprotected — both SWAGGER_USER and SWAGGER_PASS must be set to enable basic auth',
+        'Swagger UI will be unprotected â€” both SWAGGER_USER and SWAGGER_PASS must be set to enable basic auth',
       );
     }
     if (swaggerUser && swaggerPass) {
@@ -339,24 +339,24 @@ async function bootstrap(): Promise<void> {
     SwaggerModule.setup('api/docs', app, document, {
       swaggerOptions: { persistAuthorization: true },
     });
-    logger.log('Swagger UI → /api/docs');
+    logger.log('Swagger UI â†’ /api/docs');
   }
 
-  // ── DB pool observer ──
+  // â”€â”€ DB pool observer â”€â”€
   const dataSource = app.get(DataSource);
   const alerts = app.get(AlertsService);
   attachPoolObserver(dataSource, alerts);
 
-  // ── Enable shutdown hooks — NestJS calls onModuleDestroy() on SIGTERM ──
+  // â”€â”€ Enable shutdown hooks â€” NestJS calls onModuleDestroy() on SIGTERM â”€â”€
   app.enableShutdownHooks();
 
   const port = config.get<number>('port', 3000);
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   logger.log(
     `[Worker ${process.pid}] Listening on :${port} [${process.env.NODE_ENV ?? 'development'}]`,
   );
 
-  /* ── Graceful shutdown ──────────────────────────────────────────────────
+  /* â”€â”€ Graceful shutdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    *  When the container orchestrator sends SIGTERM:
    *    1. Stop accepting new connections
    *    2. Wait up to SHUTDOWN_TIMEOUT_MS for in-flight requests to finish
@@ -365,11 +365,11 @@ async function bootstrap(): Promise<void> {
    *
    *  Without this, a rolling deploy kills pods mid-request, causing
    *  client-visible 502 / 504 errors.
-   * ─────────────────────────────────────────────────────────────────────*/
+   * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€*/
   const shutdownTimeoutMs = config.get<number>('app.shutdownTimeoutMs', 15_000);
 
   const shutdown = async (signal: string) => {
-    logger.log(`${signal} received — starting graceful shutdown (${shutdownTimeoutMs}ms window)`);
+    logger.log(`${signal} received â€” starting graceful shutdown (${shutdownTimeoutMs}ms window)`);
     // Give the load balancer time to de-register this target before we
     // stop accepting connections. 2 s is enough for most ALB configs.
     await new Promise((r) => setTimeout(r, 2_000));
@@ -394,13 +394,13 @@ async function bootstrap(): Promise<void> {
   });
 }
 
-/* Cluster mode ─────────────────────────────────────────────────────────────
+/* Cluster mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *  In production we fork one worker per CPU core via Node cluster so that
  *  all cores are utilised without running a separate PM2 config.
- *  Each worker calls bootstrap() independently — the OS load-balances
+ *  Each worker calls bootstrap() independently â€” the OS load-balances
  *  incoming TCP connections across workers automatically (REUSEPORT).
  *  If a worker crashes, the primary forks a replacement immediately.
- * ─────────────────────────────────────────────────────────────────────── */
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const useCluster =
   process.env.NODE_ENV === 'production' && process.env.CLUSTER !== 'false';
 
@@ -414,7 +414,7 @@ if (useCluster && cluster.isPrimary) {
     parseInt(process.env.WORKERS ?? String(os.cpus().length), 10),
     maxWorkers,
   );
-  logger.log(`Primary ${process.pid} — forking ${cpus} workers (poolSize=${poolSize}, cap=${maxWorkers})`);
+  logger.log(`Primary ${process.pid} â€” forking ${cpus} workers (poolSize=${poolSize}, cap=${maxWorkers})`);
   for (let i = 0; i < cpus; i++) cluster.fork();
   cluster.on('exit', (_worker, code) => {
     if (code !== 0) process.nextTick(() => cluster.fork());
@@ -422,3 +422,4 @@ if (useCluster && cluster.isPrimary) {
 } else {
   void bootstrap();
 }
+
