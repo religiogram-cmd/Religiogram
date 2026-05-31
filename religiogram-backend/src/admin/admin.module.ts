@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+﻿import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { BullModule } from "@nestjs/bullmq";
 import { DisputeModule } from "../dispute/dispute.module";
@@ -35,6 +35,7 @@ import { VerificationSubmission } from "../verification/entities/verification-su
 import { Booking } from "../bookings/entities/booking.entity";
 import { BookingsModule } from "../bookings/bookings.module";
 import { WalletModule } from '../wallet/wallet.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { WalletModule } from '../wallet/wallet.module';
     RedisModule,
     PartmanModule,
     WalletModule,
+    NotificationsModule,
     DisputeModule,
     BookingsModule,
     TypeOrmModule.forFeature([
@@ -76,3 +78,4 @@ import { WalletModule } from '../wallet/wallet.module';
   exports: [TypeOrmModule, AdminAuditService],
 })
 export class AdminModule {}
+
