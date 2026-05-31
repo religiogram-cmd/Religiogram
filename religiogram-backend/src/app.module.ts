@@ -1,4 +1,4 @@
-import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+﻿import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -18,6 +18,7 @@ import { UploadsModule } from './uploads/uploads.module';
 import { TemplesModule } from './temples/temples.module';
 import { PlacesModule } from './places/places.module';
 import { PriestsModule } from './priests/priests.module';
+import { OpenSearchModule } from './opensearch/opensearch.module';
 import { ReportsModule } from './reports/reports.module';
 import { AdminModule } from './admin/admin.module';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -156,7 +157,7 @@ import { MemoryMonitor } from './common/health/memory-monitor.service';
                 'req.headers.authorization',
                 'req.headers.cookie',
                 'res.headers["set-cookie"]',
-                // Request body — direct fields
+                // Request body â€” direct fields
                 'req.body.password',
                 'req.body.otp',
                 'req.body.pin',
@@ -164,7 +165,7 @@ import { MemoryMonitor } from './common/health/memory-monitor.service';
                 'req.body.refreshToken',
                 'req.body.accessToken',
                 'req.body.secret',
-                // Nested wildcards — catch any serialised object that holds tokens
+                // Nested wildcards â€” catch any serialised object that holds tokens
                 '*.token',
                 '*.refreshToken',
                 '*.accessToken',
@@ -190,7 +191,7 @@ import { MemoryMonitor } from './common/health/memory-monitor.service';
                 'req.body.accountNumber',
                 'req.body.ifsc',
                 'req.body.upi',
-                // Wildcard PII — catch nested serialised objects
+                // Wildcard PII â€” catch nested serialised objects
                 '*.email',
                 '*.dob',
                 '*.address',
@@ -224,7 +225,7 @@ import { MemoryMonitor } from './common/health/memory-monitor.service';
                   id: req.id,
                   method: req.method,
                   url: req.url,
-                  // Never log raw query strings — may contain tokens
+                  // Never log raw query strings â€” may contain tokens
                   query: req.query ? Object.keys(req.query) : undefined,
                 };
               },
@@ -242,6 +243,7 @@ import { MemoryMonitor } from './common/health/memory-monitor.service';
     EventsModule,
     PartmanModule,
     RedisModule,
+    OpenSearchModule,
     AlertsModule,
     EmailModule,
     AppCacheModule,
@@ -313,7 +315,7 @@ import { MemoryMonitor } from './common/health/memory-monitor.service';
 
     // -- P0-5: Global daily cost-lock (AI + OTP spend hard caps)
     CostLockModule,
-    EncryptionModule,     // @Global — provides EncryptionService to all modules
+    EncryptionModule,     // @Global â€” provides EncryptionService to all modules
     KafkaDlqModule,
   ],
   providers: [
@@ -344,3 +346,4 @@ export class AppModule implements NestModule {
     consumer.apply(ReadAffinityMiddleware).forRoutes('*');
   }
 }
+
