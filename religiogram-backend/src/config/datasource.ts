@@ -1,4 +1,4 @@
-import 'reflect-metadata';
+﻿import 'reflect-metadata';
 import { config as loadEnv } from 'dotenv';
 import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
@@ -8,18 +8,18 @@ const logger = new Logger('DataSource');
 loadEnv();
 
 /**
- * TypeORM CLI DataSource — used by `npm run migration:run / revert / generate`.
+ * TypeORM CLI DataSource â€” used by `npm run migration:run / revert / generate`.
  *
- * ── Why DATABASE_DIRECT_URL? ─────────────────────────────────────────────────
+ * â”€â”€ Why DATABASE_DIRECT_URL? â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * The production app routes Postgres connections through PgBouncer in transaction
  * pooling mode (DATABASE_VIA_PROXY=true). Transaction mode is optimal for app
  * traffic (many short queries, small pool footprint) but breaks TypeORM migrations
  * because:
  *
- *   • TypeORM acquires pg_advisory_lock() to serialize concurrent migration runners.
- *   • Advisory locks are SESSION-scoped. PgBouncer transaction mode can recycle the
+ *   â€¢ TypeORM acquires pg_advisory_lock() to serialize concurrent migration runners.
+ *   â€¢ Advisory locks are SESSION-scoped. PgBouncer transaction mode can recycle the
  *     underlying server connection between statements, silently releasing the advisory
- *     lock and allowing a second migration runner to proceed concurrently — corrupting
+ *     lock and allowing a second migration runner to proceed concurrently â€” corrupting
  *     the schema.
  *
  * Solution: the migration CLI always connects via DATABASE_DIRECT_URL, which bypasses
@@ -49,6 +49,7 @@ export default new DataSource({
   url,
   entities: ['src/**/*.entity.ts'],
   migrations: ['src/migrations/*.ts'],
+  migrationsTransactionMode: 'each',
   ssl: process.env.DATABASE_SSL === 'true'
     ? {
         rejectUnauthorized: true,
@@ -59,3 +60,4 @@ export default new DataSource({
     : false,
   logging: ['error', 'warn', 'migration'],
 });
+
