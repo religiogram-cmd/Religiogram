@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { UserFile } from './entities/user-file.entity';
@@ -7,7 +7,7 @@ import { UploadsController } from './uploads.controller';
 import { VIRUS_SCAN_QUEUE } from './processors/virus-scan.processor';
 import { VirusScanProcessor } from './processors/virus-scan.processor';
 import { FileHardeningService } from './file-hardening.service';
-import { UploadsCleanerProcessor } from './uploads-cleaner.processor';
+import { UploadsCleanerProcessor, UPLOADS_CLEANUP_QUEUE } from './uploads-cleaner.processor';
 import { UploadsCleanerScheduler } from './uploads-cleaner.scheduler';
 
 /**
@@ -18,6 +18,7 @@ import { UploadsCleanerScheduler } from './uploads-cleaner.scheduler';
   imports: [
     TypeOrmModule.forFeature([UserFile]),
     BullModule.registerQueue({ name: VIRUS_SCAN_QUEUE }),
+    BullModule.registerQueue({ name: UPLOADS_CLEANUP_QUEUE }),
   ],
   controllers: [UploadsController],
   providers: [
@@ -30,3 +31,4 @@ import { UploadsCleanerScheduler } from './uploads-cleaner.scheduler';
   exports: [UploadsService],
 })
 export class UploadsModule {}
+
