@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+﻿import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
 import { QueryPriestsDto, SortBy } from './dto/query-priests.dto';
@@ -13,10 +13,10 @@ export class PriestsService {
     @InjectRepository(Provider) private readonly providerRepo: Repository<Provider>,
     @InjectRepository(Booking)  private readonly bookingRepo: Repository<Booking>,
     private readonly catalogSvc: CatalogService,
-    private readonly providerIndex: ProviderIndexService,
+    @Optional() private readonly providerIndex?: ProviderIndexService,
   ) {}
 
-  // ── findAll — cursor-based pagination (no OFFSET) ─────────────────────────
+  // â”€â”€ findAll â€” cursor-based pagination (no OFFSET) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async findAll(dto: QueryPriestsDto): Promise<{
     data: Provider[];
     nextCursor: string | null;
@@ -28,13 +28,13 @@ export class PriestsService {
       .createQueryBuilder('p')
       .where('p.status = :status', { status: ProviderStatus.Approved });
 
-    // ── Cursor decode ──────────────────────────────────────────────────────
+    // â”€â”€ Cursor decode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Cursor shape depends on active sort:
     //   default: { mode:'default', isVerified, ratingAvg, id }
     //   RATING:  { mode:'rating',  ratingAvg, id }
     //   PRICE:   { mode:'price',   price, id }
     //   EXPERIENCE: { mode:'experience', experience, id }
-    //   legacy:  { createdAt, id }  — gracefully degraded to start-of-page
+    //   legacy:  { createdAt, id }  â€” gracefully degraded to start-of-page
     if (dto.cursor) {
       try {
         const decoded: Record<string, unknown> = JSON.parse(
@@ -67,13 +67,13 @@ export class PriestsService {
             { cur_e: decoded['experience'], cur_id: decoded['id'] },
           );
         }
-        // legacy cursor shape (createdAt+id) — ignore and restart from page 1
+        // legacy cursor shape (createdAt+id) â€” ignore and restart from page 1
       } catch {
-        // Malformed cursor — ignore and start from the beginning
+        // Malformed cursor â€” ignore and start from the beginning
       }
     }
 
-    // ── Filters ────────────────────────────────────────────────────────────
+    // â”€â”€ Filters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (dto.faith) {
       qb.andWhere('p.religion = :faith', { faith: dto.faith });
     }
@@ -89,12 +89,12 @@ export class PriestsService {
       // Route through OpenSearch for full-text search (avoids full table scan).
       // Falls back to Postgres FTS when OpenSearch returns no hits or errors.
       try {
-        const osResult = await this.providerIndex.search({
+        const osResult = (await this.providerIndex?.search({
           query: q,
           religion: dto.faith,
           city: dto.city,
           size: 200,
-        });
+        })) ?? { providers: [], total: 0 };
         if (osResult.providers.length > 0) {
           const ids = osResult.providers.map((p) => p.id);
           qb.andWhere('p.id IN (:...searchIds)', { searchIds: ids });
@@ -119,7 +119,7 @@ export class PriestsService {
       });
     }
 
-    // ── Price range filter (per-minute paise) ─────────────────────────────
+    // â”€â”€ Price range filter (per-minute paise) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (dto.minPrice != null) {
       qb.andWhere('p.per_minute_paise >= :minPrice', { minPrice: dto.minPrice });
     }
@@ -127,7 +127,7 @@ export class PriestsService {
       qb.andWhere('p.per_minute_paise <= :maxPrice', { maxPrice: dto.maxPrice });
     }
 
-    // ── Geo-distance filter ────────────────────────────────────────────────
+    // â”€â”€ Geo-distance filter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (dto.lat != null && dto.lng != null) {
       // Compute the distance as a named SELECT expression for ORDER BY DISTANCE support
       qb.addSelect(
@@ -148,7 +148,7 @@ export class PriestsService {
       }
     }
 
-    // ── Sort ───────────────────────────────────────────────────────────────
+    // â”€â”€ Sort â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     switch (dto.sortBy) {
       case SortBy.RATING:
         qb.orderBy('p.rating_avg', 'DESC', 'NULLS LAST')
@@ -215,7 +215,7 @@ export class PriestsService {
     return { data, nextCursor, hasMore };
   }
 
-  // ── findOne ────────────────────────────────────────────────────────────────
+  // â”€â”€ findOne â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async findOne(id: string): Promise<Provider> {
     const provider = await this.providerRepo.findOne({
       where: { id, status: ProviderStatus.Approved },
@@ -225,12 +225,12 @@ export class PriestsService {
     return provider;
   }
 
-  // ── getServices — live catalog, no hardcoded arrays ───────────────────────
+  // â”€â”€ getServices â€” live catalog, no hardcoded arrays â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async getServices(faith?: string) {
     return this.catalogSvc.listServices(faith);
   }
 
-  // ── getStats ──────────────────────────────────────────────────────────────
+  // â”€â”€ getStats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async getStats(providerId: string) {
     const provider = await this.findOne(providerId);
     const [totalBookings, completedBookings] = await Promise.all([
@@ -251,7 +251,7 @@ export class PriestsService {
     };
   }
 
-  // ── getOnlinePriests — bounded, correct fields ────────────────────────────
+  // â”€â”€ getOnlinePriests â€” bounded, correct fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async getOnlinePriests(faith?: string, limit = 20): Promise<Provider[]> {
     const safeLimit = Math.min(limit, 50);
     const qb = this.providerRepo
@@ -271,7 +271,7 @@ export class PriestsService {
       .getMany();
   }
 
-  // ── search — pg_trgm similarity ───────────────────────────────────────────
+  // â”€â”€ search â€” pg_trgm similarity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   async search(q: string, limit = 20): Promise<Provider[]> {
     const safeLimit = Math.min(limit, 50);
     const term = q.trim();
@@ -300,3 +300,4 @@ export class PriestsService {
       .getMany();
   }
 }
+

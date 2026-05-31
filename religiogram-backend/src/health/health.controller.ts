@@ -1,11 +1,11 @@
-import {
+﻿import {
   Controller,
   Get,
   HttpCode,
   HttpStatus,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { VERSION_NEUTRAL } from '@nestjs/common';
+import { VERSION_NEUTRAL, Optional } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { Public } from '../auth/decorators/public.decorator';
@@ -18,13 +18,13 @@ import { ProviderIndexService } from '../opensearch/provider-index.service';
 /**
  * Health endpoints for the load balancer and uptime monitors.
  *
- *   GET /v1/health        -> liveness  — process is alive (no I/O)
- *   GET /v1/health/ready  -> readiness — DB + Redis reachable, circuits checked
+ *   GET /v1/health        -> liveness  â€” process is alive (no I/O)
+ *   GET /v1/health/ready  -> readiness â€” DB + Redis reachable, circuits checked
  *
  * Liveness failing -> restart the container.
  * Readiness failing -> drain traffic WITHOUT restarting.
  *
- * Both are @Public — no JWT required so probes work without credentials.
+ * Both are @Public â€” no JWT required so probes work without credentials.
  */
 @Controller({ path: 'health', version: ['1', VERSION_NEUTRAL] })
 export class HealthController {
@@ -33,10 +33,10 @@ export class HealthController {
     private readonly redis: RedisService,
     private readonly cb: CircuitBreakerService,
     private readonly kafka: KafkaProducerService,
-    private readonly osearch: ProviderIndexService,
+    @Optional() private readonly osearch?: ProviderIndexService,
   ) {}
 
-  /** Liveness — cheap no-I/O check. Used by K8s/ECS to decide restart. */
+  /** Liveness â€” cheap no-I/O check. Used by K8s/ECS to decide restart. */
   @Public()
   @Get()
   @HttpCode(HttpStatus.OK)
@@ -50,12 +50,12 @@ export class HealthController {
   }
 
   /**
-   * Readiness — pings DB and Redis; returns 503 if either is down.
+   * Readiness â€” pings DB and Redis; returns 503 if either is down.
    * Also exposes circuit-breaker states, memory stats, and BullMQ queue depths.
    *
    * Queue depths surface:
-   *   waiting  — jobs queued but not yet picked up by a worker
-   *   failed   — jobs that exhausted all retries (DLQ candidates)
+   *   waiting  â€” jobs queued but not yet picked up by a worker
+   *   failed   â€” jobs that exhausted all retries (DLQ candidates)
    *
    * These counts are read directly from Redis key-length checks (LLEN /
    * ZCARD) so they add only 1 pipelined round-trip to the probe.
@@ -75,7 +75,7 @@ export class HealthController {
       this.checkDb(),
       this.checkRedis(),
       this.checkQueues(),
-      Promise.resolve(this.kafka.ping()),   // sync — no I/O; just returns this.connected
+      Promise.resolve(this.kafka.ping()),   // sync â€” no I/O; just returns this.connected
       this.checkOpenSearch(),
     ]);
 
@@ -107,7 +107,7 @@ export class HealthController {
    *   Waiting jobs  -> ZSET  {prefix}:{queue}:wait
    *   Failed jobs   -> ZSET  {prefix}:{queue}:failed
    *
-   * We use ZCARD (O(1)) via a single pipeline — one round-trip for all queues.
+   * We use ZCARD (O(1)) via a single pipeline â€” one round-trip for all queues.
    * Falls back to zeros on any Redis error so the health probe never 503s
    * purely because of a transient queue-stats hiccup.
    */
@@ -153,10 +153,11 @@ export class HealthController {
 
   /**
    * Pings OpenSearch cluster health endpoint (3 s timeout).
-   * Returns false if OS is unreachable — flagged as 'degraded' but does NOT
+   * Returns false if OS is unreachable â€” flagged as 'degraded' but does NOT
    * cause a 503 (so the pod stays in the load balancer).
    */
   private async checkOpenSearch(): Promise<boolean> {
-    return this.osearch.ping();
+    return this.osearch?.ping() ?? Promise.resolve(false);
   }
 }
+
