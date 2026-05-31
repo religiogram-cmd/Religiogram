@@ -56,4 +56,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 # tini is the init process; it execs node as PID > 1 so signals work correctly
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "dist/main"]
+CMD ["node", "dist/src/main"]
