@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   Injectable,
   Logger,
@@ -6,7 +6,7 @@ import {
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
 import { Readable } from 'stream';
-import { fileTypeFromBuffer } from 'file-type';
+import { fromBuffer } from 'file-type';
 import sharp from 'sharp';
 
 /**
@@ -14,14 +14,14 @@ import sharp from 'sharp';
  *
  * Performs three security checks on uploaded files after they land in S3:
  *
- *   1. Magic-byte MIME sniffing — rejects files whose actual content type
+ *   1. Magic-byte MIME sniffing â€” rejects files whose actual content type
  *      doesn't match what the client declared (prevents MIME confusion attacks).
  *
- *   2. Image-bomb protection — rejects images whose total pixel area exceeds
- *      the configured limit (prevents decompression bombs like 1×1-pixel
+ *   2. Image-bomb protection â€” rejects images whose total pixel area exceeds
+ *      the configured limit (prevents decompression bombs like 1Ã—1-pixel
  *      files that expand to gigabytes in memory).
  *
- *   3. EXIF stripping — removes all metadata from JPEG/PNG files before
+ *   3. EXIF stripping â€” removes all metadata from JPEG/PNG files before
  *      they are served publicly (prevents leaking GPS co-ordinates, device
  *      serial numbers, and other PII embedded by camera apps).
  *
@@ -36,7 +36,7 @@ export class FileHardeningService {
   private readonly s3: S3Client;
   private readonly bucket: string;
 
-  /** Maximum pixel area allowed — 4000×4000 = 16 MP. Exceeding this is likely
+  /** Maximum pixel area allowed â€” 4000Ã—4000 = 16 MP. Exceeding this is likely
    *  a decompression bomb (e.g. a tiny PNG that inflates to a huge bitmap). */
   private static readonly MAX_PIXEL_AREA = 4_000 * 4_000; // 16 megapixels
 
@@ -72,7 +72,7 @@ export class FileHardeningService {
 
   /**
    * Sniff the first 16 bytes from S3 using a Range GET.
-   * Fast — no full download needed.
+   * Fast â€” no full download needed.
    */
   async sniffMimeFromRange(key: string): Promise<string | undefined> {
     try {
@@ -84,7 +84,7 @@ export class FileHardeningService {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
       const header = Buffer.concat(chunks);
-      const detected = await fileTypeFromBuffer(header);
+      const detected = await fromBuffer(header);
       return detected?.mime;
     } catch (err) {
       this.logger.warn(`Magic-byte range read failed for key=${key}: ${(err as Error).message}`);
@@ -101,11 +101,11 @@ export class FileHardeningService {
     declaredMime: string,
     allowedSet: Set<string>,
   ): Promise<void> {
-    const detected = await fileTypeFromBuffer(buf);
+    const detected = await fromBuffer(buf);
     const realMime = detected?.mime;
 
     if (!realMime) {
-      // Can't determine type — reject if declared is an image/document we care about
+      // Can't determine type â€” reject if declared is an image/document we care about
       if (allowedSet.has(declaredMime)) {
         throw new BadRequestException(
           `Cannot determine file type. Expected ${declaredMime} but magic bytes are unrecognised.`,
@@ -122,7 +122,7 @@ export class FileHardeningService {
 
     if (realMime !== declaredMime) {
       this.logger.warn(
-        `MIME mismatch: declared="${declaredMime}" detected="${realMime}" — continuing with detected type`,
+        `MIME mismatch: declared="${declaredMime}" detected="${realMime}" â€” continuing with detected type`,
       );
       // Allow mismatches between equivalent image formats (e.g. image/jpg vs image/jpeg)
       // but block entirely different types (e.g. application/zip declared as image/png)
@@ -163,7 +163,7 @@ export class FileHardeningService {
       return 'hardened';
     }
 
-    // Non-image (e.g. PDF) — magic-byte check passed, nothing more to strip
+    // Non-image (e.g. PDF) â€” magic-byte check passed, nothing more to strip
     return 'skipped';
   }
 
@@ -181,7 +181,7 @@ export class FileHardeningService {
     mimeType: string,
   ): Promise<Buffer> {
     if (!FileHardeningService.ALLOWED_IMAGE_MIMES.has(mimeType)) {
-      // Not a raster image — no sharp processing needed
+      // Not a raster image â€” no sharp processing needed
       return buf;
     }
 
@@ -194,10 +194,10 @@ export class FileHardeningService {
 
     if (pixelArea > FileHardeningService.MAX_PIXEL_AREA) {
       this.logger.warn(
-        `Image-bomb rejected: key=${key} pixels=${pixelArea} (${width}×${height}) limit=${FileHardeningService.MAX_PIXEL_AREA}`,
+        `Image-bomb rejected: key=${key} pixels=${pixelArea} (${width}Ã—${height}) limit=${FileHardeningService.MAX_PIXEL_AREA}`,
       );
       throw new BadRequestException(
-        `Image dimensions too large (${width}×${height}). ` +
+        `Image dimensions too large (${width}Ã—${height}). ` +
           `Maximum allowed pixel area is ${FileHardeningService.MAX_PIXEL_AREA.toLocaleString()} pixels.`,
       );
     }
@@ -208,7 +208,7 @@ export class FileHardeningService {
     else if (mimeType === 'image/webp') outputFormat = 'webp';
 
     const clean = await image
-      .withMetadata({})      // strip EXIF — empty object removes all metadata
+      .withMetadata({})      // strip EXIF â€” empty object removes all metadata
       .toFormat(outputFormat, { quality: 85 })
       .toBuffer();
 
@@ -228,9 +228,10 @@ export class FileHardeningService {
       );
     } catch (err) {
       this.logger.error(`Failed to write hardened image back to S3: key=${key}`, err);
-      // Non-fatal — return clean buffer so caller can decide
+      // Non-fatal â€” return clean buffer so caller can decide
     }
 
     return clean;
   }
 }
+
