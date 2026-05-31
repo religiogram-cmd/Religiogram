@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Friendship } from './entities/friendship.entity';
@@ -22,6 +22,7 @@ import { FollowsController } from './follows.controller';
 import { CommunityController } from './community.controller';
 import { SocialGateway } from './social.gateway';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AuthModule } from '../auth/auth.module';
 import { RedisModule } from '../redis/redis.module';
 import { QUEUE } from '../common/queues/queue.constants';
 
@@ -46,6 +47,7 @@ import { QUEUE } from '../common/queues/queue.constants';
     // NotificationsService is used by CommunityController for /community/notifications/*
     NotificationsModule,
     RedisModule,
+    AuthModule,
   ],
   providers: [
     SocialService, StoryService, FeedService, FanOutProcessor, StoryExpiryProcessor, StoryExpiryScheduler, SocialGateway],
@@ -53,3 +55,4 @@ import { QUEUE } from '../common/queues/queue.constants';
   exports: [SocialService, StoryService, FeedService],
 })
 export class SocialModule {}
+
