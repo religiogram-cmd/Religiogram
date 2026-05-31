@@ -1,7 +1,6 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { HealthController } from './health.controller';
 import { EventsModule } from '../events/events.module';
-import { OpenSearchModule } from '../opensearch/opensearch.module';
 
 /**
  * Health module.
@@ -11,7 +10,8 @@ import { OpenSearchModule } from '../opensearch/opensearch.module';
  * ProviderIndexService -> OpenSearchModule (imported here for readiness check)
  */
 @Module({
-  imports: [EventsModule, OpenSearchModule],
+  imports: [EventsModule],
   controllers: [HealthController],
 })
 export class HealthModule {}
+
