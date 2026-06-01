@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/v1/:path*",
+      "destination": "https://religiogram-production.up.railway.app/v1/:path*"
+    }
+  ]
+}
