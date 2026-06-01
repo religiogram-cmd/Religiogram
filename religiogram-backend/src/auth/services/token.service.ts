@@ -144,8 +144,8 @@ export class TokenService {
   private async signAccessToken(userId: string, phone: string, role: UserRole, jti: string, deviceId?: string): Promise<string> {
     const payload: JwtPayload = { sub: userId, phone, role, type: 'access', jti, deviceId };
     return this.jwt.signAsync(payload, {
-      algorithm: 'RS256',
-      privateKey: this.privateKey,
+      algorithm: 'HS256',
+      secret: this.privateKey,
       expiresIn: this.accessTtl,
       issuer: this.issuer,
       audience: this.audience,
@@ -156,8 +156,8 @@ export class TokenService {
     // Refresh tokens carry minimal claims — sub + jti only. No PII.
     const payload = { sub: userId, jti, type: 'refresh' };
     return this.jwt.signAsync(payload, {
-      algorithm: 'RS256',
-      privateKey: this.privateKey,
+      algorithm: 'HS256',
+      secret: this.privateKey,
       expiresIn: this.refreshTtl,
       issuer: this.issuer,
       audience: this.audience,

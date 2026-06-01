@@ -33,8 +33,8 @@ export class JwtRefreshStrategy extends PassportStrategy(
         return (fromCookie as string | undefined) ?? (req?.body?.refreshToken ?? null);
       },
       ignoreExpiration: false,
-      secretOrKey: config.getOrThrow<string>('jwt.publicKey'),
-      algorithms: ['RS256'],
+      secretOrKey: config.getOrThrow<string>('jwt.privateKey'),
+      algorithms: ['HS256'],
       issuer: config.get<string>('jwt.issuer'),
       audience: config.get<string>('jwt.audience'),
     });

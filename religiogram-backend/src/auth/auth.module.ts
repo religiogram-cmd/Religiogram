@@ -33,8 +33,8 @@ import { AuthDevModule } from './auth-dev.module';
       useFactory: (config: ConfigService) => ({
         // Per-call signing options are set inside TokenService; this is the
         // default verify-side config.
-        publicKey: config.getOrThrow<string>('jwt.publicKey'),
-        signOptions: { algorithm: 'RS256' },
+        secret: config.getOrThrow<string>('jwt.privateKey'),
+   signOptions: { algorithm: 'HS256', expiresIn: '15m' },
       }),
     }),
     TypeOrmModule.forFeature([AuthEvent]),
