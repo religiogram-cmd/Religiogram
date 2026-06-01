@@ -340,7 +340,7 @@ export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
     // v9 (P1-3 fix): CSRF middleware runs globally; self-exempts safe methods +
     // bootstrap auth endpoints + Razorpay webhook.
-    consumer.apply(CsrfMiddleware).forRoutes('*');
+    // consumer.apply(CsrfMiddleware).forRoutes('*');
     consumer.apply(ReadAffinityMiddleware).forRoutes('*');
   }
 }
