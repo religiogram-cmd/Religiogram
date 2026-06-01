@@ -365,7 +365,7 @@ function KycConsole() {
   const loadQueue = (tab: 'queue' | 'approved') => {
     setLoading(true);
     const state = tab === 'queue' ? 'submitted' : 'approved';
-    get(`/api/v1/admin/verifications/queue?providerState=${state}&limit=50`)
+    get(`/admin/verifications/queue?providerState=${state}&limit=50`)
       .then(d => {
         setQueue(d?.items ?? d?.data ?? d ?? []);
         setLoading(false);
@@ -381,7 +381,7 @@ function KycConsole() {
     setRejectReason('');
     setInfoRequest('');
     try {
-      const res = await get(`/api/v1/admin/verifications/${rec.providerId}`);
+      const res = await get(`/admin/verifications/${rec.providerId}`);
       setVideoUrl(res?.kycVideoUrl ?? res?.data?.kycVideoUrl ?? null);
     } catch { /* ignore */ }
   };

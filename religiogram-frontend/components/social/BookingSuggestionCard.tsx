@@ -62,7 +62,7 @@ export default function BookingSuggestionCard({ religion, city }: { religion?: s
     params.set('limit', '1');
     params.set('availableNow', 'true');
 
-    fetch(`${API}/api/v1/providers/by-religion/${religion ?? 'hindu'}?${params}`, {
+    fetch(`${API}/providers/by-religion/${religion ?? 'hindu'}?${params}`, {
       headers: tok ? { Authorization: `Bearer ${tok}` } : {},
       cache: 'default',
     })
@@ -92,7 +92,7 @@ export default function BookingSuggestionCard({ religion, city }: { religion?: s
           const today = new Date().toISOString().slice(0, 10);
           try {
             const slotsRes = await fetch(
-              `${API}/api/v1/providers/${providerData.providerId}/slots?date=${today}&durationMinutes=60`,
+              `${API}/providers/${providerData.providerId}/slots?date=${today}&durationMinutes=60`,
               { headers: tok ? { Authorization: `Bearer ${tok}` } : {}, cache: 'default' },
             );
             if (slotsRes.ok) {

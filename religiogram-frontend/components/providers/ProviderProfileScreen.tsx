@@ -42,14 +42,14 @@ export default function ProviderProfileScreen({ providerId: _p, onBack, onBookNo
 
   useEffect(() => {
     if (!_p) return;
-    fetch(`/api/v1/providers/${_p}`, {
+    fetch(`/providers/${_p}`, {
       headers: { Authorization: `Bearer ${tokenStore.access ?? ''}` }
     })
       .then(r => r.json())
       .then(data => setProvider(data))
       .catch(console.error);
 
-    fetch(`/api/v1/catalog/services?providerId=${_p}`, {
+    fetch(`/catalog/services?providerId=${_p}`, {
       headers: { Authorization: `Bearer ${tokenStore.access ?? ''}` }
     })
       .then(r => r.json())
@@ -57,7 +57,7 @@ export default function ProviderProfileScreen({ providerId: _p, onBack, onBookNo
       .catch(console.error);
 
     // F3: Load real reviews
-    fetch(`/api/v1/reviews?targetId=${_p}&targetType=provider&limit=5`, {
+    fetch(`/reviews?targetId=${_p}&targetType=provider&limit=5`, {
       headers: { Authorization: `Bearer ${tokenStore.access ?? ''}` }
     })
       .then(r => r.ok ? r.json() : { items: [] })

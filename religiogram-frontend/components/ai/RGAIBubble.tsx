@@ -321,7 +321,7 @@ export default function RGAIBubble({ religion }: { religion?: string; userId?: s
 
     try {
       abortRef.current = new AbortController();
-      const res = await fetch(`${API}/api/v1/ai/chat`, {
+      const res = await fetch(`${API}/ai/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

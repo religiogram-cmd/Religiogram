@@ -98,7 +98,7 @@ export default function BookingCheckoutFlow({ providerId: _pid, serviceId, provi
   // Load services from catalog API
   useEffect(() => {
     if (!_pid) return;
-    fetch(`/api/v1/catalog/services?providerId=${_pid}`, {
+    fetch(`/catalog/services?providerId=${_pid}`, {
       headers: { Authorization: `Bearer ${tokenStore.access ?? ''}` }
     })
       .then(r => r.json())
@@ -151,7 +151,7 @@ export default function BookingCheckoutFlow({ providerId: _pid, serviceId, provi
     if (!day || !_pid) return;
     setLoadingSlots(true);
     const dateStr = new Date(yr, mo, day).toISOString().split('T')[0];
-    fetch(`/api/v1/availability/${_pid}/slots?date=${dateStr}`, {
+    fetch(`/availability/${_pid}/slots?date=${dateStr}`, {
       headers: { Authorization: `Bearer ${tokenStore.access ?? ''}` }
     })
       .then(r => r.ok ? r.json() : { slots: [] })
@@ -220,7 +220,7 @@ export default function BookingCheckoutFlow({ providerId: _pid, serviceId, provi
 
   // F5: Submit review after completion
   const submitReview = async () => {
-    await fetch('/api/v1/reviews', {
+    await fetch('/reviews', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenStore.access ?? ''}` },
       body: JSON.stringify({ targetId: _pid, targetType: 'provider', rating, body: reviewText, bookingId: confirmedBookingId })
@@ -239,7 +239,7 @@ export default function BookingCheckoutFlow({ providerId: _pid, serviceId, provi
         name: 'ReligioGram',
         description: 'Service Booking',
         handler: async (response: any) => {
-          await fetch('/api/v1/payments/verify-razorpay', {
+          await fetch('/payments/verify-razorpay', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenStore.access ?? ''}` },
             body: JSON.stringify({

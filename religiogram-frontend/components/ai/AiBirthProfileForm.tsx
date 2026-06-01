@@ -39,7 +39,7 @@ export default function AiBirthProfileForm({ onSave, onCancel }: Props) {
     try {
       const API = process.env.NEXT_PUBLIC_API_BASE ?? '';
       const tok = tokenStore.access ?? '';
-      const res = await fetch(`${API}/api/v1/ai/birth-profile`, {
+      const res = await fetch(`${API}/ai/birth-profile`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

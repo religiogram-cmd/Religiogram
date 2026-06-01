@@ -285,7 +285,7 @@ export default function ActiveSessionScreen({
       try {
         // Fetch TURN credentials from backend
         const tok = tokenStore.access ?? '';
-        const res = await fetch(`${API_BASE}/api/v1/consultations/turn-credentials`, {
+        const res = await fetch(`${API_BASE}/consultations/turn-credentials`, {
           headers: tok ? { Authorization: `Bearer ${tok}` } : {},
         });
         if (!res.ok) throw new Error(`TURN creds ${res.status}`);
@@ -381,7 +381,7 @@ export default function ActiveSessionScreen({
     // close the session on its own.
     try {
       const tok = tokenStore.access ?? '';
-      await fetch(`${API_BASE}/api/v1/consultation/${sessionId}/end`, {
+      await fetch(`${API_BASE}/consultation/${sessionId}/end`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -404,7 +404,7 @@ export default function ActiveSessionScreen({
     setUpgrading(true);
     try {
       const tok = tokenStore.access ?? '';
-      await fetch(`${API_BASE}/api/v1/consultation/${sessionId}/upgrade`, {
+      await fetch(`${API_BASE}/consultation/${sessionId}/upgrade`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -181,8 +181,8 @@ function PriestListView({mode,religion,onSelect,onBack}:{mode:'invite'|'online';
     const token = tokenStore.access ?? '';
     setLoading(true);
     const url = religion === 'all'
-      ? `${API_BASE}/api/v1/priests?serviceType=${serviceType}&page=1&limit=20`
-      : `${API_BASE}/api/v1/priests?religion=${apiReligion}&serviceType=${serviceType}&page=1&limit=20`;
+      ? `${API_BASE}/priests?serviceType=${serviceType}&page=1&limit=20`
+      : `${API_BASE}/priests?religion=${apiReligion}&serviceType=${serviceType}&page=1&limit=20`;
     fetch(url, { headers: token ? { 'Authorization': `Bearer ${token}` } : {} })
       .then(r=>r.json())
       .then(json=>{

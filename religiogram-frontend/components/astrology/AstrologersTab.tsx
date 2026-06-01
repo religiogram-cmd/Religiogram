@@ -193,7 +193,7 @@ function ConnectModal({ astrologer, mode, onClose }: { astrologer: Astrologer; m
     setErr('');
     try {
       const token = tokenStore.access ?? '';
-      const res = await fetch(`${API_BASE}/api/v1/bookings`, {
+      const res = await fetch(`${API_BASE}/bookings`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -304,7 +304,7 @@ export default function AstrologersTab() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`${API_BASE}/api/v1/priests?category=astrology&limit=20&page=1`)
+    fetch(`${API_BASE}/priests?category=astrology&limit=20&page=1`)
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then(data => {
         if (cancelled) return;

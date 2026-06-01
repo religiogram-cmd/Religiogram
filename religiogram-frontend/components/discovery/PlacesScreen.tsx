@@ -421,7 +421,7 @@ function PlacesInner() {
       });
       if (filters.status === 'open' || openOnly) qp.set('isOpen', 'true');
       if (debouncedSearch.trim()) qp.set('query', debouncedSearch.trim());
-      return fetch(`${API_BASE_URL}/api/v1/places?${qp}`, { headers, signal })
+      return fetch(`${API_BASE_URL}/places?${qp}`, { headers, signal })
         .then(r => r.ok ? r.json() : Promise.reject(new Error('not ok')))
         .then(data => {
           const items: any[] = data?.data ?? data?.places ?? data?.items ?? [];

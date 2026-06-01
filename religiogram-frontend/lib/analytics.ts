@@ -1,7 +1,7 @@
 /**
  * Analytics — fire-and-forget event beacon.
  *
- * Sends `POST /api/v1/analytics/event` in the background. Callers don't
+ * Sends `POST /analytics/event` in the background. Callers don't
  * await and don't need to handle errors. A failure is logged to the
  * console at `debug` level only — analytics must never break UX.
  *

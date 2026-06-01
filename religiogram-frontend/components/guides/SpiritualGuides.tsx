@@ -342,7 +342,7 @@ export default function SpiritualGuides() {
 
   // Load live guides from the API; fall back to static data if unavailable
   useEffect(() => {
-    fetch('/api/v1/providers?serviceType=all&limit=50', {
+    fetch('/providers?serviceType=all&limit=50', {
       headers: { Authorization: `Bearer ${tokenStore.access ?? ''}` },
     })
       .then(r => r.json())

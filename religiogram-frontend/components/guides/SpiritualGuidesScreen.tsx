@@ -352,7 +352,7 @@ function LiveProviderList({ religion, serviceType, mode }: { religion: string; s
     const token = tokenStore.access ?? '';
     setLoading(true);
     setError(null);
-    fetch(`${API_BASE}/api/v1/priests?religion=${apiReligion}&serviceType=${serviceType}&page=1&limit=20`, {
+    fetch(`${API_BASE}/priests?religion=${apiReligion}&serviceType=${serviceType}&page=1&limit=20`, {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {},
     })
       .then(r => r.json())

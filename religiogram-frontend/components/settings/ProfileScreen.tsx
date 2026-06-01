@@ -498,7 +498,7 @@ export default function ProfileScreen() {
     setIsDeleting(true);
     try {
       const token = tokenStore.access;
-      const res = await fetch('/api/v1/users/me', {
+      const res = await fetch('/users/me', {
         method: 'DELETE',
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),

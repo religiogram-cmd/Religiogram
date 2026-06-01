@@ -232,7 +232,7 @@ export default function OnlineConsultationScreen({ providerId, onBack, onStartSe
   useEffect(() => {
     const token = tokenStore.access;
     if (!token) return;
-    fetch(`${API}/api/v1/wallet/balance`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API}/wallet/balance`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d) setWalletBalance(d.balancePaise ? Math.round(d.balancePaise / 100) : (d.balance ?? 0)); })
       .catch(() => {});
@@ -242,8 +242,8 @@ export default function OnlineConsultationScreen({ providerId, onBack, onStartSe
   useEffect(() => {
     setLoading(true);
     const url = providerId
-      ? `${API}/api/v1/priests/${providerId}`
-      : `${API}/api/v1/priests?serviceType=online&limit=30`;
+      ? `${API}/priests/${providerId}`
+      : `${API}/priests?serviceType=online&limit=30`;
     const token = tokenStore.access;
     fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : {})
       .then(r => r.ok ? r.json() : null)
