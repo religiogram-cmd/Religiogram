@@ -14,7 +14,7 @@ import { SMS_QUEUE, SMS_JOB, type SendOtpJobData } from './sms.queue.constants';
 import { CostLockService } from '../common/cost-lock/cost-lock.service';
 
 /**
- * OTP Service — HMAC-SHA256 (NOT bcrypt).
+ * OTP Service â€” HMAC-SHA256 (NOT bcrypt).
  *
  * Why HMAC instead of bcrypt here:
  *   - OTP lives only 5 minutes. Slow hashing buys us nothing.
@@ -24,15 +24,15 @@ import { CostLockService } from '../common/cost-lock/cost-lock.service';
  *     brute force is impossible regardless of hash algorithm.
  *
  * Security properties:
- *   - Server-side secret key (OTP_SECRET) — attacker with DB dump cannot forge
- *   - timingSafeEqual — constant-time comparison
+ *   - Server-side secret key (OTP_SECRET) â€” attacker with DB dump cannot forge
+ *   - timingSafeEqual â€” constant-time comparison
  *   - Secret rotates with key rotation; old OTPs auto-expire via TTL
  *
  * Redis keys:
  *   otp:{phone}            => HMAC digest (hex), TTL 5 min
  *   otp:attempts:{phone}   => attempt counter, TTL 5 min
- *   otp:cooldown:{phone}   => "1", TTL 30s — blocks rapid resends
- *   otp:daily:{phone}      => send counter, TTL until midnight UTC — SMS bill protection
+ *   otp:cooldown:{phone}   => "1", TTL 30s â€” blocks rapid resends
+ *   otp:daily:{phone}      => send counter, TTL until midnight UTC â€” SMS bill protection
  *
  * SMS delivery:
  *   SMS is dispatched via BullMQ (async) instead of a blocking HTTP call.
@@ -66,31 +66,31 @@ export class OtpService {
     this.RESEND_COOLDOWN_SEC = this.config.get<number>('otp.resendCooldown', 30);
     this.OTP_SECRET = this.config.getOrThrow<string>('otp.secret');
     if (this.OTP_SECRET.length < 32) {
-      // Startup assertion — fail loudly before accepting any traffic
+      // Startup assertion â€” fail loudly before accepting any traffic
       throw new Error(
         'OTP_SECRET must be at least 32 chars. Use a cryptographically-random key.',
       );
     }
-    // Plan §8: 3 OTPs/user/day, 5/hour. Default keeps a small buffer for genuine
+    // Plan Â§8: 3 OTPs/user/day, 5/hour. Default keeps a small buffer for genuine
     // login retries while blocking SMS-blast abuse and WhatsApp billing runaway.
     this.SMS_DAILY_CEILING = this.config.get<number>('otp.smsDailyCeiling', 3);
     this.SMS_HOURLY_CEILING = this.config.get<number>('otp.smsHourlyCeiling', 5);
   }
 
   async generateAndSend(phone: string): Promise<void> {
-    // ── Global OTP cost lock (P0-5) — hard daily budget ceiling ──
+    // â”€â”€ Global OTP cost lock (P0-5) â€” hard daily budget ceiling â”€â”€
     // When total daily OTP spend reaches COST_LOCK_OTP_DAILY_RUPEES, no more OTPs
     // are sent until midnight UTC. This prevents a botnet attack from burning
     // the monthly WhatsApp budget in a single day.
     const otpLocked = await this.costLock.isOtpLocked();
     if (otpLocked) {
-      this.logger.error(`OTP cost lock active — daily budget reached. Blocking send to ***${phone.slice(-4)}`);
+      this.logger.error(`OTP cost lock active â€” daily budget reached. Blocking send to ***${phone.slice(-4)}`);
       throw new TooManyRequestsException(
         'OTP service is temporarily unavailable. Please try again tomorrow.',
       );
     }
 
-    // ── Per-user hourly SMS ceiling (plan §8: 5/hour) ──
+    // â”€â”€ Per-user hourly SMS ceiling (plan Â§8: 5/hour) â”€â”€
     // Atomic Lua script: INCR + conditional EXPIRE in a single round-trip.
     // Two-command INCR+EXPIRE is a race: if the process dies between them,
     // the key has no TTL and rate-limits never reset. Lua is atomic on Redis.
@@ -112,13 +112,13 @@ export class OtpService {
       );
     }
 
-    // ── Per-user daily SMS ceiling — defence against marketing-blast bills ──
+    // â”€â”€ Per-user daily SMS ceiling â€” defence against marketing-blast bills â”€â”€
     // Each calendar day (UTC) a phone number can receive at most SMS_DAILY_CEILING OTPs.
     // Counter expires at the next midnight UTC so it resets cleanly every 24 hours.
     const dailyKey = this.dailyKey(phone);
     const dailyCount = await this.redis.incr(dailyKey);
     if (dailyCount === 1) {
-      // First send today — set TTL to expire at next midnight UTC
+      // First send today â€” set TTL to expire at next midnight UTC
       const now = new Date();
       const midnight = new Date(
         Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
@@ -135,7 +135,7 @@ export class OtpService {
       );
     }
 
-    // ── Per-send resend cooldown (30 s default) ──
+    // â”€â”€ Per-send resend cooldown (30 s default) â”€â”€
     const cooldownKey = this.cooldownKey(phone);
     const inCooldown = await this.redis.get(cooldownKey);
     if (inCooldown) {
@@ -149,7 +149,7 @@ export class OtpService {
     const digest = this.hmac(phone, otp);
 
     // Store OTP + reset attempts + set cooldown in a single round trip.
-    // A previously-valid OTP for this phone is overwritten — this is intended
+    // A previously-valid OTP for this phone is overwritten â€” this is intended
     // so legitimate re-sends invalidate the prior code.
     const results = await this.redis
       .pipeline()
@@ -184,10 +184,10 @@ export class OtpService {
         removeOnComplete: { count: 1000, age: 3600 },
         removeOnFail: { count: 500, age: 24 * 3600 },
         // De-duplicate rapid resends within the cooldown window using the
-        // phone as the jobId — BullMQ silently drops a duplicate add().
+        // phone as the jobId â€” BullMQ silently drops a duplicate add().
         // P1-9 (v4): jobId is the phone alone so BullMQ actually dedups
         // rapid resends within the cooldown window.
-        jobId: `otp:${phone}`,
+        jobId: `otp_${phone}`,
       },
     );
 
@@ -197,7 +197,7 @@ export class OtpService {
   }
 
   async verify(phone: string, presented: string): Promise<void> {
-    // P3: k6 load-test bypass — accept the magic OTP '000000' in non-production
+    // P3: k6 load-test bypass â€” accept the magic OTP '000000' in non-production
     // environments only. This lets load-test VUs skip Redis OTP lookup so SMS
     // spend is zero during perf runs. Never honoured in production.
     if (
@@ -217,7 +217,7 @@ export class OtpService {
       throw new BadRequestException('OTP expired or not requested');
     }
 
-    // Atomic INCR is the gate — prevents N parallel verifies from each
+    // Atomic INCR is the gate â€” prevents N parallel verifies from each
     // squeezing under MAX_ATTEMPTS before any increment lands.
     const attempts = await this.redis.incr(attemptsKey);
     if (attempts === 1) {
@@ -244,7 +244,7 @@ export class OtpService {
     await this.redis.del(otpKey, attemptsKey);
   }
 
-  /* ──────────── private helpers ──────────── */
+  /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ private helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
   /** Cryptographically-random N-digit numeric OTP (never Math.random). */
   private generateOtp(): string {
@@ -294,3 +294,4 @@ export class OtpService {
     return `otp:hourly:${dt}:${phone}`;
   }
 }
+
