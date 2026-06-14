@@ -42,21 +42,7 @@ const API_BASE = (() => {
  * warning to console on every page load so it can never quietly become the
  * default again.
  * ══════════════════════════════════════════════════════════════════════ */
-const COOKIE_MODE: boolean = (() => {
-  if (typeof process === 'undefined') return true;
-  const transport = process.env.NEXT_PUBLIC_REFRESH_TOKEN_TRANSPORT;
-  if (transport === 'body') {
-    if (typeof window !== 'undefined') {
-      // eslint-disable-next-line no-console
-      console.warn(
-        '[ReligioGram] Refresh-token body mode is DEPRECATED and only safe for native apps without cookie support. ' +
-          'In a browser context this is a security regression — unset NEXT_PUBLIC_REFRESH_TOKEN_TRANSPORT to use cookie mode.',
-      );
-    }
-    return false;
-  }
-  return true;
-})();
+const COOKIE_MODE: boolean = false; // FORCED Bearer-token mode for cross-origin reliability
 
 function getCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
@@ -71,7 +57,7 @@ function getCookie(name: string): string | null {
  * live in an HttpOnly cookie by default; localStorage is used ONLY in
  * explicit body mode.
  */
-let accessTokenMem: string | null = null;
+let accessTokenMem: string | null = (typeof window !== 'undefined' ? (() => { try { return window.localStorage.getItem('rg_access'); } catch { return null; } })() : null);
 
 const REFRESH_STORAGE_KEY = 'rg_refresh';
 
