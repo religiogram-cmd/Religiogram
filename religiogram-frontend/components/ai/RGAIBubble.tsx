@@ -552,7 +552,7 @@ export default function RGAIBubble({ religion }: { religion?: string; userId?: s
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask me anything spiritual..."
+              placeholder="Ask me anything..."
               rows={1}
               disabled={streaming || recording}
               style={{ flex: 1, padding: '10px 14px', borderRadius: 20, border: `1.5px solid ${GOLD}40`, background: '#fff', fontSize: 14, resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.4 }}
