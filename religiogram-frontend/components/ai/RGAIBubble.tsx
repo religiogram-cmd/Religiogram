@@ -470,7 +470,7 @@ export default function RGAIBubble({ religion }: { religion?: string; userId?: s
 
           {/* Header */}
           <div style={{ background: `linear-gradient(135deg,${NAVY} 0%,#1e3a6e 100%)`, padding: '52px 20px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: '50%', background: `linear-gradient(135deg,${GOLD},#f59e0b)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><SparkleIcon /></div>
+            <div style={{ width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.25)', backgroundImage: `url('/rg-ai-button.png')`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundColor: '#0F2452', border: '2px solid rgba(255,255,255,0.15)' }} />
             <div style={{ flex: 1 }}>
               <div style={{ color: '#fff', fontWeight: 800, fontSize: 17 }}>RG AI</div>
               <div style={{ color: 'rgba(255,255,255,.6)', fontSize: 12 }}>Your Personal Spiritual Guide</div>
@@ -538,14 +538,14 @@ export default function RGAIBubble({ religion }: { religion?: string; userId?: s
               onTouchStart={handleMicPress}
               disabled={streaming}
               style={{ width: 40, height: 40, borderRadius: '50%', background: recording ? '#ef4444' : '#f3f4f6', border: 'none', cursor: streaming ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18, transition: 'background .2s', animation: recording ? 'rgai-record 1s infinite' : 'none' }}
-            >&#x1F3A4;</button>
+            ><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={recording ? "#fff" : "#4b5563"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
 
             {/* Image */}
             <button
               onClick={() => imageInputRef.current?.click()}
               disabled={streaming}
               style={{ width: 40, height: 40, borderRadius: '50%', background: pendingImage ? `linear-gradient(135deg,${GOLD},#f59e0b)` : '#f3f4f6', border: 'none', cursor: streaming ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18, transition: 'background .2s' }}
-            >&#x1F4F7;</button>
+            ><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={pendingImage ? "#fff" : "#4b5563"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
 
             {/* Text input */}
             <textarea
