@@ -15,9 +15,31 @@ export class CreatePostDto {
   caption?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(2200)
+  @Transform(({ value }) => stripHtml(value))
+  text?: string;
+
+  @IsOptional()
   @IsArray()
   @IsUrl({}, { each: true })
   imageUrls?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsUrl({}, { each: true })
+  photoUrls?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  hashtags?: string[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  category?: string;
 }
 
 export class CreateCommunityPostDto {

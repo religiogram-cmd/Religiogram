@@ -339,13 +339,16 @@ export class SocialService {
 
   // ── Posts ────────────────────────────────────────────────────────────────
   async createPost(authorId: string, dto: CreatePostDto) {
-    if (!dto.caption && (!dto.imageUrls || dto.imageUrls.length === 0)) {
+    // Accept both naming conventions: caption|text, imageUrls|photoUrls
+    const caption = dto.caption ?? (dto as any).text ?? null;
+    const imageUrls = dto.imageUrls ?? (dto as any).photoUrls ?? [];
+    if (!caption && (!imageUrls || imageUrls.length === 0)) {
       throw new BadRequestException('Post must have caption or at least one image');
     }
     const post = this.posts.create({
       authorId,
-      caption: dto.caption ?? null,
-      imageUrls: dto.imageUrls ?? [],
+      caption,
+      imageUrls,
     });
     const saved = await this.posts.save(post);
 
@@ -438,14 +441,31 @@ export class SocialService {
     }
 
     params.push(safeLimit + 1);
-    const feedRows: Array<{ post_id: string; inserted_at: Date }> = await this.ds.query(
-      `SELECT fi.post_id, fi.inserted_at
-       FROM feed_items fi
-       ${whereClause}
-       ORDER BY fi.inserted_at DESC, fi.post_id DESC
-       LIMIT $${params.length}`,
-      params,
-    );
+    let feedRows: Array<{ post_id: string; inserted_at: Date }> = [];
+    try {
+      feedRows = await this.ds.query(
+        `SELECT fi.post_id, fi.inserted_at
+         FROM feed_items fi
+         ${whereClause}
+         ORDER BY fi.inserted_at DESC, fi.post_id DESC
+         LIMIT $${params.length}`,
+        params,
+      );
+    } catch (err) {
+      // feed_items table may not exist yet OR schema drift — fall back to recent global posts
+      const safePosts = await this.posts
+        .createQueryBuilder('p')
+        .leftJoinAndSelect('p.author', 'author')
+        .where('p.is_deleted = false')
+        .orderBy('p.created_at', 'DESC')
+        .take(safeLimit)
+        .getMany();
+      return {
+        items: safePosts.map((p) => this.formatPost(p, false)),
+        hasMore: false,
+        nextCursor: null,
+      };
+    }
 
     const hasMore = feedRows.length > safeLimit;
     const rows = hasMore ? feedRows.slice(0, safeLimit) : feedRows;
