@@ -79,12 +79,6 @@ export default function CommunityScreen() {
         padding: '20px 18px 0',
         overflow: 'hidden',
       }}>
-        {/* faint mandala in corner */}
-        <div aria-hidden style={{
-          position: 'absolute', top: -30, left: -30, width: 160, height: 160,
-          background: 'radial-gradient(circle, rgba(232,169,47,0.15) 0%, rgba(232,169,47,0) 60%)',
-          pointerEvents: 'none',
-        }} />
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, position: 'relative' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 style={{
