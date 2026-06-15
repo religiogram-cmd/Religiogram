@@ -120,36 +120,6 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
   return (
     <div style={{ padding: '12px 12px 24px' }}>
 
-      {/* ── Share-with-community card with 5 circle icons ─── */}
-      <section style={{
-        background: '#FFFCF1',
-        border: '1px solid rgba(200,146,10,0.32)',
-        borderRadius: 14,
-        padding: '14px 6px 12px',
-        boxShadow: '0 2px 10px rgba(60,30,5,0.05)',
-      }}>
-        <div style={{ textAlign: 'center', fontSize: 12.5, color: TEXT2, fontWeight: 700, marginBottom: 10, letterSpacing: '0.01em' }}>
-          Share with the Community
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
-          {QUICK_SHARES.map(q => (
-            <button key={q.key} onClick={onOpenComposer} style={{
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              padding: '6px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-            }}>
-              <span style={{
-                width: 52, height: 52, borderRadius: '50%',
-                background: q.bg,
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 24,
-                boxShadow: '0 2px 6px rgba(60,30,5,0.08)',
-              }}>{q.icon}</span>
-              <span style={{ fontSize: 9.5, fontWeight: 700, color: TEXT2, textAlign: 'center', lineHeight: 1.25, padding: '0 2px' }}>{q.label}</span>
-            </button>
-          ))}
-        </div>
-      </section>
-
       {/* ── Today's Inspiration banner ────────────────────── */}
       <section style={{
         marginTop: 14,
