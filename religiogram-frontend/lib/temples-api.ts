@@ -84,8 +84,8 @@ async function abortableGet<T>(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (tokenStore.access) {
-    headers['Authorization'] = `Bearer ${tokenStore.access}`;
+  if ((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))) {
+    headers['Authorization'] = `Bearer ${(tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))}`;
   }
 
   /**

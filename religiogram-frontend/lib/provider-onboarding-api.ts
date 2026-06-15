@@ -73,8 +73,8 @@ async function apiFetch<T>(
     'Content-Type': 'application/json',
     ...(init.headers as Record<string, string> | undefined),
   };
-  if (init.auth !== false && tokenStore.access) {
-    headers['Authorization'] = `Bearer ${tokenStore.access}`;
+  if (init.auth !== false && (tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))) {
+    headers['Authorization'] = `Bearer ${(tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))}`;
   }
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   const text = await res.text();

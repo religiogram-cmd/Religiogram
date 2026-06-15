@@ -59,7 +59,7 @@ export const useAuthStore = create<AuthState>((set: any) => ({
 export function useMe(): User | null {
   if (typeof window === 'undefined') return null;
   try {
-    const access = tokenStore.access || '';
+    const access = (tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)) || '';
     if (!access) return null;
     const b64 = access.split('.')[1];
     if (!b64) return null;

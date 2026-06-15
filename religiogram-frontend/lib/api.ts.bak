@@ -42,7 +42,21 @@ const API_BASE = (() => {
  * warning to console on every page load so it can never quietly become the
  * default again.
  * ══════════════════════════════════════════════════════════════════════ */
-const COOKIE_MODE: boolean = false; // FORCED Bearer-token mode for cross-origin reliability
+const COOKIE_MODE: boolean = (() => {
+  if (typeof process === 'undefined') return true;
+  const transport = process.env.NEXT_PUBLIC_REFRESH_TOKEN_TRANSPORT;
+  if (transport === 'body') {
+    if (typeof window !== 'undefined') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[ReligioGram] Refresh-token body mode is DEPRECATED and only safe for native apps without cookie support. ' +
+          'In a browser context this is a security regression — unset NEXT_PUBLIC_REFRESH_TOKEN_TRANSPORT to use cookie mode.',
+      );
+    }
+    return false;
+  }
+  return true;
+})();
 
 function getCookie(name: string): string | null {
   if (typeof document === 'undefined') return null;
@@ -57,7 +71,7 @@ function getCookie(name: string): string | null {
  * live in an HttpOnly cookie by default; localStorage is used ONLY in
  * explicit body mode.
  */
-let accessTokenMem: string | null = (typeof window !== 'undefined' ? (() => { try { return window.localStorage.getItem('rg_access'); } catch { return null; } })() : null);
+let accessTokenMem: string | null = null;
 
 const REFRESH_STORAGE_KEY = 'rg_refresh';
 
@@ -76,7 +90,6 @@ export const tokenStore = {
   },
   set(access: string, refresh: string) {
     accessTokenMem = access;
-    try { if (typeof window !== 'undefined') window.localStorage.setItem('rg_access', access); } catch {}
     if (COOKIE_MODE) return; // v9: cookie holds refresh; never persist
     if (typeof window === 'undefined') return;
     try {
@@ -89,7 +102,6 @@ export const tokenStore = {
   },
   clear() {
     accessTokenMem = null;
-    try { if (typeof window !== 'undefined') window.localStorage.removeItem('rg_access', ); } catch {}
     if (typeof window === 'undefined') return;
     try {
       window.localStorage.removeItem(REFRESH_STORAGE_KEY);
@@ -139,8 +151,8 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
     ...(opts.headers as Record<string, string> | undefined),
   };
   if (opts.deviceId) headers['X-Device-Id'] = opts.deviceId;
-  if (opts.auth !== false && (tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))) {
-    headers['Authorization'] = `Bearer ${(tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))}`;
+  if (opts.auth && tokenStore.access) {
+    headers['Authorization'] = `Bearer ${tokenStore.access}`;
   }
 
   // v9 (P1-3 fix): CSRF double-submit applied to every mutating request when
@@ -179,7 +191,7 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   if (res.status === 401 && opts.auth && (COOKIE_MODE || tokenStore.refresh)) {
     const refreshed = await tryRefresh();
     if (refreshed) {
-      headers['Authorization'] = `Bearer ${(tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))}`;
+      headers['Authorization'] = `Bearer ${tokenStore.access}`;
       // v9: re-read CSRF after refresh — backend issues a new csrf cookie on refresh
       if (COOKIE_MODE && isMutation) {
         const csrf = getCookie('rg_csrf');

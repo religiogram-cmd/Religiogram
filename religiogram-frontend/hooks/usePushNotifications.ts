@@ -22,7 +22,7 @@ export function usePushNotifications() {
     // Only run in browser, only if token exists (authed), only if supported
     if (
       typeof window === 'undefined' ||
-      !tokenStore.access ||
+      !(tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)) ||
       !('Notification' in window) ||
       !('serviceWorker' in navigator)
     ) return;
@@ -76,8 +76,8 @@ export function usePushNotifications() {
         const messaging = getMessaging(app);
         const token = await getToken(messaging, { vapidKey: VAPID_KEY });
 
-        if (token && tokenStore.access) {
-          await registerDeviceToken(tokenStore.access, token, 'web');
+        if (token && (tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))) {
+          await registerDeviceToken((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)), token, 'web');
           sessionStorage.setItem('rg_push_registered', '1');
         }
       } catch (err) {

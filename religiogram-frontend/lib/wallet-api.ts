@@ -105,7 +105,7 @@ export async function rechargeWallet(
 import { tokenStore } from './api';
 
 function _tok(): string {
-  return tokenStore.access ?? '';
+  return (tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)) ?? '';
 }
 
 export const walletApi = {

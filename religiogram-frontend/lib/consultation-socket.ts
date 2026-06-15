@@ -30,7 +30,7 @@ export type SocketStatus =
 export interface ConsultationSocketOpts {
   /** Base URL, e.g. https://api.religiogram.com */
   baseUrl: string;
-  /** JWT access token fetched from tokenStore.access */
+  /** JWT access token fetched from (tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)) */
   getToken: () => string | null;
   /** Called on every status transition. */
   onStatusChange?: (s: SocketStatus) => void;

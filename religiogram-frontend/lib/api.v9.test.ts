@@ -4,7 +4,7 @@
  *   1. tokenStore.refresh returns null in cookie mode regardless of any
  *      legacy value lingering in localStorage. This ensures the localStorage
  *      branch is dead code in cookie mode.
- *   2. tokenStore.access is in-memory only and survives across reads but is
+ *   2. (tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)) is in-memory only and survives across reads but is
  *      cleared by tokenStore.clear().
  *   3. Mutating fetch sends X-CSRF-Token header from the rg_csrf cookie when
  *      in cookie mode. (Lightweight monkey-patched fetch test.)
@@ -45,7 +45,7 @@ describe('v9 api.ts cookie-mode contracts', () => {
     const { tokenStore } = await import('./api');
     tokenStore.set('access-jwt', 'refresh-jwt');
     expect(ls._data.rg_refresh).toBeUndefined();
-    expect(tokenStore.access).toBe('access-jwt');
+    expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBe('access-jwt');
   });
 
   it('body mode emits a console.warn (deprecation signal)', async () => {

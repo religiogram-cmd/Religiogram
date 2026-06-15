@@ -3,7 +3,7 @@
  *
  * We mock:
  *   - global.fetch  (to intercept the beacon POST)
- *   - lib/api       (tokenStore.access + ApiError)
+ *   - lib/api       ((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)) + ApiError)
  *
  * analytics.ts is fire-and-forget, so tests that fire a beacon must call
  * `await flushPromises()` to let the promise chain settle before asserting
@@ -43,7 +43,7 @@ describe('track()', () => {
   let fetchSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    mockTokenStore.access = null;
+    mock(tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)) = null;
     if (!global.fetch) (global as any).fetch = jest.fn();
     fetchSpy = jest.spyOn(global, 'fetch' as any).mockResolvedValue(
       new Response('{}', { status: 200 }),
@@ -94,7 +94,7 @@ describe('track()', () => {
   });
 
   it('does NOT include Authorization header when access token is null', async () => {
-    mockTokenStore.access = null;
+    mock(tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)) = null;
     track({ eventType: 'tab_switch' });
     await flushPromises();
 
@@ -103,7 +103,7 @@ describe('track()', () => {
   });
 
   it('includes Authorization header when access token is set', async () => {
-    mockTokenStore.access = 'my-access-token';
+    mock(tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)) = 'my-access-token';
     track({ eventType: 'tab_switch' });
     await flushPromises();
 
@@ -170,7 +170,7 @@ describe('analytics convenience wrappers', () => {
   let fetchSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    mockTokenStore.access = null;
+    mock(tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)) = null;
     if (!global.fetch) (global as any).fetch = jest.fn();
     fetchSpy = jest.spyOn(global, 'fetch' as any).mockResolvedValue(
       new Response('{}', { status: 200 }),

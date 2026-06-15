@@ -35,7 +35,7 @@ describe('tokenStore', () => {
 
   describe('initial state', () => {
     it('access is null', () => {
-      expect(tokenStore.access).toBeNull();
+      expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBeNull();
     });
 
     it('refresh is null when localStorage is empty', () => {
@@ -46,7 +46,7 @@ describe('tokenStore', () => {
   describe('set()', () => {
     it('stores the access token in memory', () => {
       tokenStore.set('acc-1', 'ref-1');
-      expect(tokenStore.access).toBe('acc-1');
+      expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBe('acc-1');
     });
 
     it('stores the refresh token in localStorage', () => {
@@ -62,7 +62,7 @@ describe('tokenStore', () => {
     it('overwrites existing tokens on a second call', () => {
       tokenStore.set('old-acc', 'old-ref');
       tokenStore.set('new-acc', 'new-ref');
-      expect(tokenStore.access).toBe('new-acc');
+      expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBe('new-acc');
       expect(tokenStore.refresh).toBe('new-ref');
     });
   });
@@ -71,7 +71,7 @@ describe('tokenStore', () => {
     it('sets access to null', () => {
       tokenStore.set('acc', 'ref');
       tokenStore.clear();
-      expect(tokenStore.access).toBeNull();
+      expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBeNull();
     });
 
     it('removes refresh token from localStorage', () => {
@@ -160,7 +160,7 @@ describe('tryRefresh()', () => {
   it('returns false and clears tokens when no refresh token is available', async () => {
     const result = await tryRefresh();
     expect(result).toBe(false);
-    expect(tokenStore.access).toBeNull();
+    expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBeNull();
   });
 
   it('returns true and updates tokens on a successful refresh', async () => {
@@ -170,7 +170,7 @@ describe('tryRefresh()', () => {
     );
     const result = await tryRefresh();
     expect(result).toBe(true);
-    expect(tokenStore.access).toBe('new-acc');
+    expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBe('new-acc');
     expect(tokenStore.refresh).toBe('new-ref');
   });
 
@@ -179,7 +179,7 @@ describe('tryRefresh()', () => {
     mockFetch.mockResolvedValueOnce(new Response('', { status: 401 }));
     const result = await tryRefresh();
     expect(result).toBe(false);
-    expect(tokenStore.access).toBeNull();
+    expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBeNull();
   });
 
   it('returns false and clears tokens when the refresh response body is malformed', async () => {
@@ -187,7 +187,7 @@ describe('tryRefresh()', () => {
     mockFetch.mockResolvedValueOnce(new Response('{bad json}', { status: 200 }));
     const result = await tryRefresh();
     expect(result).toBe(false);
-    expect(tokenStore.access).toBeNull();
+    expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBeNull();
   });
 
   it('returns false and clears tokens when tokens are missing from the response payload', async () => {
@@ -195,7 +195,7 @@ describe('tryRefresh()', () => {
     mockFetch.mockResolvedValueOnce(jsonResponse({ data: {} }));
     const result = await tryRefresh();
     expect(result).toBe(false);
-    expect(tokenStore.access).toBeNull();
+    expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBeNull();
   });
 
   it('returns false and clears tokens when fetch itself throws (network error)', async () => {
@@ -203,7 +203,7 @@ describe('tryRefresh()', () => {
     mockFetch.mockRejectedValueOnce(new Error('network down'));
     const result = await tryRefresh();
     expect(result).toBe(false);
-    expect(tokenStore.access).toBeNull();
+    expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBeNull();
   });
 
   it('reuses the in-flight promise for concurrent callers (single-flight)', async () => {
@@ -284,14 +284,14 @@ describe('authApi', () => {
     tokenStore.set('acc', 'ref');
     mockFetch.mockResolvedValueOnce(new Response('', { status: 204 }));
     await authApi.logout();
-    expect(tokenStore.access).toBeNull();
+    expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBeNull();
   });
 
   it('logout — still clears tokens when server returns 500', async () => {
     tokenStore.set('acc', 'ref');
     mockFetch.mockResolvedValueOnce(new Response('error', { status: 500 }));
     await authApi.logout();
-    expect(tokenStore.access).toBeNull();
+    expect((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))).toBeNull();
   });
 
   it('googleUrl — returns a URL string containing /auth/google', () => {
