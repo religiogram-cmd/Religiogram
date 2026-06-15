@@ -76,6 +76,7 @@ export const tokenStore = {
   },
   set(access: string, refresh: string) {
     accessTokenMem = access;
+    try { if (typeof window !== 'undefined') window.localStorage.setItem('rg_access', access); } catch {}
     if (COOKIE_MODE) return; // v9: cookie holds refresh; never persist
     if (typeof window === 'undefined') return;
     try {
@@ -88,6 +89,7 @@ export const tokenStore = {
   },
   clear() {
     accessTokenMem = null;
+    try { if (typeof window !== 'undefined') window.localStorage.removeItem('rg_access', ); } catch {}
     if (typeof window === 'undefined') return;
     try {
       window.localStorage.removeItem(REFRESH_STORAGE_KEY);
