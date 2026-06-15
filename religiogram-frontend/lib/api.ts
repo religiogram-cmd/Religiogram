@@ -139,7 +139,7 @@ async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
     ...(opts.headers as Record<string, string> | undefined),
   };
   if (opts.deviceId) headers['X-Device-Id'] = opts.deviceId;
-  if (opts.auth && tokenStore.access) {
+  if (opts.auth !== false && tokenStore.access) {
     headers['Authorization'] = `Bearer ${tokenStore.access}`;
   }
 

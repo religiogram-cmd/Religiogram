@@ -131,7 +131,7 @@ class ApiError extends Error {
 }
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const tok = tokenStore.access;
+  const tok = tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(init.headers as Record<string, string> | undefined),
