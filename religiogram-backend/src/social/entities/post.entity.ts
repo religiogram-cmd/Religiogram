@@ -11,20 +11,12 @@ export class Post {
   @Column({ name: 'author_id', type: 'uuid' })
   authorId!: string;
 
-  /** Legacy field — community posts use `text` instead */
+  /** Post body text. Stored in `caption` column for legacy compatibility. */
   @Column({ type: 'text', nullable: true })
   caption!: string | null;
 
-  /** Community v2: main post text (replaces caption) */
-  @Column({ type: 'text', nullable: true })
-  text!: string | null;
-
   @Column({ name: 'image_urls', type: 'jsonb', default: [] })
   imageUrls!: string[];
-
-  /** Single image URL for community posts */
-  @Column({ name: 'image_url', type: 'text', nullable: true })
-  imageUrl!: string | null;
 
   @Column({ name: 'likes_count', type: 'int', default: 0 })
   likesCount!: number;

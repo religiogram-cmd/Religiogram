@@ -355,15 +355,25 @@ export class SocialService {
     // ── Fan-out strategy ──────────────────────────────────────────────────
     // For most users (< threshold friends): fan-out inline (sync, fire-and-forget).
     // For high-follower authors: defer to BullMQ when ENABLE_ASYNC_FANOUT is on.
-    await this._fanOutPost(saved.id, authorId, saved.createdAt);
+    // Wrapped in try/catch so DB/queue/schema issues don't fail the user's post.
+    try {
+      await this._fanOutPost(saved.id, authorId, saved.createdAt);
+    } catch (err) {
+      // log but don't fail — post is saved, fan-out can be retried
+      console.error('[social] fanOut failed (non-fatal):', err);
+    }
 
     // Emit Kafka event for other async consumers.
-    this.events.publishPostPublished({
-      eventType: 'post.published',
-      postId: saved.id,
-      authorId,
-      postCreatedAt: saved.createdAt.toISOString(),
-    });
+    try {
+      this.events.publishPostPublished({
+        eventType: 'post.published',
+        postId: saved.id,
+        authorId,
+        postCreatedAt: saved.createdAt.toISOString(),
+      });
+    } catch (err) {
+      console.error('[social] event publish failed (non-fatal):', err);
+    }
 
     return saved;
   }
