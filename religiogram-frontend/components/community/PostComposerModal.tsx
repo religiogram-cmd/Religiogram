@@ -15,14 +15,6 @@ const MAX_PHOTOS = 4;
 
 type PostCategory = 'prayer' | 'photo' | 'experience' | 'question' | 'help';
 
-const CATEGORY_LABELS: Record<PostCategory, string> = {
-  prayer:     'Share Prayer',
-  photo:      'Photo',
-  experience: 'Spiritual Experience',
-  question:   'Ask Community',
-  help:       'Help Others',
-};
-
 interface Props {
   me: CommunityProfile;
   initialCategory?: PostCategory;
@@ -100,24 +92,6 @@ export default function PostComposerModal({ me, initialCategory, onClose, onPost
             </div>
           </div>
 
-          {/* Category chips */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-            {(Object.entries(CATEGORY_LABELS) as [PostCategory, string][]).map(([k, lbl]) => {
-              const active = category === k;
-              return (
-                <button key={k} type="button" onClick={() => setCategory(active ? null : k)} style={{
-                  background: active ? NAVY : '#FFFCF1',
-                  color: active ? '#fff' : TEXT2,
-                  border: `1px solid ${active ? NAVY : 'rgba(200,146,10,0.30)'}`,
-                  borderRadius: 14, padding: '5px 10px',
-                  fontSize: 10.5, fontWeight: 700, cursor: 'pointer',
-                }}>
-                  {lbl}
-                </button>
-              );
-            })}
-          </div>
-
           {/* Text */}
           <textarea
             value={text}
@@ -151,13 +125,22 @@ export default function PostComposerModal({ me, initialCategory, onClose, onPost
           {error && <div style={{ marginTop: 8, color: RED, fontSize: 11.5, fontWeight: 600 }}>{error}</div>}
 
           {/* Bottom toolbar */}
-          <div style={{ borderTop: '1px solid rgba(200,146,10,0.18)', marginTop: 12, paddingTop: 10, display: 'flex', gap: 8 }}>
+          <div style={{ borderTop: '1px solid rgba(200,146,10,0.18)', marginTop: 12, paddingTop: 12, display: 'flex', gap: 8 }}>
             <button onClick={() => fileRef.current?.click()} disabled={files.length >= MAX_PHOTOS} style={{
-              background: '#F6F1E5', border: 'none', borderRadius: 16, padding: '6px 12px',
-              fontSize: 12, fontWeight: 700, color: TEXT2,
+              background: files.length >= MAX_PHOTOS ? '#F6F1E5' : `linear-gradient(135deg,${GOLD},${GOLD_L})`,
+              border: 'none', borderRadius: 22, padding: '9px 16px',
+              fontSize: 13, fontWeight: 700,
+              color: files.length >= MAX_PHOTOS ? TEXT3 : '#fff',
               cursor: files.length >= MAX_PHOTOS ? 'not-allowed' : 'pointer',
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-            }}>📷 Photo ({files.length}/{MAX_PHOTOS})</button>
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              boxShadow: files.length >= MAX_PHOTOS ? 'none' : '0 2px 8px rgba(200,146,10,0.30)',
+            }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              Add Photo ({files.length}/{MAX_PHOTOS})
+            </button>
             <input ref={fileRef} type="file" accept="image/png,image/jpeg" multiple onChange={onPick} style={{ display: 'none' }} />
           </div>
         </div>
