@@ -120,9 +120,9 @@ export default function CommunityScreen() {
           borderTop: '1px solid rgba(255,250,236,0.10)', paddingTop: 4,
         }}>
           {([
-            { k: 'feed',     l: 'FEED',     ico: '🏠' },
-            { k: 'discover', l: 'DISCOVER', ico: '🔍' },
-            { k: 'messages', l: 'MESSAGES', ico: '💬', badge: unreadCount },
+            { k: 'feed',     l: 'FEED',     ico: (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9.5L12 2l9 7.5V21a2 2 0 0 1-2 2h-4v-7h-6v7H5a2 2 0 0 1-2-2V9.5z"/></svg>) },
+            { k: 'discover', l: 'DISCOVER', ico: (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>) },
+            { k: 'messages', l: 'MESSAGES', ico: (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>), badge: unreadCount },
           ] as const).map(t => {
             const active = tab === t.k;
             return (
@@ -132,7 +132,7 @@ export default function CommunityScreen() {
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                 position: 'relative',
               }}>
-                <span style={{ fontSize: 17, filter: active ? 'none' : 'grayscale(0.4)', opacity: active ? 1 : 0.75 }}>{t.ico}</span>
+                <span style={{ color: active ? GOLD_L : 'rgba(255,250,236,0.55)', display: 'inline-flex', alignItems: 'center' }}>{t.ico}</span>
                 <span style={{
                   fontSize: 10.5, fontWeight: 800, letterSpacing: '0.1em',
                   color: active ? GOLD_L : 'rgba(255,250,236,0.55)',
