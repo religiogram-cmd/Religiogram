@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, HttpStatus,
+  Body, Controller, UseGuards, Delete, Get, HttpCode, HttpStatus,
   Param, Patch, Post, Query, Req,
   DefaultValuePipe, ParseIntPipe,
   NotFoundException, BadRequestException, ForbiddenException,
@@ -17,6 +17,7 @@ import { UpdateCommunityProfileDto } from './dto/update-community-profile.dto'; 
 import { NotificationsService } from '../notifications/notifications.service';
 import { User } from '../users/entities/user.entity';
 import { Friendship } from './entities/friendship.entity';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 /**
  * v6 (recovery): community.controller.ts was truncated in v3.
@@ -34,6 +35,7 @@ class SetupCommunityDto {
 
 @ApiTags('community')
 @ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller({ path: 'community', version: '1' })
 export class CommunityController {
   constructor(
