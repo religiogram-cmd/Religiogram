@@ -7,6 +7,7 @@ import {
 import { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { IsString, IsOptional, MaxLength } from 'class-validator';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SocialService } from './social.service';
@@ -26,10 +27,15 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
  */
 
 class SetupCommunityDto {
+  @IsString() @MaxLength(30)
   username!: string;
+  @IsOptional() @IsString() @MaxLength(60)
   displayName?: string;
+  @IsOptional() @IsString() @MaxLength(160)
   bio?: string;
+  @IsOptional() @IsString()
   avatarUrl?: string;
+  @IsOptional() @IsString()
   accountType?: string;
 }
 
