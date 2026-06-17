@@ -1,7 +1,7 @@
 'use client';
 // P0-2 fix: import canonical token store
 
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authApi, usersApi, PublicUser } from '@/lib/api';
 import { tokenStore } from '@/lib/api';
@@ -170,6 +170,32 @@ function EditProfileModal({
   const [name,      setName]      = useState(initial.name);
   const [bio,       setBio]       = useState(initial.bio);
   const [avatarUrl, setAvatarUrl] = useState(initial.avatarUrl);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image must be under 5MB');
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const { community } = await import('@/lib/community-api');
+      const url = await community.uploads.upload(file, 'avatar');
+      setAvatarUrl(url);
+    } catch {
+      alert('Upload failed. Try again or paste an image URL.');
+    } finally {
+      setUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
 
   const isDirty =
     name !== initial.name ||
@@ -218,6 +244,48 @@ function EditProfileModal({
         </div>
 
         <div style={{ padding:'0 20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
+          {/* Photo upload */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{
+              width: 72, height: 72, borderRadius: '50%', flexShrink: 0,
+              background: avatarUrl ? `center/cover url('${avatarUrl}')` : 'linear-gradient(135deg,#C8920A,#6B3210)',
+              border: '2px solid rgba(200,146,10,0.4)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontSize: 24, fontWeight: 700,
+            }}>
+              {!avatarUrl && (name?.[0]?.toUpperCase() || 'U')}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingPhoto || isSaving}
+                style={{
+                  background: 'linear-gradient(135deg, #C8920A, #E0A92F)',
+                  color: '#fff', border: 'none', borderRadius: 22,
+                  padding: '9px 18px', fontSize: 13, fontWeight: 700,
+                  cursor: uploadingPhoto || isSaving ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  boxShadow: '0 2px 8px rgba(200,146,10,0.30)',
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
+                </svg>
+                {uploadingPhoto ? 'Uploading…' : (avatarUrl ? 'Change photo' : 'Upload photo')}
+              </button>
+              <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>JPG/PNG · max 5 MB</div>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoUpload}
+              style={{ display: 'none' }}
+            />
+          </div>
+
           {/* Display name */}
           <div>
             <label style={{ fontSize:12, fontWeight:700, color:'#374151', display:'block', marginBottom:5, letterSpacing:'0.03em' }}>
