@@ -163,6 +163,7 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
           <PostCard
             key={post.id}
             post={post}
+            isOwner={!!(me && post.author && (post.author as any).id === (me as any).userId)}
             onLike={() => toggleLike(post)}
             onShare={() => sharePost(post)}
             onOpenComments={() => setCommentsFor(post)}
@@ -190,9 +191,10 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
 
 /* ── Post card ─────────────────────────────────────────── */
 function PostCard({
-  post, onLike, onShare, onOpenComments,
+  post, isOwner, onLike, onShare, onOpenComments,
 }: {
   post: Post;
+  isOwner: boolean;
   onLike: () => void;
   onShare: () => void;
   onOpenComments: () => void;
@@ -234,20 +236,22 @@ function PostCard({
             <span>{timeAgo(post.createdAt)}</span>
           </div>
         </div>
-        <button
-          onClick={async () => {
-            if (!confirm('Delete this post?')) return;
-            try {
-              await community.posts.remove(post.id);
-              location.reload();
-            } catch {
-              alert('Could not delete. Try again.');
-            }
-          }}
-          style={{ background: 'transparent', border: 'none', color: TEXT3, fontSize: 18, cursor: 'pointer', padding: 0, marginTop: -4 }}
-          aria-label="Delete post"
-          title="Delete post"
-        >🗑</button>
+        {isOwner && (
+          <button
+            onClick={async () => {
+              if (!confirm('Delete this post?')) return;
+              try {
+                await community.posts.remove(post.id);
+                location.reload();
+              } catch {
+                alert('Could not delete. Try again.');
+              }
+            }}
+            style={{ background: 'transparent', border: 'none', color: TEXT3, fontSize: 18, cursor: 'pointer', padding: 0, marginTop: -4 }}
+            aria-label="Delete post"
+            title="Delete post"
+          >🗑</button>
+        )}
       </header>
 
       {/* Body row — text left, image right */}
