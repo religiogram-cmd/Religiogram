@@ -230,7 +230,7 @@ function PostCard({
             <span style={{ fontSize: 13.5, fontWeight: 800, color: TEXT, lineHeight: 1.1 }}>
               {post.author.name || ('@' + post.author.username)}
             </span>
-            {post.author.accountType !== 'user' && <VerifiedBadge />}
+            {(post.author as any).isVerified === true && <VerifiedBadge />}
           </div>
           <div style={{ fontSize: 11, color: TEXT3, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
             <span>{timeAgo(post.createdAt)}</span>
