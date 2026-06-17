@@ -234,7 +234,20 @@ function PostCard({
             <span>{timeAgo(post.createdAt)}</span>
           </div>
         </div>
-        <button style={{ background: 'transparent', border: 'none', color: TEXT3, fontSize: 18, cursor: 'pointer', padding: 0, marginTop: -4 }} aria-label="More">···</button>
+        <button
+          onClick={async () => {
+            if (!confirm('Delete this post?')) return;
+            try {
+              await community.posts.remove(post.id);
+              location.reload();
+            } catch {
+              alert('Could not delete. Try again.');
+            }
+          }}
+          style={{ background: 'transparent', border: 'none', color: TEXT3, fontSize: 18, cursor: 'pointer', padding: 0, marginTop: -4 }}
+          aria-label="Delete post"
+          title="Delete post"
+        >🗑</button>
       </header>
 
       {/* Body row — text left, image right */}
