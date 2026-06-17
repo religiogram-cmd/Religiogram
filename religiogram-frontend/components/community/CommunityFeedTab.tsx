@@ -100,20 +100,6 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
     } catch { /* ignore */ }
   }
 
-  async function blessPost(post: Post) {
-    // "Bless" is a like + a comment hashtagged #bless — semantic alias for now,
-    // backend can later add a dedicated reaction type.
-    try {
-      if (!post.likedByMe) await community.posts.like(post.id);
-      await community.posts.comment(post.id, '🙏 Bless');
-      patchPost(post.id, p => ({
-        ...p,
-        likedByMe: true,
-        likeCount: p.likedByMe ? p.likeCount : p.likeCount + 1,
-        commentCount: p.commentCount + 1,
-      }));
-    } catch { /* ignore */ }
-  }
 
   const insp = INSPIRATIONS[inspIdx];
 
@@ -179,7 +165,6 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
             post={post}
             onLike={() => toggleLike(post)}
             onShare={() => sharePost(post)}
-            onBless={() => blessPost(post)}
             onOpenComments={() => setCommentsFor(post)}
           />
         ))}
@@ -205,12 +190,11 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
 
 /* ── Post card ─────────────────────────────────────────── */
 function PostCard({
-  post, onLike, onShare, onBless, onOpenComments,
+  post, onLike, onShare, onOpenComments,
 }: {
   post: Post;
   onLike: () => void;
   onShare: () => void;
-  onBless: () => void;
   onOpenComments: () => void;
 }) {
   const categoryTag = (post.hashtags ?? []).find(h => ['prayer','photo','experience','question','help'].includes(h));
@@ -296,7 +280,6 @@ function PostCard({
         <ActionButton icon={post.likedByMe ? '❤️' : '🤍'} label={formatCount(post.likeCount)} onClick={onLike} active={post.likedByMe} activeColor={HEART} />
         <ActionButton icon="💬" label={formatCount(post.commentCount)} onClick={onOpenComments} />
         <ActionButton icon="↗" label="Share" onClick={onShare} />
-        <ActionButton icon="🙏" label="Bless" onClick={onBless} activeColor="#B45309" />
       </div>
     </article>
   );
