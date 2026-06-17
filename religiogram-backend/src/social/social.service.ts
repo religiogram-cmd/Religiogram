@@ -352,6 +352,16 @@ export class SocialService {
     });
     const saved = await this.posts.save(post);
 
+    // Insert into the author's own feed_items so they see their own post immediately
+    try {
+      await this.ds.query(
+        `INSERT INTO feed_items (user_id, post_id, inserted_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [authorId, saved.id, saved.createdAt],
+      );
+    } catch (err) {
+      console.error('[social] self-feed insert failed (non-fatal):', err);
+    }
+
     // ── Fan-out strategy ──────────────────────────────────────────────────
     // For most users (< threshold friends): fan-out inline (sync, fire-and-forget).
     // For high-follower authors: defer to BullMQ when ENABLE_ASYNC_FANOUT is on.
