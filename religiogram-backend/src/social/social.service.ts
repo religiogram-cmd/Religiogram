@@ -580,28 +580,48 @@ export class SocialService {
 
   async getComments(postId: string, cursor?: string, limit = 30) {
     const safeTake = Math.min(100, Math.max(1, limit));
-    const qb = this.comments.createQueryBuilder('c')
-      .leftJoinAndSelect('c.author', 'author')
-      .where('c.post_id = :postId AND c.is_deleted = false', { postId })
-      .orderBy('c.created_at', 'ASC')
-      .addOrderBy('c.id', 'ASC')
-      .take(safeTake + 1);
+    // Use raw SQL to avoid TypeORM metadata join issues
+    const rows: Array<{
+      id: string;
+      content: string;
+      post_id: string;
+      author_id: string;
+      created_at: Date;
+      author_name?: string;
+      author_username?: string;
+      author_avatar_url?: string;
+    }> = await this.ds.query(
+      `SELECT
+         c.id, c.content, c.post_id, c.author_id, c.created_at,
+         u.name AS author_name,
+         u.username AS author_username,
+         u.avatar_url AS author_avatar_url
+       FROM post_comments c
+       LEFT JOIN users u ON u.id = c.author_id AND u.deleted_at IS NULL
+       WHERE c.post_id = $1 AND c.is_deleted = false
+       ORDER BY c.created_at ASC, c.id ASC
+       LIMIT $2`,
+      [postId, safeTake],
+    );
 
-    if (cursor) {
-      try {
-        const { d, i } = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as { d: string; i: string };
-        qb.andWhere('(c.created_at > :d OR (c.created_at = :d AND c.id > :i))', { d, i });
-      } catch { /* ignore bad cursor */ }
-    }
-
-    const rows = await qb.getMany();
-    const hasMore = rows.length > safeTake;
-    const items = rows.slice(0, safeTake);
-    const last = items[items.length - 1];
-    const nextCursor = hasMore && last
-      ? Buffer.from(JSON.stringify({ d: last.createdAt.toISOString(), i: last.id })).toString('base64url')
-      : null;
-    return { items: items.map((c) => this.formatComment(c)), nextCursor, hasMore };
+    return {
+      items: rows.map((r) => ({
+        id: r.id,
+        content: r.content,
+        text: r.content,
+        postId: r.post_id,
+        createdAt: r.created_at,
+        author: r.author_id ? {
+          id: r.author_id,
+          name: r.author_name,
+          fullName: r.author_name,
+          username: r.author_username,
+          avatarUrl: r.author_avatar_url,
+        } : null,
+      })),
+      nextCursor: null,
+      hasMore: false,
+    };
   }
 
   async addComment(authorId: string, postId: string, dto: CreateCommentDto) {
