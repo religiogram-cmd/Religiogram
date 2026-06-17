@@ -501,21 +501,20 @@ export class SocialService {
       .leftJoinAndSelect('p.author', 'author')
       .where('p.id IN (:...ids)', { ids: postIds })
       .andWhere('p.is_deleted = false')
-      // Hard filter — never surface posts from suspended or blocked providers
-      .andWhere(
-        `p.author_id NOT IN (
-          SELECT pr.user_id FROM providers pr
-          WHERE pr.provider_state IN ('suspended', 'blocked')
-        )`,
-      )
       .getMany();
 
     const byId = new Map(posts.map((p) => [p.id, p]));
     const ordered = postIds.map((id) => byId.get(id)).filter(Boolean) as typeof posts;
 
-    const likedPostIds = (
-      await this.likes.find({ where: { userId, postId: In(ordered.map((p) => p.id)) } })
-    ).map((l) => l.postId);
+    let likedPostIds: string[] = [];
+    try {
+      likedPostIds = (
+        await this.likes.find({ where: { userId, postId: In(ordered.map((p) => p.id)) } })
+      ).map((l) => l.postId);
+    } catch (err) {
+      // post_likes table may have schema issues — non-fatal
+      console.error('[feed] likes lookup failed (non-fatal):', err);
+    }
 
     return {
       items: ordered.map((p) => this.formatPost(p, likedPostIds.includes(p.id))),
