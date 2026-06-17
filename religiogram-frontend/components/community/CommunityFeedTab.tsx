@@ -275,7 +275,7 @@ function PostCard({
           )}
         </div>
         {(() => {
-          const imgs = post.photos ?? post.imageUrls ?? [];
+          const imgs: string[] = (post as any).photos ?? (post as any).imageUrls ?? [];
           return imgs.length > 0 && (
             <div style={{
               width: 120, aspectRatio: '4/3', borderRadius: 10, overflow: 'hidden', flexShrink: 0,
