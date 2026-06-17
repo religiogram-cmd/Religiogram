@@ -422,13 +422,36 @@ function applyOverride<T extends Partial<PublicUser> & Record<string, unknown>>(
 export default function ProfileScreen() {
   const router = useRouter();
   const [user, setUser]     = useState<PublicUser | null>(null);
+  const [communityProfile, setCommunityProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    usersApi.me()
-      .then(u => setUser(applyOverride(u as any)))
-      .catch(() => { /* user not authenticated — leave state empty */ })
-      .finally(() => setLoading(false));
+    Promise.all([
+      usersApi.me().catch(() => null),
+      // Pull community profile (username + displayName) and merge
+      fetch('/v1/community/me', {
+        headers: { Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('rg_access') : ''}` },
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(b => b?.data ?? null)
+        .catch(() => null),
+    ]).then(([u, cp]) => {
+      if (u) {
+        const merged: any = applyOverride(u as any);
+        if (cp) {
+          // Prefer community profile's displayName + username
+          if (cp.displayName) merged.name = merged.fullName = cp.displayName;
+          if (cp.username) merged.username = cp.username;
+          if (cp.avatarUrl) merged.avatarUrl = cp.avatarUrl;
+        }
+        setUser(merged);
+        setCommunityProfile(cp);
+      } else if (cp) {
+        // No users/me but have community profile — show partial UI
+        setUser({ name: cp.displayName, fullName: cp.displayName, username: cp.username, avatarUrl: cp.avatarUrl } as any);
+        setCommunityProfile(cp);
+      }
+    }).finally(() => setLoading(false));
   }, []);
 
   const handleLogout = useCallback(async () => {
@@ -462,6 +485,26 @@ export default function ProfileScreen() {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[Profile] updateProfile failed; applying changes locally.', err);
+    }
+
+    // Mirror changes to community profile (displayName + bio + avatarUrl)
+    try {
+      const communityPatch: Record<string, string> = {};
+      if (serverPatch.name) communityPatch.displayName = serverPatch.name;
+      if (serverPatch.avatarUrl) communityPatch.avatarUrl = serverPatch.avatarUrl;
+      if (patch.bio !== undefined) communityPatch.bio = patch.bio;
+      if (Object.keys(communityPatch).length > 0) {
+        await fetch('/v1/community/me', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('rg_access') : ''}`,
+          },
+          body: JSON.stringify(communityPatch),
+        });
+      }
+    } catch (err) {
+      console.warn('[Profile] community profile update failed (non-fatal).', err);
     }
 
     // Apply locally. Mirror `name` into `fullName` so the navy header + initials
