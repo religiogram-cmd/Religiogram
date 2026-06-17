@@ -780,8 +780,18 @@ export class SocialService {
 
   private formatComment(c: PostComment) {
     return {
-      id: c.id, content: c.content, postId: c.postId, createdAt: c.createdAt,
-      author: c.author ? { id: c.author.id, fullName: c.author.name, avatarUrl: c.author.avatarUrl } : null,
+      id: c.id,
+      content: c.content,
+      text: c.content,
+      postId: c.postId,
+      createdAt: c.createdAt,
+      author: c.author ? {
+        id: c.author.id,
+        fullName: c.author.name,
+        name: c.author.name,
+        username: (c.author as any).username,
+        avatarUrl: c.author.avatarUrl,
+      } : null,
     };
   }
   // ── Hashtag search ────────────────────────────────────────────────────────
