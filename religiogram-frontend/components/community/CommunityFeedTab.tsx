@@ -274,7 +274,7 @@ function PostCard({
       <div style={{
         marginTop: 10, paddingTop: 10,
         borderTop: '1px solid rgba(200,146,10,0.15)',
-        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr',
+        display: 'flex', justifyContent: 'space-around',
         alignItems: 'center', gap: 4,
       }}>
         <ActionButton icon={post.likedByMe ? '❤️' : '🤍'} label={formatCount(post.likeCount)} onClick={onLike} active={post.likedByMe} activeColor={HEART} />
