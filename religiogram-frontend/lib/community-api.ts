@@ -420,8 +420,21 @@ export interface PresignResp {
 }
 
 export const uploads = {
-  presign: (body: PresignBody) =>
-    call<PresignResp>('/uploads/presign', { method: 'POST', body: JSON.stringify(body) }),
+  presign: (body: PresignBody) => {
+    // Backend expects { kind, contentType, sizeBytes } — map frontend shape
+    const kindMap: Record<PresignBody['purpose'], string> = {
+      avatar: 'profile',
+      post:   'profile',
+      dm:     'profile',
+      story:  'profile',
+    };
+    const payload = {
+      kind: kindMap[body.purpose] || 'profile',
+      contentType: body.mimeType,
+      sizeBytes: body.sizeBytes,
+    };
+    return call<PresignResp>('/uploads/presign', { method: 'POST', body: JSON.stringify(payload) });
+  },
 
   /** Convenience: presign + PUT + return the public URL. */
   upload: async (file: File, purpose: PresignBody['purpose']): Promise<string> => {
