@@ -274,15 +274,18 @@ function PostCard({
             </span>
           )}
         </div>
-        {post.photos.length > 0 && (
-          <div style={{
-            width: 120, aspectRatio: '4/3', borderRadius: 10, overflow: 'hidden', flexShrink: 0,
-            border: '1px solid rgba(200,146,10,0.2)',
-          }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={post.photos[0]} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-          </div>
-        )}
+        {(() => {
+          const imgs = post.photos ?? post.imageUrls ?? [];
+          return imgs.length > 0 && (
+            <div style={{
+              width: 120, aspectRatio: '4/3', borderRadius: 10, overflow: 'hidden', flexShrink: 0,
+              border: '1px solid rgba(200,146,10,0.2)',
+            }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imgs[0]} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            </div>
+          );
+        })()}
       </div>
 
       {/* Action row */}

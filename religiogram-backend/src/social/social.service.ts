@@ -753,13 +753,28 @@ export class SocialService {
   private formatPost(p: Post, isLiked = false) {
     return {
       id: p.id,
+      // Provide both naming conventions so any caller works
       caption: p.caption,
-      imageUrls: p.imageUrls,
-      likesCount: p.likesCount,
-      commentsCount: p.commentsCount,
+      text: p.caption,
+      imageUrls: p.imageUrls ?? [],
+      photos: p.imageUrls ?? [],
+      hashtags: p.hashtags ?? [],
+      likesCount: p.likesCount ?? 0,
+      likeCount: p.likesCount ?? 0,
+      commentsCount: p.commentsCount ?? 0,
+      commentCount: p.commentsCount ?? 0,
+      sharesCount: (p as any).sharesCount ?? 0,
       isLiked,
+      likedByMe: isLiked,
       createdAt: p.createdAt,
-      author: p.author ? { id: p.author.id, fullName: p.author.name, avatarUrl: p.author.avatarUrl } : null,
+      author: p.author ? {
+        id: p.author.id,
+        fullName: p.author.name,
+        name: p.author.name,
+        username: (p.author as any).username,
+        displayName: (p.author as any).displayName,
+        avatarUrl: p.author.avatarUrl,
+      } : null,
     };
   }
 
