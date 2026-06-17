@@ -213,7 +213,7 @@ function PostCard({
   onBless: () => void;
   onOpenComments: () => void;
 }) {
-  const categoryTag = post.hashtags.find(h => ['prayer','photo','experience','question','help'].includes(h));
+  const categoryTag = (post.hashtags ?? []).find(h => ['prayer','photo','experience','question','help'].includes(h));
   const categoryLabel = (() => {
     switch (categoryTag) {
       case 'prayer':     return { label: 'Share Prayer', icon: '🙏', bg: '#FFE6CC', fg: '#B45309' };
