@@ -30,16 +30,20 @@ export class Post {
   @Column({ name: 'is_deleted', type: 'boolean', default: false })
   isDeleted!: boolean;
 
-  // SOC3: native text[] array — allows GIN index + = ANY() query
   @Column({ name: 'hashtags', type: 'text', array: true, nullable: true, default: [] })
   hashtags!: string[] | null;
 
   @Column({ name: 'post_type', type: 'varchar', length: 20, default: 'text' })
   postType!: string;
 
-  /** Category: Spiritual Guidance, Rituals, Experiences, Questions, Events, etc. */
   @Column({ name: 'category', type: 'varchar', length: 60, nullable: true, default: 'Experiences' })
   category!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  text!: string | null;
+
+  @Column({ name: 'image_url', type: 'text', nullable: true })
+  imageUrl!: string | null;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'author_id' })
