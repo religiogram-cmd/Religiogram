@@ -248,8 +248,6 @@ function PostCard({
           </div>
           <div style={{ fontSize: 11, color: TEXT3, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
             <span>{timeAgo(post.createdAt)}</span>
-            <span>·</span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>📍 {(post.author as any).city ?? ''}</span>
           </div>
         </div>
         <button style={{ background: 'transparent', border: 'none', color: TEXT3, fontSize: 18, cursor: 'pointer', padding: 0, marginTop: -4 }} aria-label="More">···</button>
@@ -393,8 +391,8 @@ function CommentsSheet({ post, me, onClose, onCountChange }: { post: Post; me: C
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 150, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
-      <div style={{ background: '#fff', width: '100%', maxWidth: 560, borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '78svh', display: 'flex', flexDirection: 'column', boxShadow: '0 -8px 32px rgba(0,0,0,0.32)' }} onClick={(e) => e.stopPropagation()}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
+      <div style={{ background: '#fff', width: '100%', maxWidth: 560, borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '90svh', minHeight: '50svh', display: 'flex', flexDirection: 'column', boxShadow: '0 -8px 32px rgba(0,0,0,0.32)', paddingBottom: 'env(safe-area-inset-bottom)' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderBottom: '1px solid rgba(200,146,10,0.18)' }}>
           <strong style={{ fontSize: 14, color: TEXT }}>Comments</strong>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 22, color: TEXT3, cursor: 'pointer', padding: 0, width: 28, height: 28 }}>×</button>
