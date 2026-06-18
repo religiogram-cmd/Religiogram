@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { community, CommunityProfile, UserSearchResult } from '@/lib/community-api';
 
 const NAVY    = '#0F2452';
@@ -14,6 +15,7 @@ interface Props { me: CommunityProfile; }
 
 /** Discover: search users by @username; trending hashtag chips for browsing. */
 export default function CommunityDiscoverTab({ me }: Props) {
+  const router = useRouter();
   const [q, setQ] = useState('');
   const [results, setResults] = useState<UserSearchResult[]>([]);
   const [trending, setTrending] = useState<Array<{ tag: string; postCount: number }>>([]);
@@ -66,7 +68,11 @@ export default function CommunityDiscoverTab({ me }: Props) {
           )}
           <div style={{ display: 'grid', gap: 8 }}>
             {results.map(u => (
-              <div key={u.id} style={{ background: '#fff', borderRadius: 12, padding: '10px 12px', border: '1px solid rgba(200,146,10,0.18)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button
+                key={u.id}
+                onClick={() => router.push(`/u/${u.username}`)}
+                style={{ background: '#fff', borderRadius: 12, padding: '10px 12px', border: '1px solid rgba(200,146,10,0.18)', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', width: '100%', textAlign: 'left' }}
+              >
                 <div style={{ width: 40, height: 40, borderRadius: '50%', background: u.avatarUrl ? `center/cover url('${u.avatarUrl}')` : 'linear-gradient(135deg,#C8920A,#6B3210)', flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -77,15 +83,8 @@ export default function CommunityDiscoverTab({ me }: Props) {
                   </div>
                   <div style={{ fontSize: 10.5, color: TEXT3 }}>@{u.username}</div>
                 </div>
-                {u.canFriend && u.friendStatus === 'none' && (
-                  <button onClick={() => sendFriend(u)} style={{ background: NAVY, color: '#fff', border: 'none', borderRadius: 14, padding: '6px 12px', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
-                    Add
-                  </button>
-                )}
-                {u.friendStatus === 'requested' && <span style={{ fontSize: 10, color: TEXT3, fontWeight: 700, background: '#F3F4F6', padding: '4px 8px', borderRadius: 10 }}>Requested</span>}
-                {u.friendStatus === 'friends'   && <span style={{ fontSize: 10, color: '#16A34A', fontWeight: 700, background: '#DBF3D8', padding: '4px 8px', borderRadius: 10 }}>Friends</span>}
-                {!u.canFriend && !u.canMessage && <span style={{ fontSize: 9.5, color: TEXT3, fontStyle: 'italic' }}>read-only</span>}
-              </div>
+                <span style={{ color: TEXT3, fontSize: 16 }}>›</span>
+              </button>
             ))}
           </div>
         </div>
