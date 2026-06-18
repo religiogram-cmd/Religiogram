@@ -38,10 +38,15 @@ export default function UserProfileScreen({ username }: Props) {
         if (found) {
           setUser(found);
           if (found.id) {
-            // Check follow state via the friends list
+            // Check follow state via the friends list (response may be { data: [...] } or [...])
             try {
-              const friends = await community.friends.list();
-              const isFollowing = (friends ?? []).some((f: any) =>
+              const friendsResp: any = await community.friends.list();
+              const arr: any[] = Array.isArray(friendsResp)
+                ? friendsResp
+                : Array.isArray(friendsResp?.data)
+                  ? friendsResp.data
+                  : [];
+              const isFollowing = arr.some((f: any) =>
                 f.id === found.id || f.userId === found.id
               );
               setFollowing(isFollowing);
