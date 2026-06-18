@@ -83,9 +83,9 @@ export default function CommunityProfileTab({ me, onUpdate }: Props) {
                 fontFamily: '"Playfair Display",Georgia,serif',
                 fontSize: 19, fontWeight: 800, margin: 0, lineHeight: 1.1,
               }}>{me.name || ('@' + me.username)}</h2>
-              {me.accountType !== 'user' && (
+              {me.accountType && me.accountType !== 'user' && (
                 <span style={{ fontSize: 9, fontWeight: 800, color: NAVY, background: GOLD_L, padding: '2px 7px', borderRadius: 10 }}>
-                  {me.accountType.toUpperCase()}
+                  {(me.accountType || '').toUpperCase()}
                 </span>
               )}
             </div>

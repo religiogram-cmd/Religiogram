@@ -76,8 +76,8 @@ export default function CommunityMessagesTab({ me }: Props) {
             <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: TEXT, lineHeight: 1.1 }}>{t.peer.name || ('@' + t.peer.username)}</span>
-                {t.peer.accountType !== 'user' && (
-                  <span style={{ fontSize: 8.5, fontWeight: 800, color: NAVY, background: GOLD_L + '33', padding: '1px 5px', borderRadius: 8 }}>{t.peer.accountType.toUpperCase()}</span>
+                {t.peer.accountType && t.peer.accountType !== 'user' && (
+                  <span style={{ fontSize: 8.5, fontWeight: 800, color: NAVY, background: GOLD_L + '33', padding: '1px 5px', borderRadius: 8 }}>{(t.peer.accountType || '').toUpperCase()}</span>
                 )}
               </div>
               <div style={{ fontSize: 11, color: t.unreadCount > 0 ? TEXT : TEXT3, fontWeight: t.unreadCount > 0 ? 700 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
@@ -138,8 +138,8 @@ function UserSearchView({ me, onClose, onPick }: { me: CommunityProfile; onClose
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 13, fontWeight: 800, color: TEXT, lineHeight: 1.1 }}>{u.name || ('@' + u.username)}</span>
-              {u.accountType !== 'user' && (
-                <span style={{ fontSize: 8.5, fontWeight: 800, color: NAVY, background: GOLD_L + '33', padding: '1px 5px', borderRadius: 8 }}>{u.accountType.toUpperCase()}</span>
+              {u.accountType && u.accountType !== 'user' && (
+                <span style={{ fontSize: 8.5, fontWeight: 800, color: NAVY, background: GOLD_L + '33', padding: '1px 5px', borderRadius: 8 }}>{(u.accountType || '').toUpperCase()}</span>
               )}
             </div>
             <div style={{ fontSize: 10.5, color: TEXT3 }}>@{u.username}</div>

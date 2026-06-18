@@ -71,8 +71,8 @@ export default function CommunityDiscoverTab({ me }: Props) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 13, fontWeight: 800, color: TEXT, lineHeight: 1.1 }}>{u.name || ('@' + u.username)}</span>
-                    {u.accountType !== 'user' && (
-                      <span style={{ fontSize: 9, fontWeight: 800, color: NAVY, background: GOLD_L + '33', padding: '1px 5px', borderRadius: 8 }}>{u.accountType.toUpperCase()}</span>
+                    {u.accountType && u.accountType !== 'user' && (
+                      <span style={{ fontSize: 9, fontWeight: 800, color: NAVY, background: GOLD_L + '33', padding: '1px 5px', borderRadius: 8 }}>{(u.accountType || '').toUpperCase()}</span>
                     )}
                   </div>
                   <div style={{ fontSize: 10.5, color: TEXT3 }}>@{u.username}</div>
