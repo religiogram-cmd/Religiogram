@@ -111,6 +111,12 @@ export class SocialController {
     return this.svc.deleteComment(this.uid(req), id);
   }
 
+  // ── Hashtags (trending + suggestions) ──────────────────────────────────
+  @Get('hashtags/suggest')
+  async suggestHashtags(@Query('q') q?: string) {
+    return this.svc.suggestHashtags(q ?? '');
+  }
+
   // ── DMs ────────────────────────────────────────────────────────────────
   @Get('messages')
   getInbox(@Req() req: Request) { return this.svc.getInbox(this.uid(req)); }

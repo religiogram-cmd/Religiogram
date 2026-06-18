@@ -367,14 +367,23 @@ export class SocialService {
     });
     const saved = await this.posts.save(post);
 
-    // Insert into the author's own feed_items so they see their own post immediately
+    // Fan-out: insert into author's own feed_items + every follower's feed_items
     try {
       await this.ds.query(
-        `INSERT INTO feed_items (user_id, post_id, inserted_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        `INSERT INTO feed_items (user_id, post_id, inserted_at)
+         SELECT $1, $2, $3
+         UNION
+         SELECT
+           CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END,
+           $2, $3
+         FROM friendships f
+         WHERE (f.requester_id = $1 OR f.addressee_id = $1)
+           AND f.status = 'accepted'
+         ON CONFLICT DO NOTHING`,
         [authorId, saved.id, saved.createdAt],
       );
     } catch (err) {
-      console.error('[social] self-feed insert failed (non-fatal):', err);
+      console.error('[social] fan-out failed (non-fatal):', err);
     }
 
     // ── Fan-out strategy ──────────────────────────────────────────────────
@@ -769,6 +778,27 @@ export class SocialService {
       readAt: m.readAt,
     }));
     return { items, nextCursor, hasMore };
+  }
+
+  /** Trending hashtags — used by Discover tab */
+  async suggestHashtags(q: string): Promise<Array<{ tag: string; postCount: number }>> {
+    try {
+      const rows: Array<{ tag: string; cnt: string }> = await this.ds.query(
+        `SELECT unnest(hashtags) AS tag, COUNT(*)::text AS cnt
+           FROM social_posts
+          WHERE is_deleted = false
+            AND hashtags IS NOT NULL
+            AND array_length(hashtags, 1) > 0
+            ${q ? "AND EXISTS (SELECT 1 FROM unnest(hashtags) t WHERE t ILIKE $1)" : ''}
+          GROUP BY tag
+          ORDER BY cnt DESC
+          LIMIT 20`,
+        q ? [`%${q}%`] : [],
+      );
+      return rows.map((r) => ({ tag: r.tag, postCount: Number(r.cnt) }));
+    } catch {
+      return [];
+    }
   }
 
   async getInbox(userId: string) {

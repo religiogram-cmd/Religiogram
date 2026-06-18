@@ -22,8 +22,14 @@ export default function CommunityDiscoverTab({ me }: Props) {
   const [searching, setSearching] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [suggestedUsers, setSuggestedUsers] = useState<UserSearchResult[]>([]);
+
   useEffect(() => {
     community.hashtags.suggest('').then(setTrending).catch(() => setTrending([]));
+    // Load suggested users (just search common letters to surface real users)
+    community.users.search('a')
+      .then(r => setSuggestedUsers((r ?? []).slice(0, 5)))
+      .catch(() => setSuggestedUsers([]));
   }, []);
 
   useEffect(() => {
@@ -121,9 +127,28 @@ export default function CommunityDiscoverTab({ me }: Props) {
             <h2 style={{ fontFamily: '"Playfair Display",Georgia,serif', fontSize: 16, color: TEXT, margin: '0 0 8px 4px', fontWeight: 800 }}>
               Suggested people
             </h2>
-            <div style={{ background: '#fff', borderRadius: 12, padding: 18, textAlign: 'center', color: TEXT3, fontSize: 12.5, border: '1px solid rgba(200,146,10,0.20)' }}>
-              Type a name or username above to find people to follow.
-            </div>
+            {suggestedUsers.length === 0 ? (
+              <div style={{ background: '#fff', borderRadius: 12, padding: 18, textAlign: 'center', color: TEXT3, fontSize: 12.5, border: '1px solid rgba(200,146,10,0.20)' }}>
+                Type a name or username above to find people to follow.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                {suggestedUsers.map(u => (
+                  <button
+                    key={u.id}
+                    onClick={() => router.push(`/u/${u.username}`)}
+                    style={{ background: '#fff', borderRadius: 12, padding: '10px 12px', border: '1px solid rgba(200,146,10,0.18)', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', width: '100%', textAlign: 'left' }}
+                  >
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: u.avatarUrl ? `center/cover url('${u.avatarUrl}')` : 'linear-gradient(135deg,#C8920A,#6B3210)', flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: TEXT, lineHeight: 1.1 }}>{u.name || ('@' + u.username)}</div>
+                      <div style={{ fontSize: 10.5, color: TEXT3, marginTop: 2 }}>@{u.username}</div>
+                    </div>
+                    <span style={{ color: TEXT3, fontSize: 16 }}>›</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </section>
         </>
       )}

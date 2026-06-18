@@ -185,13 +185,27 @@ function DMThreadView({ me, peer, onBack, onThreadUpdate }: { me: CommunityProfi
 
   useEffect(() => {
     let cancelled = false;
-    community.dms.messages(peer.id).then(r => {
-      if (cancelled) return;
-      setMessages(r?.items ?? []);
-      setLoading(false);
-      setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }), 30);
-    }).catch(() => setLoading(false));
-    return () => { cancelled = true; };
+    let firstLoad = true;
+    const fetchMessages = () => {
+      community.dms.messages(peer.id).then(r => {
+        if (cancelled) return;
+        setMessages(r?.items ?? []);
+        if (firstLoad) {
+          setLoading(false);
+          setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }), 30);
+          firstLoad = false;
+        } else {
+          // Auto-scroll if user is near the bottom (within 100px)
+          const el = scrollRef.current;
+          if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+            setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 30);
+          }
+        }
+      }).catch(() => { if (firstLoad) setLoading(false); });
+    };
+    fetchMessages();
+    const id = setInterval(fetchMessages, 5_000); // poll every 5 sec
+    return () => { cancelled = true; clearInterval(id); };
   }, [peer.id]);
 
   async function send(payload?: { photoUrl: string }) {

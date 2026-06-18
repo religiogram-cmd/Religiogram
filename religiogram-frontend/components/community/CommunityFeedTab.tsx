@@ -48,19 +48,27 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
   const [commentsFor, setCommentsFor] = useState<Post | null>(null);
   const [inspIdx] = useState(() => Math.floor(Math.random() * INSPIRATIONS.length));
 
-  /* ── initial load ──────────────────────────────────────── */
+  /* ── initial load + periodic refresh (every 20s for near-realtime) ── */
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    community.posts.feed()
-      .then(r => {
-        if (cancelled) return;
-        setPosts(r?.items ?? []);
-        setNextCursor(r?.nextCursor);
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    let initialLoad = true;
+    const fetchFeed = () => {
+      if (initialLoad) setLoading(true);
+      community.posts.feed()
+        .then(r => {
+          if (cancelled) return;
+          setPosts(r?.items ?? []);
+          setNextCursor(r?.nextCursor);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (cancelled) return;
+          if (initialLoad) { setLoading(false); initialLoad = false; }
+        });
+    };
+    fetchFeed();
+    const id = setInterval(fetchFeed, 20_000);
+    return () => { cancelled = true; clearInterval(id); };
   }, []);
 
   async function loadMore() {
@@ -89,15 +97,26 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
   }
 
   async function sharePost(post: Post) {
+    const url = typeof window !== 'undefined' ? `${window.location.origin}/p/${post.id}` : '';
     try {
-      const res = await community.posts.share(post.id);
-      patchPost(post.id, p => ({ ...p, shareCount: res.shareCount ?? p.shareCount + 1 }));
-      if (typeof navigator !== 'undefined' && (navigator as any).share && res.shareUrl) {
-        (navigator as any).share({ title: 'Post on ReligioGram', url: res.shareUrl }).catch(() => {});
-      } else if (res.shareUrl && typeof navigator !== 'undefined' && navigator.clipboard) {
-        navigator.clipboard.writeText(res.shareUrl).catch(() => {});
+      // Use native share sheet if available (mobile)
+      if (typeof navigator !== 'undefined' && (navigator as any).share) {
+        await (navigator as any).share({
+          title: 'Post on ReligioGram',
+          text: (post as any).caption || (post as any).text || '',
+          url,
+        });
+      } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        // Fallback: copy to clipboard
+        await navigator.clipboard.writeText(url);
+        alert('Link copied to clipboard!');
       }
-    } catch { /* ignore */ }
+      // Best-effort share count increment (non-blocking)
+      try {
+        const res = await community.posts.share(post.id);
+        patchPost(post.id, p => ({ ...p, shareCount: res.shareCount ?? p.shareCount + 1 }));
+      } catch { /* ignore */ }
+    } catch { /* user cancelled */ }
   }
 
 
