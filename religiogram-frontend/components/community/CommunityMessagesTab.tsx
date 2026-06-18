@@ -26,6 +26,18 @@ export default function CommunityMessagesTab({ me }: Props) {
     return () => { cancelled = true; };
   }, []);
 
+  // If user clicked "Message" on a profile, sessionStorage has the peer info — open it
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('rg_dm_peer');
+      if (raw) {
+        sessionStorage.removeItem('rg_dm_peer');
+        const peer = JSON.parse(raw);
+        if (peer?.id) setOpenPeer(peer);
+      }
+    } catch {}
+  }, []);
+
   if (openPeer) {
     return <DMThreadView me={me} peer={openPeer as any} onBack={() => setOpenPeer(null)} onThreadUpdate={(t) => {
       setThreads(prev => {
@@ -133,7 +145,11 @@ function UserSearchView({ me, onClose, onPick }: { me: CommunityProfile; onClose
         <div style={{ padding: 30, textAlign: 'center', color: TEXT3, fontSize: 12 }}>No users found.</div>
       )}
       {results.map(u => (
-        <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: '#fff', borderBottom: '1px solid rgba(200,146,10,0.10)' }}>
+        <button
+          key={u.id}
+          onClick={() => onPick(u)}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: '#fff', borderBottom: '1px solid rgba(200,146,10,0.10)', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+        >
           <div style={{ width: 40, height: 40, borderRadius: '50%', background: u.avatarUrl ? `center/cover url('${u.avatarUrl}')` : 'linear-gradient(135deg,#C8920A,#6B3210)', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -144,21 +160,8 @@ function UserSearchView({ me, onClose, onPick }: { me: CommunityProfile; onClose
             </div>
             <div style={{ fontSize: 10.5, color: TEXT3 }}>@{u.username}</div>
           </div>
-          {/* Friend / message buttons depend on canFriend / canMessage flags */}
-          <div style={{ display: 'flex', gap: 6 }}>
-            {u.canMessage && (
-              <button onClick={() => onPick(u)} style={smallBtn('navy')}>Message</button>
-            )}
-            {u.canFriend && u.friendStatus === 'none' && (
-              <button onClick={() => sendFriend(u)} style={smallBtn('gold')}>Add</button>
-            )}
-            {u.friendStatus === 'requested' && <span style={statusBadge}>Requested</span>}
-            {u.friendStatus === 'friends'   && <span style={{ ...statusBadge, color: '#16A34A' }}>Friends</span>}
-            {!u.canMessage && !u.canFriend && (
-              <span style={{ fontSize: 9.5, color: TEXT3, fontStyle: 'italic' }}>read-only profile</span>
-            )}
-          </div>
-        </div>
+          <span style={{ color: TEXT3, fontSize: 16 }}>›</span>
+        </button>
       ))}
     </div>
   );

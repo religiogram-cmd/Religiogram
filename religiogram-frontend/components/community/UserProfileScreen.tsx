@@ -66,7 +66,17 @@ export default function UserProfileScreen({ username }: Props) {
   }
 
   function openDm() {
-    if (user?.id) router.push(`/community?dm=${user.id}`);
+    if (!user) return;
+    try {
+      sessionStorage.setItem('rg_dm_peer', JSON.stringify({
+        id: user.id,
+        name: user.name || user.fullName || user.displayName,
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+        accountType: user.accountType || 'user',
+      }));
+    } catch {}
+    router.push('/social?tab=messages');
   }
 
   if (loading) {

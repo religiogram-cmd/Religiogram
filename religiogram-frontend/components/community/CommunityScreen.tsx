@@ -23,7 +23,13 @@ type Tab = 'feed' | 'discover' | 'messages' | 'notifications' | 'profile';
 export default function CommunityScreen() {
   const [phase, setPhase] = useState<'loading' | 'setup' | 'ready'>('loading');
   const [profile, setProfile] = useState<CommunityProfile | null>(null);
-  const [tab, setTab] = useState<Tab>('feed');
+  // Check URL query for ?tab= to deep-link to a tab (e.g., from "Message" button)
+  const initialTab: Tab = (() => {
+    if (typeof window === 'undefined') return 'feed';
+    const t = new URLSearchParams(window.location.search).get('tab');
+    return (['feed','discover','messages','notifications','profile'].includes(t || '') ? (t as Tab) : 'feed');
+  })();
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [composer, setComposer] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [feedKey, setFeedKey] = useState(0);   // bumped to force feed refresh after a new post
