@@ -176,7 +176,7 @@ function DMThreadView({ me, peer, onBack, onThreadUpdate }: { me: CommunityProfi
   const fileRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  const canMessage = peer.canMessage !== false && peer.accountType === 'user';
+  const canMessage = peer.canMessage !== false && (peer.accountType ?? 'user') === 'user';
 
   useEffect(() => {
     let cancelled = false;
@@ -214,7 +214,11 @@ function DMThreadView({ me, peer, onBack, onThreadUpdate }: { me: CommunityProfi
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100svh - 240px)', minHeight: 400 }}>
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1000,
+      display: 'flex', flexDirection: 'column',
+      background: '#FAF6E8',
+    }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#fff', borderBottom: '1px solid rgba(200,146,10,0.18)' }}>
         <button onClick={onBack} style={{ background: 'transparent', border: 'none', fontSize: 20, color: TEXT2, cursor: 'pointer' }}>←</button>
@@ -261,7 +265,7 @@ function DMThreadView({ me, peer, onBack, onThreadUpdate }: { me: CommunityProfi
 
       {/* Composer */}
       {canMessage && (
-        <div style={{ display: 'flex', gap: 8, padding: 10, borderTop: '1px solid rgba(200,146,10,0.18)', background: '#fff', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: 8, padding: '10px 10px calc(10px + env(safe-area-inset-bottom))', borderTop: '1px solid rgba(200,146,10,0.18)', background: '#fff', alignItems: 'flex-end' }}>
           <button onClick={() => fileRef.current?.click()} style={{ background: '#F6F1E5', border: 'none', borderRadius: '50%', width: 36, height: 36, fontSize: 16, cursor: 'pointer', flexShrink: 0 }}>📷</button>
           <input ref={fileRef} type="file" accept="image/png,image/jpeg" onChange={onPhotoPick} style={{ display: 'none' }} />
           <textarea value={text} onChange={(e) => setText(e.target.value.slice(0, 2000))} rows={1} placeholder="Write a message…"
