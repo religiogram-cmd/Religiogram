@@ -214,7 +214,7 @@ function DMThreadView({ me, peer, onBack, onThreadUpdate }: { me: CommunityProfi
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100svh - 130px)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100svh - 240px)', minHeight: 400 }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#fff', borderBottom: '1px solid rgba(200,146,10,0.18)' }}>
         <button onClick={onBack} style={{ background: 'transparent', border: 'none', fontSize: 20, color: TEXT2, cursor: 'pointer' }}>←</button>
