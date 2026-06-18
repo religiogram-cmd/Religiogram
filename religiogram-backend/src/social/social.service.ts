@@ -685,7 +685,7 @@ export class SocialService {
     if (dto.recipientId === senderId) {
       throw new ForbiddenException('Cannot send a message to yourself');
     }
-    const msg = this.dms.create({ senderId, recipientId: dto.recipientId, content: dto.content });
+    const msg = this.dms.create({ senderId, recipientId: dto.recipientId, content: (dto as any).content ?? (dto as any).text ?? '' });
     const saved = await this.dms.save(msg);
     if (dto.recipientId) {
       const sender = await this.users.findOne({ where: { id: senderId } });
@@ -694,11 +694,21 @@ export class SocialService {
         dto.recipientId,
         NotificationType.NEW_DM,
         `💬 Message from ${name}`,
-        (dto.content || '').slice(0, 60),
+        (saved.content || '').slice(0, 60),
         { senderId, dmId: saved.id },
       ).catch(() => {});
     }
-    return saved;
+    return {
+      id: saved.id,
+      senderId: saved.senderId,
+      recipientId: saved.recipientId,
+      content: saved.content,
+      text: saved.content,
+      photoUrl: null,
+      threadId: [saved.senderId, saved.recipientId].sort().join(':'),
+      createdAt: saved.createdAt,
+      readAt: saved.readAt,
+    };
   }
 
   async getConversation(userId: string, otherId: string, cursor?: string, limit = 50) {
@@ -718,7 +728,7 @@ export class SocialService {
 
     const rows = await qb.getMany();
     const hasMore = rows.length > safeTake;
-    const items = rows.slice(0, safeTake).reverse(); // chronological order for display
+    const itemsRaw = rows.slice(0, safeTake).reverse(); // chronological order for display
     // mark as read
     await this.dms
       .createQueryBuilder()
@@ -726,10 +736,21 @@ export class SocialService {
       .set({ readAt: new Date() })
       .where('sender_id = :o AND recipient_id = :u AND read_at IS NULL', { o: otherId, u: userId })
       .execute();
-    const oldest = items[0];
+    const oldest = itemsRaw[0];
     const nextCursor = hasMore && oldest
       ? Buffer.from(JSON.stringify({ d: oldest.createdAt.toISOString(), i: oldest.id })).toString('base64url')
       : null;
+    const items = itemsRaw.map((m) => ({
+      id: m.id,
+      senderId: m.senderId,
+      recipientId: m.recipientId,
+      content: m.content,
+      text: m.content,         // alias for frontend
+      photoUrl: null,           // not in DB yet
+      threadId: [m.senderId, m.recipientId].sort().join(':'),
+      createdAt: m.createdAt,
+      readAt: m.readAt,
+    }));
     return { items, nextCursor, hasMore };
   }
 
