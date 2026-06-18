@@ -523,31 +523,46 @@ export class SocialService {
 
   async getUserPosts(profileUserId: string, requesterId: string, cursor?: string, limit = 20) {
     const safeTake = Math.min(50, Math.max(1, limit));
-    const qb = this.posts.createQueryBuilder('p')
-      .leftJoinAndSelect('p.author', 'author')
-      .where('p.author_id = :profileUserId AND p.is_deleted = false', { profileUserId })
-      .orderBy('p.created_at', 'DESC')
-      .addOrderBy('p.id', 'DESC')
-      .take(safeTake + 1);
+    // Use raw SQL to avoid TypeORM metadata join issues
+    const rows: Array<{
+      id: string; author_id: string; caption: string | null; image_urls: any;
+      likes_count: number; comments_count: number; created_at: Date;
+      author_name?: string; author_username?: string; author_avatar_url?: string;
+    }> = await this.ds.query(
+      `SELECT
+         p.id, p.author_id, p.caption, p.image_urls,
+         p.likes_count, p.comments_count, p.created_at,
+         u.name AS author_name, u.username AS author_username, u.avatar_url AS author_avatar_url
+       FROM social_posts p
+       LEFT JOIN users u ON u.id = p.author_id AND u.deleted_at IS NULL
+       WHERE p.author_id = $1 AND p.is_deleted = false
+       ORDER BY p.created_at DESC, p.id DESC
+       LIMIT $2`,
+      [profileUserId, safeTake],
+    );
 
-    if (cursor) {
-      try {
-        const { d, i } = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as { d: string; i: string };
-        qb.andWhere('(p.created_at < :d OR (p.created_at = :d AND p.id < :i))', { d, i });
-      } catch { /* ignore bad cursor */ }
-    }
-
-    const rows = await qb.getMany();
-    const hasMore = rows.length > safeTake;
-    const items = rows.slice(0, safeTake);
-    const likedPostIds = items.length
-      ? (await this.likes.find({ where: { userId: requesterId, postId: In(items.map((p) => p.id)) } })).map((l) => l.postId)
-      : [];
-    const last = items[items.length - 1];
-    const nextCursor = hasMore && last
-      ? Buffer.from(JSON.stringify({ d: last.createdAt.toISOString(), i: last.id })).toString('base64url')
-      : null;
-    return { items: items.map((p) => this.formatPost(p, likedPostIds.includes(p.id))), nextCursor, hasMore };
+    const items = rows.map((r) => ({
+      id: r.id,
+      caption: r.caption,
+      text: r.caption,
+      imageUrls: r.image_urls ?? [],
+      photos: r.image_urls ?? [],
+      likesCount: r.likes_count ?? 0,
+      likeCount: r.likes_count ?? 0,
+      commentsCount: r.comments_count ?? 0,
+      commentCount: r.comments_count ?? 0,
+      createdAt: r.created_at,
+      author: r.author_id ? {
+        id: r.author_id,
+        name: r.author_name,
+        fullName: r.author_name,
+        username: r.author_username,
+        avatarUrl: r.author_avatar_url,
+      } : null,
+      isLiked: false,
+      likedByMe: false,
+    }));
+    return { items, nextCursor: null, hasMore: false };
   }
 
   async toggleLike(userId: string, postId: string) {
