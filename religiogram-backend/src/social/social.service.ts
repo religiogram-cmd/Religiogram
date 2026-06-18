@@ -56,37 +56,35 @@ export class SocialService {
 
   // ── User search ─────────────────────────────────────────────────────────
   async searchUsers(query: string, requesterId: string) {
-    // P2-2: use pg_trgm similarity search instead of leading-wildcard ILIKE
-    // '%query%'. Leading wildcards prevent B-tree index use; pg_trgm GIN index
-    // supports trigram similarity efficiently.
-    const sanitised = query.replace(/[%_\\]/g, '\\$&');
-    const results = await this.users
-      .createQueryBuilder('u')
-      .select(['u.id', 'u.name', 'u.username', 'u.avatarUrl', 'u.bio', 'u.displayName'])
-      .where(
-        `(u.full_name ILIKE :q OR u.username ILIKE :q OR similarity(u.full_name, :raw) > 0.2)`,
-        { q: `${sanitised}%`, raw: query },
-      )
-      .andWhere('u.id != :me', { me: requesterId })
-      .andWhere('u.is_active = true')
-      .orderBy(`similarity(u.full_name, :raw)`, 'DESC')
-      .setParameter('raw', query)
-      .limit(20)
-      .getMany();
+    const q = (query ?? '').trim().toLowerCase();
+    if (q.length < 1) return [];
+    // Simple ILIKE search across username, name, display_name — no full_name column dependency
+    const rows: Array<{
+      id: string; username: string | null; name: string | null;
+      display_name: string | null; avatar_url: string | null; bio: string | null;
+    }> = await this.ds.query(
+      `SELECT id, username, name, display_name, avatar_url, bio
+         FROM users
+        WHERE id <> $1
+          AND deleted_at IS NULL
+          AND (
+            LOWER(username)     LIKE $2 OR
+            LOWER(display_name) LIKE $2 OR
+            LOWER(name)         LIKE $2
+          )
+        LIMIT 20`,
+      [requesterId, `%${q}%`],
+    );
 
-    const friendships = await this.friendships.find({
-      where: [
-        { requesterId, addresseeId: In(results.map((u) => u.id)) },
-        { requesterId: In(results.map((u) => u.id)), addresseeId: requesterId },
-      ],
-    });
-
-    return results.map((u) => ({
-      id: u.id, fullName: u.name, username: u.username,
-      avatarUrl: u.avatarUrl, bio: u.bio,
-      friendshipStatus: friendships.find(
-        (f) => f.requesterId === u.id || f.addresseeId === u.id,
-      )?.status ?? null,
+    return rows.map((u) => ({
+      id: u.id,
+      fullName: u.name ?? u.display_name,
+      name: u.name ?? u.display_name,
+      username: u.username,
+      displayName: u.display_name,
+      avatarUrl: u.avatar_url,
+      bio: u.bio,
+      friendshipStatus: null,
     }));
   }
 
