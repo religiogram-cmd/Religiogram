@@ -1,5 +1,6 @@
 import UserProfileScreen from '@/components/community/UserProfileScreen';
 
-export default function UserProfilePage({ params }: { params: { username: string } }) {
-  return <UserProfileScreen username={params.username} />;
+export default async function UserProfilePage({ params }: { params: Promise<{ username: string }> }) {
+  const { username } = await params;
+  return <UserProfileScreen username={username} />;
 }
