@@ -25,14 +25,25 @@ export default function UserProfileScreen({ username }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const u = await community.users.byUsername(username);
-        setUser(u);
-        setFollowing((u as any)?.friendStatus === 'friends' || (u as any)?.friendStatus === 'requested');
-        if ((u as any)?.id) {
-          try {
-            const r = await community.posts.byUser((u as any).id);
-            setPosts(r.items ?? []);
-          } catch { /* empty */ }
+        // byUsername endpoint missing on backend — use search fallback
+        let found: any = null;
+        try {
+          found = await community.users.byUsername(username);
+        } catch {
+          const results = await community.users.search(username);
+          found = results?.find((u: any) =>
+            (u.username || '').toLowerCase() === username.toLowerCase()
+          ) ?? results?.[0] ?? null;
+        }
+        if (found) {
+          setUser(found);
+          setFollowing(found.friendStatus === 'friends' || found.friendStatus === 'requested');
+          if (found.id) {
+            try {
+              const r = await community.posts.byUser(found.id);
+              setPosts(r.items ?? []);
+            } catch { /* empty */ }
+          }
         }
       } catch { /* user not found */ }
       setLoading(false);
