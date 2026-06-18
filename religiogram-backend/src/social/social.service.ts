@@ -771,13 +771,28 @@ export class SocialService {
       const otherId = m.senderId === userId ? m.recipientId : m.senderId;
       if (!threads.has(otherId)) {
         const other = m.senderId === userId ? m.recipient : m.sender;
+        if (!other) continue; // skip malformed
         threads.set(otherId, {
-          userId: otherId,
-          fullName: other.name,
-          avatarUrl: other.avatarUrl,
-          lastMessage: m.content,
-          lastMessageAt: m.createdAt,
+          threadId: [userId, otherId].sort().join(':'),
+          peer: {
+            id: otherId,
+            name: other.name,
+            fullName: other.name,
+            username: (other as any).username,
+            avatarUrl: other.avatarUrl,
+            accountType: (other as any).accountType || 'user',
+            canMessage: true,
+            canFriend: true,
+          },
+          lastMessage: {
+            id: m.id,
+            text: m.content,
+            content: m.content,
+            senderId: m.senderId,
+            createdAt: m.createdAt,
+          },
           unreadCount: 0,
+          updatedAt: m.createdAt,
         });
       }
     }

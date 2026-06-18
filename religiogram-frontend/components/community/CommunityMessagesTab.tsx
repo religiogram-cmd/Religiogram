@@ -20,7 +20,12 @@ export default function CommunityMessagesTab({ me }: Props) {
   useEffect(() => {
     let cancelled = false;
     community.dms.threads()
-      .then(r => { if (!cancelled) setThreads(r ?? []); })
+      .then(r => {
+        if (cancelled) return;
+        // Filter out malformed threads (no peer)
+        const safe = (r ?? []).filter((t: any) => t && t.peer && t.peer.id);
+        setThreads(safe);
+      })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
