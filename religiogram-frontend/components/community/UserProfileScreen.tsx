@@ -37,8 +37,17 @@ export default function UserProfileScreen({ username }: Props) {
         }
         if (found) {
           setUser(found);
-          setFollowing(found.friendStatus === 'friends' || found.friendStatus === 'requested');
           if (found.id) {
+            // Check follow state via the friends list
+            try {
+              const friends = await community.friends.list();
+              const isFollowing = (friends ?? []).some((f: any) =>
+                f.id === found.id || f.userId === found.id
+              );
+              setFollowing(isFollowing);
+            } catch {
+              setFollowing(found.friendStatus === 'friends' || found.friendStatus === 'requested');
+            }
             try {
               const r = await community.posts.byUser(found.id);
               setPosts(r.items ?? []);
@@ -52,6 +61,10 @@ export default function UserProfileScreen({ username }: Props) {
 
   async function toggleFollow() {
     if (!user || followBusy) return;
+    if (following) {
+      const displayName = user.name || user.fullName || ('@' + user.username);
+      if (!confirm(`Are you sure you want to unfollow ${displayName}?`)) return;
+    }
     setFollowBusy(true);
     try {
       if (following) {
