@@ -243,9 +243,12 @@ function DMThreadView({ me, peer, onBack, onThreadUpdate }: { me: CommunityProfi
           </div>
         )}
         {messages.map(m => {
-          const mine = m.senderId === me.id;
+          // Robust ownership check — me may be community profile with userId or user with id
+          const myId = (me as any).userId ?? (me as any).id;
+          const mine = m.senderId === myId;
+          const timeStr = m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
           return (
-            <div key={m.id} style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', marginBottom: 6 }}>
+            <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start', marginBottom: 8 }}>
               <div style={{
                 maxWidth: '76%',
                 background: mine ? NAVY : '#fff',
@@ -263,6 +266,9 @@ function DMThreadView({ me, peer, onBack, onThreadUpdate }: { me: CommunityProfi
                 )}
                 {m.text && <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: m.photoUrl ? 6 : 0 }}>{m.text}</div>}
               </div>
+              {timeStr && (
+                <div style={{ fontSize: 9.5, color: TEXT3, marginTop: 2, padding: '0 4px' }}>{timeStr}</div>
+              )}
             </div>
           );
         })}
