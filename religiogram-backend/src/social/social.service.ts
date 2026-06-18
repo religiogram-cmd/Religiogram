@@ -111,15 +111,32 @@ export class SocialService {
       }
     }
 
+    if (!addresseeId) {
+      throw new BadRequestException('Target user id is required');
+    }
     const exists = await this.friendships.findOne({
       where: [
         { requesterId, addresseeId },
         { requesterId: addresseeId, addresseeId: requesterId },
       ],
     });
-    if (exists) throw new BadRequestException('Friendship already exists');
-    const f = this.friendships.create({ requesterId, addresseeId, status: 'pending' });
+    if (exists) return { ok: true, status: 'requested' };
+    // Instagram-style auto-accept: status='accepted' immediately so DMs + feed work
+    const f = this.friendships.create({ requesterId, addresseeId, status: 'accepted' });
     const saved = await this.friendships.save(f);
+    // Backfill the follower's feed with the followed user's recent posts
+    try {
+      await this.ds.query(
+        `INSERT INTO feed_items (user_id, post_id, inserted_at)
+         SELECT $1, p.id, p.created_at
+           FROM social_posts p
+          WHERE p.author_id = $2 AND p.is_deleted = false
+          ORDER BY p.created_at DESC
+          LIMIT 50
+         ON CONFLICT DO NOTHING`,
+        [requesterId, addresseeId],
+      );
+    } catch { /* non-fatal */ }
     // Notify addressee about new friend request
     const requester = await this.users.findOne({ where: { id: requesterId } });
     const name = requester?.name || requester?.username || 'Someone';

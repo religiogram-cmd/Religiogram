@@ -37,8 +37,9 @@ export class SocialController {
 
   @Post('friends/request')
   @HttpCode(HttpStatus.CREATED)
-  sendRequest(@Body() dto: FriendRequestDto, @Req() req: Request) {
-    return this.svc.sendFriendRequest(this.uid(req), dto.userId ?? '');
+  sendRequest(@Body() dto: any, @Req() req: Request) {
+    const targetId: string = dto?.userId ?? dto?.toUserId ?? dto?.targetUserId ?? '';
+    return this.svc.sendFriendRequest(this.uid(req), targetId);
   }
 
   @Patch('friends/request/:id/accept')
