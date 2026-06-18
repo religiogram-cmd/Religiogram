@@ -678,15 +678,12 @@ export class SocialService {
 
   // ── Direct Messages ──────────────────────────────────────────────────────
   async sendDm(senderId: string, dto: SendDmDto) {
-    // Only friends can DM each other
-    const areFriends = await this.friendships.findOne({
-      where: [
-        { requesterId: senderId, addresseeId: dto.recipientId, status: 'accepted' },
-        { requesterId: dto.recipientId, addresseeId: senderId, status: 'accepted' },
-      ],
-    });
-    if (!areFriends) {
-      throw new ForbiddenException('You can only send messages to friends');
+    // Open DMs (Instagram-style) — anyone can message anyone
+    if (!dto.recipientId) {
+      throw new ForbiddenException('Recipient required');
+    }
+    if (dto.recipientId === senderId) {
+      throw new ForbiddenException('Cannot send a message to yourself');
     }
     const msg = this.dms.create({ senderId, recipientId: dto.recipientId, content: dto.content });
     const saved = await this.dms.save(msg);
