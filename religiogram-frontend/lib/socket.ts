@@ -11,9 +11,9 @@ let socket: any = null;
 let connecting = false;
 
 function getApiBase(): string {
-  if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_BASE) {
-    return process.env.NEXT_PUBLIC_API_BASE;
-  }
+  // Next.js inlines process.env.NEXT_PUBLIC_* at build time; reference it directly.
+  const fromEnv = process.env.NEXT_PUBLIC_API_BASE;
+  if (fromEnv) return fromEnv;
   return typeof window !== 'undefined' ? window.location.origin : '';
 }
 
