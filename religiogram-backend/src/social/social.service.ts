@@ -621,30 +621,89 @@ export class SocialService {
     return { items, nextCursor: null, hasMore: false };
   }
 
-  async toggleLike(userId: string, postId: string) {
+  /**
+   * Like/unlike a post. `desired === true` ensures liked; `desired === false`
+   * ensures unliked. Idempotent — repeated calls in the same direction are no-ops.
+   * `desired === undefined` retains the old toggle behaviour for callers that
+   * haven't migrated yet. Returns the post's true current likeCount.
+   */
+  async toggleLike(userId: string, postId: string, desired?: boolean) {
     const post = await this.posts.findOne({ where: { id: postId, isDeleted: false } });
     if (!post) throw new NotFoundException('Post not found');
     const existing = await this.likes.findOne({ where: { userId, postId } });
-    if (existing) {
-      await this.likes.remove(existing);
-      await this.posts.decrement({ id: postId }, 'likesCount', 1);
-      return { liked: false };
+
+    let liked: boolean;
+
+    if (desired === true) {
+      // LIKE — idempotent: only insert if not already liked
+      if (existing) {
+        liked = true;
+      } else {
+        await this.likes.save(this.likes.create({ userId, postId }));
+        // Atomic INCREMENT — but always clamp at 0 via DB-level expression
+        await this.ds.query(
+          `UPDATE social_posts SET likes_count = GREATEST(0, likes_count) + 1 WHERE id = $1`,
+          [postId],
+        );
+        liked = true;
+        if (post.authorId !== userId) {
+          const liker = await this.users.findOne({ where: { id: userId } });
+          const name = liker?.name || liker?.username || 'Someone';
+          this.notifs.send(
+            post.authorId,
+            NotificationType.POST_LIKED,
+            '❤️ New like',
+            `${name} liked your post`,
+            { postId, actorId: userId },
+          ).catch(() => {});
+        }
+      }
+    } else if (desired === false) {
+      // UNLIKE — idempotent: only delete if currently liked
+      if (existing) {
+        await this.likes.remove(existing);
+        await this.ds.query(
+          `UPDATE social_posts SET likes_count = GREATEST(0, likes_count - 1) WHERE id = $1`,
+          [postId],
+        );
+        liked = false;
+      } else {
+        liked = false;
+      }
+    } else {
+      // Legacy toggle path (kept for backwards compatibility)
+      if (existing) {
+        await this.likes.remove(existing);
+        await this.ds.query(
+          `UPDATE social_posts SET likes_count = GREATEST(0, likes_count - 1) WHERE id = $1`,
+          [postId],
+        );
+        liked = false;
+      } else {
+        await this.likes.save(this.likes.create({ userId, postId }));
+        await this.ds.query(
+          `UPDATE social_posts SET likes_count = GREATEST(0, likes_count) + 1 WHERE id = $1`,
+          [postId],
+        );
+        liked = true;
+        if (post.authorId !== userId) {
+          const liker = await this.users.findOne({ where: { id: userId } });
+          const name = liker?.name || liker?.username || 'Someone';
+          this.notifs.send(
+            post.authorId,
+            NotificationType.POST_LIKED,
+            '❤️ New like',
+            `${name} liked your post`,
+            { postId, actorId: userId },
+          ).catch(() => {});
+        }
+      }
     }
-    await this.likes.save(this.likes.create({ userId, postId }));
-    await this.posts.increment({ id: postId }, 'likesCount', 1);
-    // Notify post author (fire-and-forget, non-blocking)
-    if (post.authorId !== userId) {
-      const liker = await this.users.findOne({ where: { id: userId } });
-      const name = liker?.name || liker?.username || 'Someone';
-      this.notifs.send(
-        post.authorId,
-        NotificationType.POST_LIKED,
-        '❤️ New like',
-        `${name} liked your post`,
-        { postId, actorId: userId },
-      ).catch(() => {});
-    }
-    return { liked: true };
+
+    // Re-read true current count so callers can correct any optimistic state drift
+    const fresh = await this.posts.findOne({ where: { id: postId } });
+    const likeCount = Math.max(0, fresh?.likesCount ?? 0);
+    return { liked, likeCount };
   }
 
   async getComments(postId: string, cursor?: string, limit = 30) {
@@ -1210,64 +1269,7 @@ export class SocialService {
         lastMessageAt: c.lastMessageAt,
         unreadCount: c.unreadCount || 0,
       };
-    });
-    return { items: enriched };
-  }
-
-  /** Get DM conversation in community v2 format */
-  async getCommunityConversation(userId: string, otherId: string, cursor?: string, limit = 50) {
-    return this.getConversation(userId, otherId, cursor, limit);
-  }
-
-
-  /**
-   * P2 (v6): trigram-based community user search.
-   *
-   * Replaces `LIKE '%term%'` (full table scan, 2s at 1M users) with a
-   * pg_trgm similarity ranking. Requires migration
-   * 1700000000043-PgTrgmSearchIndex.ts (creates the gin_trgm_ops indexes).
-   *
-   * Usage from community.controller.ts:
-   *   const results = await this.social.searchUsersByTrigram(q, me.id, 20);
-   */
-  async searchUsersByTrigram(query: string, excludeUserId: string, limit = 20): Promise<Array<{
-    id: string; username: string | null; displayName: string | null; name: string | null;
-    avatarUrl: string | null; bio: string | null; rank: number;
-  }>> {
-    const q = (query ?? '').trim().toLowerCase();
-    if (q.length < 2) return [];
-    const safeLimit = Math.min(50, Math.max(1, Number(limit) || 20));
-    const rows = await this.ds.query<Array<{
-      id: string; username: string | null; display_name: string | null; name: string | null;
-      avatar_url: string | null; bio: string | null; rank: string;
-    }>>(
-      `SELECT id, username, display_name, name, avatar_url, bio,
-              GREATEST(
-                COALESCE(similarity(LOWER(username), $1), 0),
-                COALESCE(similarity(LOWER(display_name), $1), 0),
-                COALESCE(similarity(LOWER(name), $1), 0)
-              ) AS rank
-         FROM users
-        WHERE id <> $2
-          AND (username IS NOT NULL OR display_name IS NOT NULL)
-          AND deleted_at IS NULL
-          AND (
-            LOWER(username)     % $1 OR
-            LOWER(display_name) % $1 OR
-            LOWER(name)         % $1
-          )
-        ORDER BY rank DESC
-        LIMIT $3`,
-      [q, excludeUserId, safeLimit],
-    );
-    return rows.map((r) => ({
-      id: r.id,
-      username: r.username,
-      displayName: r.display_name,
-      name: r.name,
-      avatarUrl: r.avatar_url,
-      bio: r.bio,
-      rank: Number(r.rank),
-    }));
+     });
+    return enriched;
   }
 }

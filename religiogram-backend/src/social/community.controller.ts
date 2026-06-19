@@ -133,7 +133,7 @@ export class CommunityController {
   @Get('users/search')
   async searchCommunityUsers(@Query('q') q: string, @Req() req: Request) {
     if (!q?.trim()) return { items: [] };
-    const items = await this.social.searchUsersByTrigram(q, this.uid(req), 20);
+    const items = await this.social.searchUsers(q, this.uid(req));
     return { items };
   }
 
@@ -155,15 +155,15 @@ export class CommunityController {
   }
 
   @Post('posts/:postId/like')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   async likePost(@Param('postId') postId: string, @Req() req: Request) {
-    await this.social.toggleLike(this.uid(req), postId);
+    return this.social.toggleLike(this.uid(req), postId, true);
   }
 
   @Delete('posts/:postId/like')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   async unlikePost(@Param('postId') postId: string, @Req() req: Request) {
-    await this.social.toggleLike(this.uid(req), postId);
+    return this.social.toggleLike(this.uid(req), postId, false);
   }
 
   @Post('posts/:postId/comments')
