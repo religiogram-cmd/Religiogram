@@ -297,13 +297,11 @@ export const posts = {
   remove: (postId: string) =>
     call<{ ok: true }>(`/social/posts/${postId}`, { method: 'DELETE' }),
 
-  /** Backend like is a TOGGLE on POST — there is no DELETE. Calling like()
-   *  flips the state; unlike() points at the same toggle so existing UI keeps
-   *  working without a contract change. */
+  /** Backend now distinguishes POST (always like) from DELETE (always unlike). */
   like:   (postId: string) =>
     call<{ likeCount: number; liked: boolean }>(`/social/posts/${postId}/like`, { method: 'POST' }),
   unlike: (postId: string) =>
-    call<{ likeCount: number; liked: boolean }>(`/social/posts/${postId}/like`, { method: 'POST' }),
+    call<{ likeCount: number; liked: boolean }>(`/social/posts/${postId}/like`, { method: 'DELETE' }),
 
   /** Bookmark + share are not on the real backend yet. Soft no-ops so the
    *  feed icons still render and tapping them doesn't blow up. */
