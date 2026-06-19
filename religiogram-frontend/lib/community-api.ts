@@ -145,11 +145,15 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     catch { throw new ApiError(res.status, 'INVALID_JSON', 'Non-JSON response'); }
   }
   if (!res.ok) {
-    throw new ApiError(
-      res.status,
-      json?.error?.code ?? 'UNKNOWN',
-      json?.error?.message ?? `Request failed (${res.status})`,
-    );
+    // NestJS returns { statusCode, message, error } (flat) OR our custom filter
+    // returns { error: { code, message } } (nested). Handle both shapes.
+    const msg =
+      json?.error?.message ??
+      json?.message ??
+      (typeof json?.error === 'string' ? json.error : null) ??
+      `Request failed (${res.status})`;
+    const code = json?.error?.code ?? json?.error ?? 'UNKNOWN';
+    throw new ApiError(res.status, code, msg);
   }
   return (json?.data ?? json) as T;
 }
@@ -456,6 +460,6 @@ export const hashtags = {
 };
 
 // Single export object so screens can do:
-//   import { community } from '@/lib/community-api';
+//   import { community } from '@/lib/co//   import { community } from '@/lib/community-api';
 //   community.me.get(); community.posts.feed(); ...
 export const community = { me, users, friends, posts, dms, stories, notifications, uploads, hashtags };

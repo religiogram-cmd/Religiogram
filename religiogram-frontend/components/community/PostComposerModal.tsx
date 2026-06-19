@@ -7,7 +7,6 @@ const NAVY    = '#0F2452';
 const GOLD    = '#C8920A';
 const GOLD_L  = '#E0A92F';
 const TEXT    = '#1A0800';
-const TEXT2   = '#4A3010';
 const TEXT3   = '#8B6B35';
 const RED     = '#B91C1C';
 
@@ -60,10 +59,27 @@ export default function PostComposerModal({ me, initialCategory, onClose, onPost
         } catch { /* skip failed */ }
       }
       const hashtags = extractHashtags(text);
-      const post = await community.posts.create({ text: text.trim(), photoUrls, hashtags });
+      // Send BOTH naming conventions for defensive compatibility.
+      const body: any = {
+        text: text.trim(),
+        caption: text.trim(),
+      };
+      if (photoUrls.length > 0) {
+        body.photoUrls = photoUrls;
+        body.imageUrls = photoUrls;
+      }
+      if (hashtags.length > 0) body.hashtags = hashtags;
+      // eslint-disable-next-line no-console
+      console.log('[post] creating with body:', body);
+      const post = await community.posts.create(body);
+      // eslint-disable-next-line no-console
+      console.log('[post] created:', post);
       onPosted(post);
     } catch (err: any) {
-      setError(err?.message ?? 'Could not post. Try again.');
+      // eslint-disable-next-line no-console
+      console.error('[post] create failed:', err);
+      const detail = err?.body?.message || err?.body?.error?.message || err?.message || 'unknown error';
+      setError(`Post failed: ${detail}`);
       setSubmitting(false);
     }
   }
@@ -72,14 +88,14 @@ export default function PostComposerModal({ me, initialCategory, onClose, onPost
     <div style={backdrop} onClick={onClose}>
       <div style={card} onClick={(e) => e.stopPropagation()}>
         <div style={header}>
-          <button onClick={onClose} style={closeBtn}>×</button>
+          <button onClick={onClose} style={closeBtn}>x</button>
           <strong style={{ fontSize: 15, color: TEXT }}>Create post</strong>
           <button onClick={submit} disabled={submitting || (!text.trim() && files.length === 0)} style={{
             background: submitting || (!text.trim() && files.length === 0) ? 'rgba(15,36,82,0.20)' : NAVY,
             color: '#fff', border: 'none', borderRadius: 16,
             fontSize: 12, fontWeight: 800,
             padding: '6px 14px', cursor: submitting ? 'not-allowed' : 'pointer',
-          }}>{submitting ? 'Posting…' : 'Post'}</button>
+          }}>{submitting ? 'Posting...' : 'Post'}</button>
         </div>
 
         <div style={{ padding: 14 }}>
@@ -116,7 +132,7 @@ export default function PostComposerModal({ me, initialCategory, onClose, onPost
                   <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} style={{
                     position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: '50%',
                     background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', fontSize: 12, cursor: 'pointer',
-                  }}>×</button>
+                  }}>x</button>
                 </div>
               ))}
             </div>
@@ -150,20 +166,24 @@ export default function PostComposerModal({ me, initialCategory, onClose, onPost
 }
 
 const backdrop: React.CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
-  zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+  position: 'fixed', inset: 0, background: 'rgba(10,22,40,0.55)',
+  display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+  zIndex: 1000,
 };
+
 const card: React.CSSProperties = {
-  background: '#fff', width: '100%', maxWidth: 560,
-  borderTopLeftRadius: 18, borderTopRightRadius: 18,
-  maxHeight: '92svh', overflowY: 'auto',
-  boxShadow: '0 -8px 32px rgba(0,0,0,0.32)',
+  background: '#FFFAEC', width: '100%', maxWidth: 520,
+  borderRadius: '18px 18px 0 0', maxHeight: '94vh', overflowY: 'auto',
+  boxShadow: '0 -8px 32px rgba(0,0,0,0.20)',
 };
+
 const header: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-  padding: '10px 12px', borderBottom: '1px solid rgba(200,146,10,0.18)',
-  position: 'sticky', top: 0, background: '#fff', zIndex: 1,
+  padding: '12px 14px', borderBottom: '1px solid rgba(200,146,10,0.18)',
+  position: 'sticky', top: 0, background: '#FFFAEC', zIndex: 2,
 };
+
 const closeBtn: React.CSSProperties = {
-  background: 'transparent', border: 'none', fontSize: 22, color: TEXT3, cursor: 'pointer', padding: 0, width: 28, height: 28,
+  background: 'transparent', border: 'none', fontSize: 22, color: TEXT,
+  cursor: 'pointer', lineHeight: 1, padding: 0, width: 28,
 };
