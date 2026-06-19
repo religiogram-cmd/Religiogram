@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import StoriesRing from './StoriesRing';
 import { community, CommunityProfile, Post, Comment } from '@/lib/community-api';
 
 const NAVY    = '#0F2452';
@@ -48,7 +49,7 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
   const [commentsFor, setCommentsFor] = useState<Post | null>(null);
   const [inspIdx] = useState(() => Math.floor(Math.random() * INSPIRATIONS.length));
 
-  /* ── initial load + periodic refresh (every 20s for near-realtime) ── */
+  /* ── initial load + socket realtime (polling fallback every 60s) ── */
   useEffect(() => {
     let cancelled = false;
     let initialLoad = true;
@@ -67,8 +68,29 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
         });
     };
     fetchFeed();
-    const id = setInterval(fetchFeed, 20_000);
-    return () => { cancelled = true; clearInterval(id); };
+
+    // Realtime via Socket.IO — new posts from followed users
+    let unsubscribers: Array<() => void> = [];
+    (async () => {
+      try {
+        const { connectSocket, onSocketEvent } = await import('@/lib/socket');
+        await connectSocket();
+        unsubscribers.push(onSocketEvent('post.new', () => { if (!cancelled) fetchFeed(); }));
+        unsubscribers.push(onSocketEvent('post.liked', (p: any) => {
+          if (!cancelled && p?.postId) {
+            patchPost(p.postId, post => ({ ...post, likeCount: p.likeCount ?? post.likeCount }));
+          }
+        }));
+      } catch { /* socket unavailable → polling still runs */ }
+    })();
+
+    // Fallback poll (less aggressive than before since socket should catch most updates)
+    const id = setInterval(fetchFeed, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      unsubscribers.forEach(fn => fn());
+    };
   }, []);
 
   async function loadMore() {
@@ -120,8 +142,68 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
 
   const insp = INSPIRATIONS[inspIdx];
 
+  /* ── pull-to-refresh ──────────────────────────────────── */
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const pullState = useRef({ startY: 0, pulling: false, distance: 0 });
+  const [pullDist, setPullDist] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (window.scrollY > 0) return;
+    pullState.current.startY = e.touches[0].clientY;
+    pullState.current.pulling = true;
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!pullState.current.pulling) return;
+    const dy = e.touches[0].clientY - pullState.current.startY;
+    if (dy > 0 && window.scrollY === 0) {
+      const d = Math.min(120, dy);
+      pullState.current.distance = d;
+      setPullDist(d);
+    } else if (dy <= 0) {
+      pullState.current.pulling = false;
+      setPullDist(0);
+    }
+  };
+  const onTouchEnd = async () => {
+    if (!pullState.current.pulling) return;
+    pullState.current.pulling = false;
+    if (pullState.current.distance > 60 && !refreshing) {
+      setRefreshing(true);
+      setPullDist(50);
+      try {
+        const r = await community.posts.feed();
+        setPosts(r?.items ?? []);
+        setNextCursor(r?.nextCursor);
+      } catch { /* ignore */ }
+      setRefreshing(false);
+    }
+    setPullDist(0);
+  };
+
   return (
-    <div style={{ padding: '12px 12px 24px' }}>
+    <div
+      ref={containerRef}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      style={{ padding: '12px 12px 24px', transform: `translateY(${pullDist}px)`, transition: pullState.current.pulling ? 'none' : 'transform 0.2s' }}
+    >
+      {/* Pull-to-refresh spinner */}
+      {(pullDist > 0 || refreshing) && (
+        <div style={{ position: 'absolute', top: -40, left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: '50%',
+            border: `3px solid ${GOLD}30`, borderTopColor: GOLD,
+            animation: refreshing ? 'rg-spin 0.8s linear infinite' : 'none',
+            transform: refreshing ? 'none' : `rotate(${pullDist * 3}deg)`,
+          }} />
+          <style>{`@keyframes rg-spin { to { transform: rotate(360deg) } }`}</style>
+        </div>
+      )}
+
+      {/* ── Stories ring ───────────────────────────────────── */}
+      <StoriesRing me={me as any} />
 
       {/* ── Today's Inspiration banner ────────────────────── */}
       <section style={{

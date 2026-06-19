@@ -195,7 +195,6 @@ function DMThreadView({ me, peer, onBack, onThreadUpdate }: { me: CommunityProfi
           setTimeout(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }), 30);
           firstLoad = false;
         } else {
-          // Auto-scroll if user is near the bottom (within 100px)
           const el = scrollRef.current;
           if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
             setTimeout(() => el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }), 30);
@@ -204,8 +203,28 @@ function DMThreadView({ me, peer, onBack, onThreadUpdate }: { me: CommunityProfi
       }).catch(() => { if (firstLoad) setLoading(false); });
     };
     fetchMessages();
-    const id = setInterval(fetchMessages, 5_000); // poll every 5 sec
-    return () => { cancelled = true; clearInterval(id); };
+
+    // Real-time via socket; fall back to slower polling
+    let unsubscribers: Array<() => void> = [];
+    (async () => {
+      try {
+        const { connectSocket, onSocketEvent } = await import('@/lib/socket');
+        await connectSocket();
+        unsubscribers.push(onSocketEvent('dm.message', (payload: any) => {
+          if (cancelled) return;
+          if (payload?.senderId === peer.id || payload?.recipientId === peer.id) {
+            fetchMessages();
+          }
+        }));
+      } catch { /* socket unavailable */ }
+    })();
+
+    const id = setInterval(fetchMessages, 15_000); // fallback poll every 15s
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      unsubscribers.forEach(fn => fn());
+    };
   }, [peer.id]);
 
   async function send(payload?: { photoUrl: string }) {

@@ -73,8 +73,30 @@ export function usePushNotifications() {
           ? getApps()[0]
           : initializeApp(firebaseConfig);
 
+        // Explicitly register the messaging service worker so getToken
+        // can find it. If the SW isn't ready, push delivery silently fails.
+        let swRegistration: ServiceWorkerRegistration | undefined;
+        try {
+          swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
+          if (swRegistration.installing || swRegistration.waiting) {
+            await new Promise<void>((resolve) => {
+              const sw = swRegistration!.installing || swRegistration!.waiting;
+              if (!sw) return resolve();
+              sw.addEventListener('statechange', () => {
+                if (sw.state === 'activated' || sw.state === 'installed') resolve();
+              });
+              setTimeout(resolve, 4000); // safety
+            });
+          }
+        } catch (e) {
+          console.warn('[PushNotifications] SW registration failed:', e);
+        }
+
         const messaging = getMessaging(app);
-        const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+        const token = await getToken(messaging, {
+          vapidKey: VAPID_KEY,
+          serviceWorkerRegistration: swRegistration,
+        });
 
         if (token && (tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))) {
           await registerDeviceToken((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)), token, 'web');

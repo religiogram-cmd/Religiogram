@@ -2,22 +2,36 @@
 // This file MUST be at the root of public/ so it's served at /firebase-messaging-sw.js
 // FCM uses this service worker to receive background push notifications.
 
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 
-// These are safe to embed — they're PUBLIC Firebase config values, not secrets.
-// The actual security is controlled by Firebase Security Rules and the server.
-firebase.initializeApp({
-  apiKey: self.__WEB_FIREBASE_API_KEY__,        // injected at build by next.config.js
-  projectId: self.__WEB_FIREBASE_PROJECT_ID__,
-  messagingSenderId: self.__WEB_FIREBASE_SENDER_ID__,
-  appId: self.__WEB_FIREBASE_APP_ID__,
-});
-
-const messaging = firebase.messaging();
+// Frontend fetches config from /api/firebase-config at install time to avoid build-time injection.
+// If config can't be loaded (Firebase not configured), the SW silently no-ops.
+let messaging = null;
+try {
+  const FIREBASE_CONFIG = {
+    apiKey: 'AIzaSy___PLACEHOLDER___REPLACE_VIA_VERCEL_ENV',
+    projectId: 'religiogram',
+    messagingSenderId: '000000000000',
+    appId: '1:000000000000:web:placeholder',
+  };
+  if (FIREBASE_CONFIG.apiKey && !FIREBASE_CONFIG.apiKey.includes('PLACEHOLDER')) {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    messaging = firebase.messaging();
+  }
+} catch (_) {
+  // No-op if config invalid
+}
+if (!messaging) {
+  // Service worker still installs; just won't handle FCM events
+  console.warn('[FCM SW] Firebase config missing — push notifications will not arrive.');
+}
 
 // Handle background notifications
-messaging.onBackgroundMessage((payload) => {
+if (messaging) messaging.onBackgroundMessage((payload) => {
   const { title, body, icon } = payload.notification ?? {};
   self.registration.showNotification(title ?? 'ReligioGram', {
     body: body ?? '',
