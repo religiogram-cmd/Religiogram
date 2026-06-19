@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import StoriesRing from './StoriesRing';
 import { community, CommunityProfile, Post, Comment } from '@/lib/community-api';
 
 const NAVY    = '#0F2452';
@@ -201,9 +200,6 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
           <style>{`@keyframes rg-spin { to { transform: rotate(360deg) } }`}</style>
         </div>
       )}
-
-      {/* ── Stories ring ───────────────────────────────────── */}
-      <StoriesRing me={me as any} />
 
       {/* ── Today's Inspiration banner ────────────────────── */}
       <section style={{
