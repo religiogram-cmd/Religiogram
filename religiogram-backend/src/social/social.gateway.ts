@@ -86,7 +86,22 @@ export class SocialGateway
           }
         } catch { /* malformed message — ignore */ }
       })
-      .catch((err: Error) => this.logger.error(`SocialGateway psubscribe failed: ${err.message}`));
+      .catch((err: Error) => this.logger.error(`SocialGateway dm psubscribe failed: ${err.message}`));
+
+    // Subscribe to feed updates → emit `post.new` to follower's sockets
+    this.redis
+      .psubscribe('feed:*', (msg: string, channel: string) => {
+        try {
+          const userId = channel.replace(/^feed:/, '');
+          const sockets = this.userSockets.get(userId);
+          if (!sockets) return;
+          const payload = JSON.parse(msg);
+          for (const s of sockets) {
+            (s as Socket).emit('post.new', payload);
+          }
+        } catch { /* malformed — ignore */ }
+      })
+      .catch((err: Error) => this.logger.error(`SocialGateway feed psubscribe failed: ${err.message}`));
   }
 
   async handleConnection(client: AuthenticatedSocket): Promise<void> {

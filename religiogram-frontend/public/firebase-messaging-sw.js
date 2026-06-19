@@ -8,29 +8,26 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 
-// Frontend fetches config from /api/firebase-config at install time to avoid build-time injection.
-// If config can't be loaded (Firebase not configured), the SW silently no-ops.
+// Fetch Firebase config at install time from /api/firebase-config (which reads env vars at runtime).
+// If config is missing or invalid, the SW silently no-ops.
 let messaging = null;
-try {
-  const FIREBASE_CONFIG = {
-    apiKey: 'AIzaSy___PLACEHOLDER___REPLACE_VIA_VERCEL_ENV',
-    projectId: 'religiogram',
-    messagingSenderId: '000000000000',
-    appId: '1:000000000000:web:placeholder',
-  };
-  if (FIREBASE_CONFIG.apiKey && !FIREBASE_CONFIG.apiKey.includes('PLACEHOLDER')) {
-    firebase.initializeApp(FIREBASE_CONFIG);
-    messaging = firebase.messaging();
+let initPromise = (async () => {
+  try {
+    const resp = await fetch('/api/firebase-config');
+    const cfg = await resp.json();
+    if (cfg && cfg.apiKey && cfg.projectId && !String(cfg.apiKey).includes('PLACEHOLDER')) {
+      firebase.initializeApp(cfg);
+      messaging = firebase.messaging();
+    } else {
+      console.warn('[FCM SW] Firebase config not set on server — push notifications will not arrive.');
+    }
+  } catch (e) {
+    console.warn('[FCM SW] Failed to load Firebase config:', e);
   }
-} catch (_) {
-  // No-op if config invalid
-}
-if (!messaging) {
-  // Service worker still installs; just won't handle FCM events
-  console.warn('[FCM SW] Firebase config missing — push notifications will not arrive.');
-}
+})();
 
-// Handle background notifications
+// Wait until config loaded before binding background handler
+initPromise.then(() => {
 if (messaging) messaging.onBackgroundMessage((payload) => {
   const { title, body, icon } = payload.notification ?? {};
   self.registration.showNotification(title ?? 'ReligioGram', {
@@ -42,6 +39,7 @@ if (messaging) messaging.onBackgroundMessage((payload) => {
     tag: payload.data?.notificationId ?? 'rg-notification',
     renotify: true,
   });
+});
 });
 
 // Handle notification click — open/focus the app

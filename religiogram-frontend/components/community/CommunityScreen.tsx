@@ -158,12 +158,32 @@ export default function CommunityScreen() {
         </div>
       </div>
 
-      {/* ── TAB CONTENT ─────────────────────────────────── */}
-      {tab === 'feed'          && <CommunityFeedTab          key={feedKey} me={profile} onOpenComposer={() => setComposer(true)} />}
-      {tab === 'discover'      && <CommunityDiscoverTab      me={profile} />}
-      {tab === 'messages'      && <CommunityMessagesTab      me={profile} />}
-      {tab === 'notifications' && <CommunityNotificationsTab me={profile} onUnreadChange={setUnreadCount} />}
-      {tab === 'profile'       && <CommunityProfileTab       me={profile} onUpdate={setProfile} />}
+      {/* ── TAB CONTENT (with horizontal swipe to switch tabs) ─── */}
+      <div
+        onTouchStart={(e) => {
+          (window as any).__rgSwipe = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }}
+        onTouchEnd={(e) => {
+          const start = (window as any).__rgSwipe;
+          if (!start) return;
+          const dx = e.changedTouches[0].clientX - start.x;
+          const dy = e.changedTouches[0].clientY - start.y;
+          (window as any).__rgSwipe = null;
+          // Horizontal swipe with min 60px, must dominate vertical
+          if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+          const order: Tab[] = ['feed', 'discover', 'messages'];
+          const idx = order.indexOf(tab as Tab);
+          if (idx < 0) return;
+          if (dx < 0 && idx < order.length - 1) setTab(order[idx + 1]);
+          if (dx > 0 && idx > 0) setTab(order[idx - 1]);
+        }}
+      >
+        {tab === 'feed'          && <CommunityFeedTab          key={feedKey} me={profile} onOpenComposer={() => setComposer(true)} />}
+        {tab === 'discover'      && <CommunityDiscoverTab      me={profile} />}
+        {tab === 'messages'      && <CommunityMessagesTab      me={profile} />}
+        {tab === 'notifications' && <CommunityNotificationsTab me={profile} onUnreadChange={setUnreadCount} />}
+        {tab === 'profile'       && <CommunityProfileTab       me={profile} onUpdate={setProfile} />}
+      </div>
 
       {composer && (
         <PostComposerModal

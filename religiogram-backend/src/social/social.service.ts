@@ -380,6 +380,7 @@ export class SocialService {
     const saved = await this.posts.save(post);
 
     // Fan-out: insert into author's own feed_items + every follower's feed_items
+    let followerIds: string[] = [];
     try {
       await this.ds.query(
         `INSERT INTO feed_items (user_id, post_id, inserted_at)
@@ -394,9 +395,26 @@ export class SocialService {
          ON CONFLICT DO NOTHING`,
         [authorId, saved.id, saved.createdAt],
       );
+      // Get follower ids for socket notification
+      const followers: Array<{ user_id: string }> = await this.ds.query(
+        `SELECT
+           CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END AS user_id
+         FROM friendships f
+         WHERE (f.requester_id = $1 OR f.addressee_id = $1) AND f.status = 'accepted'`,
+        [authorId],
+      );
+      followerIds = followers.map((r) => r.user_id);
     } catch (err) {
       console.error('[social] fan-out failed (non-fatal):', err);
     }
+    // Notify followers in real-time via Redis pub/sub → SocialGateway → socket `post.new`
+    try {
+      const evt = JSON.stringify({ postId: saved.id, authorId, createdAt: saved.createdAt });
+      this.redis.publish(`feed:${authorId}`, evt);
+      for (const uid of followerIds) {
+        this.redis.publish(`feed:${uid}`, evt);
+      }
+    } catch { /* non-fatal */ }
 
     // ── Fan-out strategy ──────────────────────────────────────────────────
     // For most users (< threshold friends): fan-out inline (sync, fire-and-forget).
@@ -725,6 +743,22 @@ export class SocialService {
     }
     const msg = this.dms.create({ senderId, recipientId: dto.recipientId, content: (dto as any).content ?? (dto as any).text ?? '' });
     const saved = await this.dms.save(msg);
+    const response = {
+      id: saved.id,
+      senderId: saved.senderId,
+      recipientId: saved.recipientId,
+      content: saved.content,
+      text: saved.content,
+      photoUrl: null,
+      threadId: [saved.senderId, saved.recipientId].sort().join(':'),
+      createdAt: saved.createdAt,
+      readAt: saved.readAt,
+    };
+    // Real-time delivery via Redis pub/sub — SocialGateway forwards to socket as `dm.message`
+    try {
+      this.redis.publish(`dm:${dto.recipientId}`, JSON.stringify(response));
+      this.redis.publish(`dm:${senderId}`, JSON.stringify(response));
+    } catch { /* non-fatal */ }
     if (dto.recipientId) {
       const sender = await this.users.findOne({ where: { id: senderId } });
       const name = sender?.name || sender?.username || 'Someone';
@@ -736,17 +770,7 @@ export class SocialService {
         { senderId, dmId: saved.id },
       ).catch(() => {});
     }
-    return {
-      id: saved.id,
-      senderId: saved.senderId,
-      recipientId: saved.recipientId,
-      content: saved.content,
-      text: saved.content,
-      photoUrl: null,
-      threadId: [saved.senderId, saved.recipientId].sort().join(':'),
-      createdAt: saved.createdAt,
-      readAt: saved.readAt,
-    };
+    return response;
   }
 
   async getConversation(userId: string, otherId: string, cursor?: string, limit = 50) {

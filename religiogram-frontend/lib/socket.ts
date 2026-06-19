@@ -25,10 +25,10 @@ export async function connectSocket(token?: string): Promise<any> {
   try {
     const { io } = await import('socket.io-client');
     const auth = token || (typeof window !== 'undefined' ? localStorage.getItem('rg_access') : null);
-    // Backend exposes socket.io at the root with a path (default /socket.io)
+    // Backend SocialGateway uses /social namespace
     const base = getApiBase().replace(/\/v1\/?$/, '');
-    socket = io(base, {
-      auth: { token: auth ? `Bearer ${auth}` : undefined },
+    socket = io(`${base}/social`, {
+      auth: { token: auth ? `Bearer ${auth}` : auth },
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1500,

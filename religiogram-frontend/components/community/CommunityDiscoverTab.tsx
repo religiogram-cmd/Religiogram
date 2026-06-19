@@ -26,11 +26,25 @@ export default function CommunityDiscoverTab({ me }: Props) {
 
   useEffect(() => {
     community.hashtags.suggest('').then(setTrending).catch(() => setTrending([]));
-    // Real suggestions endpoint — ranks by post count + recency, excludes already-followed users
+    // SessionStorage cache: avoid re-fetching suggested users on every tab visit
+    try {
+      const cached = sessionStorage.getItem('rg_suggested_users');
+      const cachedAt = Number(sessionStorage.getItem('rg_suggested_users_at') || 0);
+      const FIVE_MIN = 5 * 60 * 1000;
+      if (cached && Date.now() - cachedAt < FIVE_MIN) {
+        setSuggestedUsers(JSON.parse(cached));
+        return;
+      }
+    } catch { /* ignore */ }
     community.users.suggested()
       .then((r: any) => {
         const arr = Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : [];
-        setSuggestedUsers(arr.slice(0, 5));
+        const slice = arr.slice(0, 5);
+        setSuggestedUsers(slice);
+        try {
+          sessionStorage.setItem('rg_suggested_users', JSON.stringify(slice));
+          sessionStorage.setItem('rg_suggested_users_at', String(Date.now()));
+        } catch { /* ignore */ }
       })
       .catch(() => setSuggestedUsers([]));
   }, []);
