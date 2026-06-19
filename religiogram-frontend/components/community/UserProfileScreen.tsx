@@ -3,13 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { community } from '@/lib/community-api';
+import { getInitials } from '@/lib/avatar-utils';
 
 const NAVY = '#0A1628';
 const NAVY_2 = '#0F2452';
 const GOLD = '#C8920A';
 const GOLD_L = '#E0A92F';
 const TEXT = '#1A0800';
-const TEXT2 = '#4A3010';
 const TEXT3 = '#8B6B35';
 
 interface Props { username: string }
@@ -25,7 +25,6 @@ export default function UserProfileScreen({ username }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        // byUsername endpoint missing on backend — use search fallback
         let found: any = null;
         try {
           found = await community.users.byUsername(username);
@@ -38,7 +37,6 @@ export default function UserProfileScreen({ username }: Props) {
         if (found) {
           setUser(found);
           if (found.id) {
-            // Check follow state via the friends list (response may be { data: [...] } or [...])
             try {
               const friendsResp: any = await community.friends.list();
               const arr: any[] = Array.isArray(friendsResp)
@@ -117,7 +115,7 @@ export default function UserProfileScreen({ username }: Props) {
 
   return (
     <div style={{ minHeight: '100svh', background: '#FFFBF0', paddingBottom: 80 }}>
-      {/* Hero header */}
+      {/* Hero */}
       <div style={{
         background: `linear-gradient(150deg, ${NAVY} 0%, ${NAVY_2} 100%)`,
         color: '#FFFAEC', padding: '14px 18px 24px',
@@ -136,7 +134,7 @@ export default function UserProfileScreen({ username }: Props) {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontSize: 28, fontWeight: 700,
           }}>
-            {!user.avatarUrl && (user.name?.[0] || user.username?.[0] || '?').toUpperCase()}
+            {!user.avatarUrl && getInitials(user.name || user.fullName, user.username)}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 800, fontFamily: '"Playfair Display", serif' }}>
@@ -152,7 +150,6 @@ export default function UserProfileScreen({ username }: Props) {
           </div>
         )}
 
-        {/* Action buttons */}
         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
           <button
             onClick={toggleFollow}
@@ -184,7 +181,6 @@ export default function UserProfileScreen({ username }: Props) {
         </div>
       </div>
 
-      {/* Posts grid */}
       <div style={{ padding: '14px 14px 20px' }}>
         <div style={{ fontSize: 11, color: TEXT3, fontWeight: 800, letterSpacing: '0.1em', marginBottom: 10 }}>
           POSTS ({posts.length})
@@ -199,12 +195,12 @@ export default function UserProfileScreen({ username }: Props) {
               <div key={p.id} style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', border: '1px solid rgba(200,146,10,0.18)' }}>
                 <div style={{ fontSize: 11.5, color: TEXT3, marginBottom: 6 }}>{new Date(p.createdAt).toLocaleString()}</div>
                 <div style={{ fontSize: 14, color: TEXT, whiteSpace: 'pre-wrap' }}>{p.caption || p.text || ''}</div>
-                {(p.imageUrls?.length || p.photos?.length) && (
+                {((p.imageUrls?.length ?? 0) > 0 || (p.photos?.length ?? 0) > 0) ? (
                   <div style={{ marginTop: 8 }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={(p.imageUrls || p.photos)[0]} alt="" style={{ width: '100%', maxHeight: 280, objectFit: 'cover', borderRadius: 10 }} />
                   </div>
-                )}
+                ) : null}
               </div>
             ))}
           </div>

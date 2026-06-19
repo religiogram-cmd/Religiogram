@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { community, CommunityProfile, Post, Comment } from '@/lib/community-api';
+import { getInitials, initialsAvatarStyle } from '@/lib/avatar-utils';
 
 const NAVY    = '#0F2452';
 const NAVY_2  = '#0A1628';
@@ -77,7 +78,7 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
         unsubscribers.push(onSocketEvent('post.new', () => { if (!cancelled) fetchFeed(); }));
         unsubscribers.push(onSocketEvent('post.liked', (p: any) => {
           if (!cancelled && p?.postId) {
-            patchPost(p.postId, post => ({ ...post, likeCount: p.likeCount ?? post.likeCount }));
+            patchPost(p.postId, post => ({ ...post, likeCount: Math.max(0, p.likeCount ?? post.likeCount) }));
           }
         }));
       } catch { /* socket unavailable → polling still runs */ }
@@ -108,12 +109,12 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
 
   async function toggleLike(post: Post) {
     const next = !post.likedByMe;
-    patchPost(post.id, p => ({ ...p, likedByMe: next, likeCount: p.likeCount + (next ? 1 : -1) }));
+    patchPost(post.id, p => ({ ...p, likedByMe: next, likeCount: Math.max(0, p.likeCount + (next ? 1 : -1)) }));
     try {
       const res = next ? await community.posts.like(post.id) : await community.posts.unlike(post.id);
-      patchPost(post.id, p => ({ ...p, likeCount: res.likeCount ?? p.likeCount }));
+      patchPost(post.id, p => ({ ...p, likeCount: Math.max(0, res.likeCount ?? p.likeCount) }));
     } catch {
-      patchPost(post.id, p => ({ ...p, likedByMe: !next, likeCount: p.likeCount + (next ? -1 : 1) }));
+      patchPost(post.id, p => ({ ...p, likedByMe: !next, likeCount: Math.max(0, p.likeCount + (next ? -1 : 1)) }));
     }
   }
 
@@ -211,30 +212,6 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
           <style>{`@keyframes rg-spin { to { transform: rotate(360deg) } }`}</style>
         </div>
       )}
-
-      {/* Desktop refresh button (hidden on touch devices) */}
-      <button
-        onClick={manualRefresh}
-        title="Refresh feed"
-        aria-label="Refresh feed"
-        style={{
-          position: 'fixed', right: 16, bottom: 90,
-          width: 44, height: 44, borderRadius: '50%',
-          background: `linear-gradient(135deg, ${NAVY_2}, ${NAVY})`,
-          color: GOLD_L, border: `1.5px solid ${GOLD_L}55`,
-          boxShadow: '0 4px 18px rgba(15,36,82,0.30)',
-          cursor: refreshing ? 'wait' : 'pointer',
-          zIndex: 50,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
-          style={{ animation: refreshing ? 'rg-spin 0.8s linear infinite' : 'none' }}>
-          <polyline points="23 4 23 10 17 10" />
-          <polyline points="1 20 1 14 7 14" />
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-        </svg>
-      </button>
 
       {/* ── Today's Inspiration banner ────────────────────── */}
       <section style={{
@@ -371,11 +348,15 @@ function PostCard({
     }}>
       {/* Header row */}
       <header style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: '50%',
-          background: post.author.avatarUrl ? `center/cover url('${post.author.avatarUrl}')` : 'linear-gradient(135deg,#C8920A,#6B3210)',
-          flexShrink: 0,
-        }} />
+        {post.author.avatarUrl ? (
+          <div style={{
+            width: 40, height: 40, borderRadius: '50%',
+            background: `center/cover url('${post.author.avatarUrl}')`,
+            flexShrink: 0,
+          }} />
+        ) : (
+          <div style={initialsAvatarStyle(40)}>{getInitials(post.author.name, post.author.username)}</div>
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ fontSize: 13.5, fontWeight: 800, color: TEXT, lineHeight: 1.1 }}>
@@ -569,7 +550,11 @@ function CommentsSheet({ post, me, onClose, onCountChange }: { post: Post; me: C
           {!loading && comments.length === 0 && <div style={{ textAlign: 'center', color: TEXT3, fontSize: 12, padding: 20 }}>Be the first to comment.</div>}
           {comments.map(c => (
             <div key={c.id} style={{ display: 'flex', gap: 8, padding: '8px 0', borderBottom: '1px solid rgba(200,146,10,0.10)' }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: c.author.avatarUrl ? `center/cover url('${c.author.avatarUrl}')` : 'linear-gradient(135deg,#C8920A,#6B3210)', flexShrink: 0 }} />
+              {c.author.avatarUrl ? (
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: `center/cover url('${c.author.avatarUrl}')`, flexShrink: 0 }} />
+              ) : (
+                <div style={initialsAvatarStyle(28)}>{getInitials(c.author.name, c.author.username)}</div>
+              )}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 11.5, fontWeight: 800, color: TEXT, lineHeight: 1.2 }}>{c.author.name || ('@' + c.author.username)} <span style={{ color: TEXT3, fontWeight: 500, fontSize: 10 }}>· {timeAgo(c.createdAt)}</span></div>
                 <div style={{ fontSize: 12.5, color: TEXT, marginTop: 2, whiteSpace: 'pre-wrap' }}>{c.text}</div>
@@ -578,7 +563,11 @@ function CommentsSheet({ post, me, onClose, onCountChange }: { post: Post; me: C
           ))}
         </div>
         <div style={{ borderTop: '1px solid rgba(200,146,10,0.18)', padding: 10, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-          <div style={{ width: 30, height: 30, borderRadius: '50%', background: me.avatarUrl ? `center/cover url('${me.avatarUrl}')` : 'linear-gradient(135deg,#C8920A,#6B3210)', flexShrink: 0 }} />
+          {me.avatarUrl ? (
+            <div style={{ width: 30, height: 30, borderRadius: '50%', background: `center/cover url('${me.avatarUrl}')`, flexShrink: 0 }} />
+          ) : (
+            <div style={initialsAvatarStyle(30)}>{getInitials(me.name, me.username)}</div>
+          )}
           <textarea value={text} onChange={(e) => setText(e.target.value.slice(0, 500))} rows={1} placeholder="Add a comment…"
             style={{ flex: 1, resize: 'none', border: '1px solid rgba(200,146,10,0.25)', borderRadius: 16, padding: '8px 12px', fontSize: 13, fontFamily: 'inherit', outline: 'none', background: '#FFFCF5' }} />
           <button onClick={send} disabled={posting || !text.trim()} style={{
