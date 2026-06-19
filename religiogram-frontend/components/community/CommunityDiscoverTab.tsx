@@ -26,9 +26,12 @@ export default function CommunityDiscoverTab({ me }: Props) {
 
   useEffect(() => {
     community.hashtags.suggest('').then(setTrending).catch(() => setTrending([]));
-    // Load suggested users (just search common letters to surface real users)
-    community.users.search('a')
-      .then(r => setSuggestedUsers((r ?? []).slice(0, 5)))
+    // Real suggestions endpoint — ranks by post count + recency, excludes already-followed users
+    community.users.suggested()
+      .then((r: any) => {
+        const arr = Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : [];
+        setSuggestedUsers(arr.slice(0, 5));
+      })
       .catch(() => setSuggestedUsers([]));
   }, []);
 

@@ -124,6 +124,18 @@ export class SocialService {
     // Instagram-style auto-accept: status='accepted' immediately so DMs + feed work
     const f = this.friendships.create({ requesterId, addresseeId, status: 'accepted' });
     const saved = await this.friendships.save(f);
+    // Notify the followed user (push + in-app)
+    try {
+      const follower = await this.users.findOne({ where: { id: requesterId } });
+      const name = follower?.name || follower?.username || 'Someone';
+      this.notifs.send(
+        addresseeId,
+        NotificationType.FRIEND_REQUEST,
+        `👤 ${name} followed you`,
+        `Open profile to view their content`,
+        { followerId: requesterId },
+      ).catch(() => {});
+    } catch { /* non-fatal */ }
     // Backfill the follower's feed with the followed user's recent posts
     try {
       await this.ds.query(
@@ -796,6 +808,48 @@ export class SocialService {
         q ? [`%${q}%`] : [],
       );
       return rows.map((r) => ({ tag: r.tag, postCount: Number(r.cnt) }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Suggested users to follow — Instagram-style "Who to follow".
+   * Ranking: users you don't already follow, weighted by post count + recency.
+   */
+  async suggestedUsers(requesterId: string) {
+    try {
+      const rows: Array<{
+        id: string; username: string | null; name: string | null;
+        display_name: string | null; avatar_url: string | null; bio: string | null;
+        post_count: string;
+      }> = await this.ds.query(
+        `SELECT
+           u.id, u.username, u.name, u.display_name, u.avatar_url, u.bio,
+           COALESCE((SELECT COUNT(*) FROM social_posts p WHERE p.author_id = u.id AND p.is_deleted = false), 0)::text AS post_count
+         FROM users u
+         WHERE u.id <> $1
+           AND u.deleted_at IS NULL
+           AND u.username IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM friendships f
+             WHERE (f.requester_id = $1 AND f.addressee_id = u.id)
+                OR (f.requester_id = u.id AND f.addressee_id = $1)
+           )
+         ORDER BY post_count DESC, u.created_at DESC
+         LIMIT 10`,
+        [requesterId],
+      );
+      return rows.map((u) => ({
+        id: u.id,
+        username: u.username,
+        name: u.name ?? u.display_name,
+        fullName: u.name ?? u.display_name,
+        displayName: u.display_name,
+        avatarUrl: u.avatar_url,
+        bio: u.bio,
+        postCount: Number(u.post_count),
+      }));
     } catch {
       return [];
     }

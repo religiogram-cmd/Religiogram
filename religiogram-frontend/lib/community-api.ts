@@ -226,6 +226,9 @@ export const users = {
 
   byUsername: (username: string) =>
     call<UserSearchResult>(`/social/users/by-username/${encodeURIComponent(username)}`),
+
+  suggested: () =>
+    call<UserSearchResult[]>(`/social/users/suggested`),
 };
 
 export const friends = {

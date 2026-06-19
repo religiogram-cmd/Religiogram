@@ -98,8 +98,8 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
 
   async function sharePost(post: Post) {
     const url = typeof window !== 'undefined' ? `${window.location.origin}/p/${post.id}` : '';
+    const { showToast } = await import('@/components/ui/Toast');
     try {
-      // Use native share sheet if available (mobile)
       if (typeof navigator !== 'undefined' && (navigator as any).share) {
         await (navigator as any).share({
           title: 'Post on ReligioGram',
@@ -107,16 +107,14 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
           url,
         });
       } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        // Fallback: copy to clipboard
         await navigator.clipboard.writeText(url);
-        alert('Link copied to clipboard!');
+        showToast('Link copied', 'success');
       }
-      // Best-effort share count increment (non-blocking)
       try {
         const res = await community.posts.share(post.id);
         patchPost(post.id, p => ({ ...p, shareCount: res.shareCount ?? p.shareCount + 1 }));
       } catch { /* ignore */ }
-    } catch { /* user cancelled */ }
+    } catch { /* user cancelled native share */ }
   }
 
 
@@ -157,7 +155,28 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
 
       {/* ── Feed ─────────────────────────────────────────── */}
       {loading && (
-        <div style={{ padding: 30, textAlign: 'center', color: TEXT3, fontSize: 13 }}>Loading feed…</div>
+        <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{
+              background: '#fff', borderRadius: 14, padding: 14,
+              border: '1px solid rgba(200,146,10,0.18)',
+              display: 'flex', flexDirection: 'column', gap: 10,
+              animation: 'rg-skel 1.5s ease-in-out infinite',
+              animationDelay: `${i * 0.15}s`,
+            }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(110deg,#F3E9D2 30%,#FFF8E6 50%,#F3E9D2 70%)' }} />
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <div style={{ width: '40%', height: 11, borderRadius: 6, background: 'linear-gradient(110deg,#F3E9D2 30%,#FFF8E6 50%,#F3E9D2 70%)' }} />
+                  <div style={{ width: '25%', height: 9, borderRadius: 6, background: 'linear-gradient(110deg,#F3E9D2 30%,#FFF8E6 50%,#F3E9D2 70%)' }} />
+                </div>
+              </div>
+              <div style={{ width: '90%', height: 12, borderRadius: 6, background: 'linear-gradient(110deg,#F3E9D2 30%,#FFF8E6 50%,#F3E9D2 70%)' }} />
+              <div style={{ width: '65%', height: 12, borderRadius: 6, background: 'linear-gradient(110deg,#F3E9D2 30%,#FFF8E6 50%,#F3E9D2 70%)' }} />
+            </div>
+          ))}
+          <style>{`@keyframes rg-skel { 0%,100% { opacity:1 } 50% { opacity:0.5 } }`}</style>
+        </div>
       )}
       {!loading && posts.length === 0 && (
         <div style={{

@@ -12,6 +12,7 @@ import { RGLogo } from '@/components/ui/RGLogo';
 // Dynamic imports — isolate heavy/optional components from the layout bundle
 const BottomNav = dynamic(() => import('@/components/ui/BottomNav'), { ssr: false });
 const RGAIBubble = dynamic(() => import('@/components/ai/RGAIBubble'), { ssr: false });
+const ToastHost = dynamic(() => import('@/components/ui/Toast'), { ssr: false });
 
 // Bump on every edit — lets you confirm in DevTools console which bundle is live.
 const LAYOUT_BUILD_TAG = '2026-05-29-applayout-fix-1';
@@ -51,6 +52,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
       </main>
       <BottomNav />
       {showAiBubble && <RGAIBubble />}
+      <ToastHost />
     </div>
   );
 }

@@ -117,6 +117,12 @@ export class SocialController {
     return this.svc.suggestHashtags(q ?? '');
   }
 
+  // ── Suggested people to follow (Instagram "Who to follow") ─────────────
+  @Get('users/suggested')
+  async suggestedUsers(@Req() req: Request) {
+    return this.svc.suggestedUsers(this.uid(req));
+  }
+
   // ── DMs ────────────────────────────────────────────────────────────────
   @Get('messages')
   getInbox(@Req() req: Request) { return this.svc.getInbox(this.uid(req)); }
