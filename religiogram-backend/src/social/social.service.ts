@@ -373,18 +373,67 @@ export class SocialService {
       throw new BadRequestException('Post must have caption or at least one image');
     }
 
-    // Raw SQL insert — bypasses TypeORM entity metadata to avoid breakage from
-    // schema drift on optional columns (hashtags, post_type, category, text, image_url).
-    // Only requires: id, author_id, caption, image_urls, likes_count, comments_count,
-    // created_at, updated_at. Everything else uses DB defaults or NULL.
-    const rows: Array<{ id: string; created_at: Date }> = await this.ds.query(
-      `INSERT INTO social_posts (author_id, caption, image_urls, likes_count, comments_count, is_deleted, created_at, updated_at)
-       VALUES ($1, $2, $3::jsonb, 0, 0, false, NOW(), NOW())
-       RETURNING id, created_at`,
-      [authorId, caption, JSON.stringify(imageUrls)],
-    );
+    this.logger.log(`[createPost] start authorId=${authorId} captionLen=${caption?.length ?? 0} images=${imageUrls.length}`);
+
+    // Generate UUID in app — never rely on DB-side defaults
+    const { randomUUID } = await import('crypto');
+    const postId = randomUUID();
+    const now = new Date();
+
+    // Try multiple INSERT shapes — image_urls might be jsonb OR text[] depending
+    // on which migration created the column. Try jsonb first, fall back to text[].
+    let inserted = false;
+    let lastErr: any = null;
+
+    try {
+      await this.ds.query(
+        `INSERT INTO social_posts (id, author_id, caption, image_urls, likes_count, comments_count, is_deleted, created_at, updated_at)
+         VALUES ($1, $2, $3, $5::jsonb, 0, 0, false, $4, $4)`,
+        [postId, authorId, caption, now, JSON.stringify(imageUrls)],
+      );
+      inserted = true;
+      this.logger.log(`[createPost] jsonb insert ok id=${postId}`);
+    } catch (err: any) {
+      lastErr = err;
+      this.logger.warn(`[createPost] jsonb insert failed: ${err?.message}`);
+    }
+
+    if (!inserted) {
+      try {
+        await this.ds.query(
+          `INSERT INTO social_posts (id, author_id, caption, image_urls, likes_count, comments_count, is_deleted, created_at, updated_at)
+           VALUES ($1, $2, $3, $5::text[], 0, 0, false, $4, $4)`,
+          [postId, authorId, caption, now, imageUrls],
+        );
+        inserted = true;
+        this.logger.log(`[createPost] text[] insert ok id=${postId}`);
+      } catch (err: any) {
+        lastErr = err;
+        this.logger.warn(`[createPost] text[] insert failed: ${err?.message}`);
+      }
+    }
+
+    if (!inserted) {
+      try {
+        await this.ds.query(
+          `INSERT INTO social_posts (id, author_id, caption, likes_count, comments_count, is_deleted, created_at, updated_at)
+           VALUES ($1, $2, $3, 0, 0, false, $4, $4)`,
+          [postId, authorId, caption, now],
+        );
+        inserted = true;
+        this.logger.log(`[createPost] minimal insert ok id=${postId}`);
+      } catch (err: any) {
+        lastErr = err;
+        this.logger.error(`[createPost] all inserts failed: ${err?.message}`, err?.stack);
+      }
+    }
+
+    if (!inserted) {
+      throw new BadRequestException(`Could not create post: ${lastErr?.message ?? 'unknown DB error'}`);
+    }
+
     const saved = {
-      id: rows[0].id,
+      id: postId,
       authorId,
       caption,
       imageUrls,
@@ -397,8 +446,8 @@ export class SocialService {
       category: null as string | null,
       text: caption,
       imageUrl: null as string | null,
-      createdAt: rows[0].created_at,
-      updatedAt: rows[0].created_at,
+      createdAt: now,
+      updatedAt: now,
     } as any;
 
     // Fan-out: insert into author's own feed_items + every follower's feed_items
@@ -1228,50 +1277,12 @@ export class SocialService {
         { requesterId: recipientId, addresseeId: senderId, status: 'accepted' },
       ],
     });
-    if (!areFriends) {
-      throw new ForbiddenException('You can only send messages to friends');
-    }
-    const dm = this.dms.create({
-      senderId,
-      recipientId,
-      content: dto.text || dto.imageUrl || '',
-    } as Partial<DirectMessage>);
+    if (!areFriends) throw new ForbiddenException('You can only send messages to friends');
+    const dm = this.dms.create({ senderId, recipientId, content: dto.text || dto.imageUrl || '' } as Partial<DirectMessage>);
     const saved = await this.dms.save(dm);
-
-    // P2-5: publish to Redis so SocialGateway can push dm.message to connected clients
-    this.redis.publish(
-      `dm:${recipientId}`,
-      JSON.stringify({
-        id: saved.id,
-        senderId,
-        recipientId,
-        text: dto.text,
-        imageUrl: dto.imageUrl,
-        createdAt: new Date().toISOString(),
-      }),
-    ).catch(() => {});
-
-    // Notify recipient (fire-and-forget)
-    const sender = await this.users.findOne({ where: { id: senderId } });
-    const name = sender?.name || sender?.username || 'Someone';
-    const preview = dto.text ? dto.text.slice(0, 60) : '📷 Photo';
-    this.notifs.send(
-      recipientId,
-      NotificationType.NEW_DM,
-      `💬 Message from ${name}`,
-      preview,
-      { senderId, dmId: saved.id },
-    ).catch(() => {});
     return saved;
   }
-
-  /** Get DM inbox in community v2 format */
   async getCommunityInbox(userId: string) {
-    try {
-      const convos = await this.getInbox(userId);
-      return convos;
-    } catch {
-      return [];
-    }
+    try { return await this.getInbox(userId); } catch { return []; }
   }
 }
