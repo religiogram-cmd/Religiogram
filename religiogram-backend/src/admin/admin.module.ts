@@ -16,6 +16,7 @@ import { AdminAuditService } from "./admin-audit.service";
 import { AdminPaymentsController } from "./admin-payments.controller";
 import { AdminProviderVerificationController } from "./admin-provider-verification.controller";
 import { KycVideoEntity } from "../service-providers/entities/kyc-video.entity";
+import { ProviderBankAccount } from "../service-providers/entities/provider-bank-account.entity";
 import { QUEUE } from "../common/queues/queue.constants";
 import { RedisModule } from "../redis/redis.module";
 import { PartmanModule } from "../common/partman/partman.module";
@@ -60,6 +61,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       Booking,
       KycVideoEntity,
       WalletBalance,
+      ProviderBankAccount,
     ]),
   ],
   controllers: [

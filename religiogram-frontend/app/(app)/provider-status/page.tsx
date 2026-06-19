@@ -42,6 +42,8 @@ const STEPS = [
   { n: 5, label: 'Pricing' },
   { n: 6, label: 'Availability' },
   { n: 7, label: 'KYC Video' },
+  { n: 8, label: 'Identity Documents' },
+  { n: 9, label: 'Payout Setup' },
 ];
 
 const STATUS_META: Record<string, { icon: string; color: string; label: string }> = {
@@ -74,16 +76,18 @@ function toProviderStatus(me: OnboardingMe | null): ProviderStatus {
   if (currentStep >= 4 /* services posted via /:id/services — best-effort */) currentStep = Math.max(currentStep, 5);
   if (currentStep >= 5 && d['perMinutePaise'] !== undefined) currentStep = 6;
   if (currentStep >= 6 && d['serviceMode']) currentStep = 7;
+  if (currentStep >= 7 && (d['kycR2ObjectKey'] || d['kycS3Key'])) currentStep = 8;
+  if (currentStep >= 8 && d['panR2ObjectKey'] && d['selfieR2ObjectKey']) currentStep = 9;
   if (me.state === 'pending_review' || me.state === 'approved' || me.state === 'rejected' || me.state === 'suspended') {
-    currentStep = 7;
+    currentStep = 9;
   }
 
   let message = '';
   switch (me.state) {
     case 'draft':
-      message = currentStep < 7
+      message = currentStep < 9
         ? `Continue from Step ${currentStep} to finish your application.`
-        : 'You’re ready to submit your KYC video — open Step 7 to record and send for review.';
+        : 'You’re ready to submit — open Step 9 to confirm payout details and send for review.';
       break;
     case 'pending_review':
       message = 'Your application is under review by our team. We aim to respond within 2 business days.';
@@ -171,7 +175,7 @@ export default function ProviderStatusPage() {
   }
 
   const meta = data.status ? STATUS_META[data.status] : null;
-  const completedSteps = Math.min(data.currentStep - 1, 7);
+  const completedSteps = Math.min(data.currentStep - 1, 9);
 
   return (
     <div style={{
@@ -344,7 +348,7 @@ export default function ProviderStatusPage() {
           </button>
         )}
 
-        {data.registered && (data.status === 'draft' || data.status === 'rejected') && data.currentStep <= 7 && (
+        {data.registered && (data.status === 'draft' || data.status === 'rejected') && data.currentStep <= 9 && (
           <button
             onClick={() => router.push(`/provider-onboarding/step-${data.currentStep}`)}
             style={{

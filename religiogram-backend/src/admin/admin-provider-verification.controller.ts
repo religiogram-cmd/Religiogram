@@ -28,6 +28,8 @@ import {
   ProviderStatus,
 } from '../service-providers/entities/provider.entity';
 import { KycVideoEntity } from '../service-providers/entities/kyc-video.entity';
+import { ProviderBankAccount } from '../service-providers/entities/provider-bank-account.entity';
+import { EncryptionService } from '../common/encryption/encryption.service';
 import { AdminActionLog } from './entities/admin-action-log.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
@@ -58,8 +60,11 @@ export class AdminProviderVerificationController {
     private readonly kycVideos: Repository<KycVideoEntity>,
     @InjectRepository(AdminActionLog)
     private readonly actionLog: Repository<AdminActionLog>,
+    @InjectRepository(ProviderBankAccount)
+    private readonly bankAccounts: Repository<ProviderBankAccount>,
     private readonly notifs: NotificationsService,
     private readonly config: ConfigService,
+    private readonly encryption: EncryptionService,
   ) {
     this.s3 = new S3Client({
       region:   this.config.get<string>('storage.region', 'ap-south-1'),
@@ -127,7 +132,59 @@ export class AdminProviderVerificationController {
       }),
     );
 
-    return { provider, kycVideos: kycVideosOut };
+    // Sign 24h URLs for PAN + selfie if present
+    const signKey = async (key: string | null): Promise<string | null> => {
+      if (!key) return null;
+      try {
+        const cmd = new GetObjectCommand({ Bucket: this.bucket, Key: key });
+        return await getSignedUrl(this.s3, cmd, { expiresIn: 86_400 });
+      } catch {
+        return null;
+      }
+    };
+    const [panSignedUrl, selfieSignedUrl] = await Promise.all([
+      signKey(provider.panS3Key),
+      signKey(provider.selfieS3Key),
+    ]);
+
+    // Load primary bank row; mask account number — never return plaintext
+    const bankRow = await this.bankAccounts.findOne({
+      where: { providerId, isPrimary: true },
+    });
+    let bankOut: {
+      bankName: string | null;
+      ifscCode: string | null;
+      upiId: string | null;
+      beneficiaryName: string | null;
+      masked: string;
+      verificationStatus: string;
+    } | null = null;
+    if (bankRow) {
+      let masked = '****';
+      if (bankRow.upiId) {
+        masked = `****${bankRow.upiId.replace(/^[^@]+/, '')}`;
+      } else {
+        try {
+          const pt = this.encryption.decrypt(
+            bankRow.accountNumberEncrypted,
+            'PAYOUT_ENCRYPTION_KEY',
+          );
+          masked = `****${pt.slice(-4)}`;
+        } catch {
+          masked = '****';
+        }
+      }
+      bankOut = {
+        bankName:        bankRow.bankName ?? null,
+        ifscCode:        bankRow.ifscCode ?? null,
+        upiId:           bankRow.upiId ?? null,
+        beneficiaryName: bankRow.beneficiaryName ?? null,
+        masked,
+        verificationStatus: bankRow.verificationStatus,
+      };
+    }
+
+    return { provider, kycVideos: kycVideosOut, panSignedUrl, selfieSignedUrl, bank: bankOut };
   }
 
   /* ─── POST /v1/admin/verifications/:providerId/approve ─── */

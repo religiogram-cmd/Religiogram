@@ -116,6 +116,19 @@ export class ProviderEntity {
   @Column({ name: 'verification_status', type: 'varchar', default: 'PENDING' })
   verificationStatus!: string;
 
+  // ── KYC document keys (PAN card + selfie) ───────────────────────────────
+  @Column({ name: 'pan_s3_key', type: 'varchar', length: 512, nullable: true })
+  panS3Key!: string | null;
+
+  @Column({ name: 'pan_uploaded_at', type: 'timestamptz', nullable: true })
+  panUploadedAt!: Date | null;
+
+  @Column({ name: 'selfie_s3_key', type: 'varchar', length: 512, nullable: true })
+  selfieS3Key!: string | null;
+
+  @Column({ name: 'selfie_uploaded_at', type: 'timestamptz', nullable: true })
+  selfieUploadedAt!: Date | null;
+
   // Denormalised rating columns — updated by ReviewsService.updateRating()
   // after every review create/delete. Avoids a full AVG() scan per request.
   @Column({

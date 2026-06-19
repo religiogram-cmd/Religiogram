@@ -60,7 +60,14 @@ export interface ProviderOnboardingData {
   slots?: AvailabilitySlot[];
   // Step 7 — metadata only; the actual file lives in S3
   kycS3Key?: string;
+  kycR2ObjectKey?: string;
   kycDurationSeconds?: number;
+  // Step 8 — identity documents (S3 keys persisted server-side)
+  panR2ObjectKey?: string;
+  selfieR2ObjectKey?: string;
+  // Step 9 — payout method snapshot
+  payoutMethod?: 'bank' | 'upi';
+  payoutMasked?: string;
 }
 
 export interface OnboardingState {

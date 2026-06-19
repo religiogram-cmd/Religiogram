@@ -220,6 +220,60 @@ export class UploadsService implements OnModuleInit {
   }
 
   /**
+   * Sign a 5-min PUT URL for a provider's KYC image (PAN card or selfie).
+   *
+   * Lives in the same `kyc/<providerId>/` prefix as the video so the
+   * existing IDOR guard (`r2ObjectKey.startsWith('kyc/<providerId>/')`)
+   * applies unchanged. `kind` is encoded into the filename so admins can
+   * tell PAN cards from selfies at a glance when listing the folder.
+   */
+  async createKycImagePresign(
+    providerId: string,
+    contentType: 'image/jpeg' | 'image/png' | 'image/webp',
+    sizeBytes: number,
+    kind: 'pan' | 'selfie',
+  ): Promise<{
+    uploadUrl: string;
+    r2ObjectKey: string;
+    expiresIn: number;
+    headers: Record<string, string>;
+    maxSizeBytes: number;
+  }> {
+    const IMG_MAX = 8 * 1024 * 1024; // 8 MB
+    if (sizeBytes < 1 || sizeBytes > IMG_MAX) {
+      throw new BadRequestException(
+        `KYC image must be 1B–${Math.round(IMG_MAX / 1024 / 1024)}MB`,
+      );
+    }
+    const ext = ({
+      'image/jpeg': '.jpg',
+      'image/png':  '.png',
+      'image/webp': '.webp',
+    } as Record<string, string>)[contentType];
+    if (!ext) throw new BadRequestException(`Unsupported KYC image mime type: ${contentType}`);
+
+    const fileId = randomUUID();
+    const key = `kyc/${providerId}/${kind}-${fileId}${ext}`;
+
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ContentType: contentType,
+      ContentLength: sizeBytes,
+      Metadata: { 'provider-id': providerId, 'kind': `kyc-${kind}` },
+    });
+    const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn: PRESIGN_TTL_SECONDS });
+
+    return {
+      uploadUrl,
+      r2ObjectKey: key,
+      expiresIn: PRESIGN_TTL_SECONDS,
+      headers: { 'Content-Type': contentType, 'Content-Length': String(sizeBytes) },
+      maxSizeBytes: IMG_MAX,
+    };
+  }
+
+  /**
    * Sign a 5-min PUT URL for a place gallery image.
    *
    * Images land at `places/${placeId}/gallery/${uuid}${ext}` so the

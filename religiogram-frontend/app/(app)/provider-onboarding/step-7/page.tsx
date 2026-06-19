@@ -247,9 +247,8 @@ export default function Step7Page() {
       });
 
       setPhase('done');
-      // WizardShell will push us to /provider-onboarding/submitted once
-      // onContinue resolves. That page calls reset() after navigating, which
-      // avoids a gate-redirect race on this one.
+      // KYC video accepted — continue to Identity Documents (Step 8).
+      router.push('/provider-onboarding/step-8');
     } catch (e: any) {
       setErr(e?.message ?? 'Upload failed. Please try again.');
       setPhase('review');
@@ -277,7 +276,7 @@ export default function Step7Page() {
       nextLabel={
         phase === 'uploading'
           ? `Uploading ${uploadProgress}%…`
-          : 'Submit for review'
+          : 'Upload & continue'
       }
       hideNext={hideNext}
     >

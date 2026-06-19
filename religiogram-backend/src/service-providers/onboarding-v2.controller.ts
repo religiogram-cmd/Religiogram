@@ -42,9 +42,14 @@ import {
 } from './entities/provider-service.entity';
 import { ServiceMasterEntity } from './entities/service-master.entity';
 import { KycVideoEntity, KycStatus } from './entities/kyc-video.entity';
+import {
+  ProviderBankAccount,
+  BankVerificationStatus,
+} from './entities/provider-bank-account.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { UploadsService } from '../uploads/uploads.service';
+import { EncryptionService } from '../common/encryption/encryption.service';
 
 /* ─────────── DTOs ─────────── */
 
@@ -149,6 +154,49 @@ class SubmitKycDto {
   deviceFingerprint?: string;
 }
 
+class PresignKycImageDto {
+  @IsIn(['image/jpeg', 'image/png', 'image/webp'])
+  contentType!: 'image/jpeg' | 'image/png' | 'image/webp';
+
+  @IsInt()
+  @Min(1)
+  @Max(8 * 1024 * 1024) // 8 MB cap for ID-card-style images
+  sizeBytes!: number;
+}
+
+class ConfirmKycImageDto {
+  @IsString()
+  @Length(1, 512)
+  r2ObjectKey!: string;
+}
+
+class SubmitBankDto {
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{8,20}$/, { message: 'accountNumber must be 8–20 digits' })
+  accountNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[\w.\-]+@[\w]+$/, { message: 'upiId must look like name@bank' })
+  upiId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Z]{4}0[A-Z0-9]{6}$/, { message: 'ifscCode must be 11 chars (4 letters + 0 + 6 alphanum)' })
+  ifscCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 100)
+  bankName?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 200)
+  beneficiaryName?: string;
+}
+
 /* ─────────────────────────────────────────────────────────────
  * ProviderOnboardingV2Controller
  *
@@ -181,8 +229,11 @@ export class ProviderOnboardingV2Controller {
     private readonly catalogue: Repository<ServiceMasterEntity>,
     @InjectRepository(KycVideoEntity)
     private readonly kycRepo: Repository<KycVideoEntity>,
+    @InjectRepository(ProviderBankAccount)
+    private readonly bankRepo: Repository<ProviderBankAccount>,
     private readonly notifs: NotificationsService,
     private readonly uploads: UploadsService,
+    private readonly encryption: EncryptionService,
   ) {}
 
   /* ── helpers ── */
@@ -425,6 +476,203 @@ export class ProviderOnboardingV2Controller {
     return { kycVideoId: kyc.id };
   }
 
+  /* ─── POST /v1/provider/onboarding/:id/pan/presign ─── */
+  @Post(':id/pan/presign')
+  @HttpCode(HttpStatus.OK)
+  async presignPan(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @Body() dto: PresignKycImageDto,
+  ) {
+    const userId = this.userId(req);
+    if (id !== userId) throw new BadRequestException('Onboarding ID mismatch');
+
+    const provider = await this.providers.findOne({ where: { userId } });
+    if (!provider) throw new NotFoundException('Start onboarding first');
+
+    return this.uploads.createKycImagePresign(
+      provider.id,
+      dto.contentType,
+      dto.sizeBytes,
+      'pan',
+    );
+  }
+
+  /* ─── POST /v1/provider/onboarding/:id/pan ─── */
+  @Post(':id/pan')
+  @HttpCode(HttpStatus.OK)
+  async confirmPan(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @Body() dto: ConfirmKycImageDto,
+  ) {
+    const userId = this.userId(req);
+    if (id !== userId) throw new BadRequestException('Onboarding ID mismatch');
+
+    const provider = await this.providers.findOne({ where: { userId } });
+    if (!provider) throw new NotFoundException('Start onboarding first');
+
+    if (!dto.r2ObjectKey.startsWith(`kyc/${provider.id}/`)) {
+      throw new ForbiddenException('Invalid document key — must belong to your provider folder');
+    }
+
+    await this.providers.update(
+      { id: provider.id },
+      { panS3Key: dto.r2ObjectKey, panUploadedAt: new Date() },
+    );
+
+    return { ok: true };
+  }
+
+  /* ─── POST /v1/provider/onboarding/:id/selfie/presign ─── */
+  @Post(':id/selfie/presign')
+  @HttpCode(HttpStatus.OK)
+  async presignSelfie(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @Body() dto: PresignKycImageDto,
+  ) {
+    const userId = this.userId(req);
+    if (id !== userId) throw new BadRequestException('Onboarding ID mismatch');
+
+    const provider = await this.providers.findOne({ where: { userId } });
+    if (!provider) throw new NotFoundException('Start onboarding first');
+
+    return this.uploads.createKycImagePresign(
+      provider.id,
+      dto.contentType,
+      dto.sizeBytes,
+      'selfie',
+    );
+  }
+
+  /* ─── POST /v1/provider/onboarding/:id/selfie ─── */
+  @Post(':id/selfie')
+  @HttpCode(HttpStatus.OK)
+  async confirmSelfie(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @Body() dto: ConfirmKycImageDto,
+  ) {
+    const userId = this.userId(req);
+    if (id !== userId) throw new BadRequestException('Onboarding ID mismatch');
+
+    const provider = await this.providers.findOne({ where: { userId } });
+    if (!provider) throw new NotFoundException('Start onboarding first');
+
+    if (!dto.r2ObjectKey.startsWith(`kyc/${provider.id}/`)) {
+      throw new ForbiddenException('Invalid document key — must belong to your provider folder');
+    }
+
+    await this.providers.update(
+      { id: provider.id },
+      { selfieS3Key: dto.r2ObjectKey, selfieUploadedAt: new Date() },
+    );
+
+    return { ok: true };
+  }
+
+  /* ─── POST /v1/provider/onboarding/:id/bank ─── */
+  @Post(':id/bank')
+  @HttpCode(HttpStatus.OK)
+  async submitBank(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @Body() dto: SubmitBankDto,
+  ) {
+    const userId = this.userId(req);
+    if (id !== userId) throw new BadRequestException('Onboarding ID mismatch');
+
+    const provider = await this.providers.findOne({ where: { userId } });
+    if (!provider) throw new NotFoundException('Start onboarding first');
+
+    const hasAccount = !!dto.accountNumber;
+    const hasUpi     = !!dto.upiId;
+    if (!hasAccount && !hasUpi) {
+      throw new BadRequestException('Provide either accountNumber+ifscCode or upiId');
+    }
+    if (hasAccount && !dto.ifscCode) {
+      throw new BadRequestException('ifscCode is required when accountNumber is set');
+    }
+
+    // Encrypt with the same payout key used by payout.service.ts so the
+    // ciphertext is readable end-to-end. Plaintext sentinel '__UPI__' is
+    // used when only UPI is provided — the column is NOT NULL.
+    const plaintext = hasAccount ? dto.accountNumber! : '__UPI__';
+    const encrypted = this.encryption.encrypt(plaintext, 'PAYOUT_ENCRYPTION_KEY');
+
+    let row = await this.bankRepo.findOne({
+      where: { providerId: provider.id, isPrimary: true },
+    });
+    if (row) {
+      row.bankName        = dto.bankName ?? row.bankName;
+      row.accountNumberEncrypted = encrypted;
+      row.ifscCode        = hasAccount ? dto.ifscCode : undefined;
+      row.beneficiaryName = dto.beneficiaryName ?? row.beneficiaryName;
+      row.upiId           = hasUpi ? dto.upiId : undefined;
+      row.verificationStatus = BankVerificationStatus.UNVERIFIED;
+      await this.bankRepo.save(row);
+    } else {
+      row = this.bankRepo.create({
+        providerId: provider.id,
+        bankName:   dto.bankName,
+        accountNumberEncrypted: encrypted,
+        ifscCode:   hasAccount ? dto.ifscCode : undefined,
+        beneficiaryName: dto.beneficiaryName,
+        upiId:      hasUpi ? dto.upiId : undefined,
+        verificationStatus: BankVerificationStatus.UNVERIFIED,
+        isPrimary:  true,
+      });
+      await this.bankRepo.save(row);
+    }
+
+    const masked = hasAccount
+      ? `****${dto.accountNumber!.slice(-4)}`
+      : `****${(dto.upiId ?? '').replace(/^[^@]+/, '')}`;
+
+    return { ok: true, masked };
+  }
+
+  /* ─── GET /v1/provider/onboarding/:id/bank ─── */
+  @Get(':id/bank')
+  async getBank(
+    @Param('id') id: string,
+    @Req() req: Request,
+  ) {
+    const userId = this.userId(req);
+    if (id !== userId) throw new BadRequestException('Onboarding ID mismatch');
+
+    const provider = await this.providers.findOne({ where: { userId } });
+    if (!provider) throw new NotFoundException('Start onboarding first');
+
+    const row = await this.bankRepo.findOne({
+      where: { providerId: provider.id, isPrimary: true },
+    });
+    if (!row) return { hasBank: false, masked: null, method: null };
+
+    if (row.upiId) {
+      return {
+        hasBank: true,
+        method: 'upi' as const,
+        masked: `****${row.upiId.replace(/^[^@]+/, '')}`,
+      };
+    }
+
+    // Decrypt only to derive the last-4 mask; never return the plaintext.
+    let last4 = '';
+    try {
+      const pt = this.encryption.decrypt(row.accountNumberEncrypted, 'PAYOUT_ENCRYPTION_KEY');
+      last4 = pt.slice(-4);
+    } catch {
+      last4 = '';
+    }
+    return {
+      hasBank: true,
+      method: 'bank' as const,
+      masked: last4 ? `****${last4}` : '****',
+    };
+  }
+
   /* ─── POST /v1/provider/onboarding/:id/submit ─── */
   @Post(':id/submit')
   @HttpCode(HttpStatus.OK)
@@ -456,6 +704,20 @@ export class ProviderOnboardingV2Controller {
     const kycCount = await this.kycRepo.count({ where: { providerId: provider.id } });
     if (kycCount === 0) {
       throw new BadRequestException('Upload a KYC video before submitting');
+    }
+
+    // KYC: PAN card + selfie must be on file
+    if (!provider.panS3Key) {
+      throw new BadRequestException('Upload your PAN card before submitting');
+    }
+    if (!provider.selfieS3Key) {
+      throw new BadRequestException('Upload your selfie before submitting');
+    }
+
+    // Payout method (bank or UPI) required
+    const bankCount = await this.bankRepo.count({ where: { providerId: provider.id } });
+    if (bankCount === 0) {
+      throw new BadRequestException('Add a payout method before submitting');
     }
 
     // Transition state

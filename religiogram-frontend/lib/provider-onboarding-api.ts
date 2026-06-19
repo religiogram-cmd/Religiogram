@@ -299,7 +299,7 @@ export const providerOnboardingApi = {
     return { r2ObjectKey: presigned.r2ObjectKey };
   },
 
-  // Step 7 — attach the KYC reference AND finalise the onboarding.
+  // Step 7 — attach the KYC reference. No longer submits; Step 9 calls /submit.
   step7: async (body: Step7Body) => {
     const id = await ensureDraftId();
     await apiFetch<unknown>(`/provider/onboarding/${id}/kyc`, {
@@ -310,12 +310,68 @@ export const providerOnboardingApi = {
         ...(body.deviceFingerprint ? { deviceFingerprint: body.deviceFingerprint } : {}),
       }),
     });
-    const submitted = await apiFetch<{ providerState?: ProviderStatus; status?: ProviderStatus }>(
+    return { providerId: id, step: 7 as const };
+  },
+
+  // Step 8 — PAN card photo.
+  presignPan: async (body: { contentType: 'image/jpeg' | 'image/png' | 'image/webp'; sizeBytes: number }) => {
+    const id = await ensureDraftId();
+    return apiFetch<PresignKycResp>(`/provider/onboarding/${id}/pan/presign`, {
+      method: 'POST', body: JSON.stringify(body),
+    });
+  },
+  uploadPanImage: async (presigned: PresignKycResp, blob: Blob) => {
+    const res = await fetch(presigned.uploadUrl, { method: 'PUT', headers: presigned.headers, body: blob });
+    if (!res.ok) throw new ApiError('S3_UPLOAD_FAILED', 'PAN upload failed', res.status);
+    return { r2ObjectKey: presigned.r2ObjectKey };
+  },
+  confirmPan: async (r2ObjectKey: string) => {
+    const id = await ensureDraftId();
+    return apiFetch<{ ok: boolean }>(`/provider/onboarding/${id}/pan`, {
+      method: 'POST', body: JSON.stringify({ r2ObjectKey }),
+    });
+  },
+
+  // Step 8 — Selfie photo.
+  presignSelfie: async (body: { contentType: 'image/jpeg' | 'image/png' | 'image/webp'; sizeBytes: number }) => {
+    const id = await ensureDraftId();
+    return apiFetch<PresignKycResp>(`/provider/onboarding/${id}/selfie/presign`, {
+      method: 'POST', body: JSON.stringify(body),
+    });
+  },
+  uploadSelfieImage: async (presigned: PresignKycResp, blob: Blob) => {
+    const res = await fetch(presigned.uploadUrl, { method: 'PUT', headers: presigned.headers, body: blob });
+    if (!res.ok) throw new ApiError('S3_UPLOAD_FAILED', 'Selfie upload failed', res.status);
+    return { r2ObjectKey: presigned.r2ObjectKey };
+  },
+  confirmSelfie: async (r2ObjectKey: string) => {
+    const id = await ensureDraftId();
+    return apiFetch<{ ok: boolean }>(`/provider/onboarding/${id}/selfie`, {
+      method: 'POST', body: JSON.stringify({ r2ObjectKey }),
+    });
+  },
+
+  // Step 9 — Payout setup (Bank or UPI).
+  saveBank: async (body: { accountNumber?: string; ifscCode?: string; bankName?: string; beneficiaryName?: string; upiId?: string }) => {
+    const id = await ensureDraftId();
+    return apiFetch<{ ok: boolean; masked: string }>(`/provider/onboarding/${id}/bank`, {
+      method: 'POST', body: JSON.stringify(body),
+    });
+  },
+  getBank: async () => {
+    const id = await ensureDraftId();
+    return apiFetch<{ hasBank: boolean; masked: string | null; method: 'bank' | 'upi' | null }>(
+      `/provider/onboarding/${id}/bank`,
+    );
+  },
+
+  // Final submit — separate from KYC video; called by Step 9.
+  submit: async () => {
+    const id = await ensureDraftId();
+    return apiFetch<{ providerState?: ProviderStatus; status?: ProviderStatus }>(
       `/provider/onboarding/${id}/submit`,
       { method: 'POST', body: JSON.stringify({}) },
     );
-    const status = submitted.providerState ?? submitted.status ?? 'pending_review';
-    return { providerId: id, step: 7 as const, status };
   },
 
   // GET /provider/onboarding/me — real backend returns { state, draft }.

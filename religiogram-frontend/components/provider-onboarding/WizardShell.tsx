@@ -30,6 +30,8 @@ export const STEP_LABELS: Record<number, string> = {
   5: 'Pricing',
   6: 'Availability',
   7: 'Verify yourself',
+  8: 'Identity documents',
+  9: 'Payout setup',
 };
 
 interface WizardShellProps {
@@ -60,7 +62,7 @@ export default function WizardShell({
 }: WizardShellProps) {
   const router = useRouter();
   const { saveStatus } = useProviderOnboarding();
-  const totalSteps = 7;
+  const totalSteps = 9;
   const pct = Math.round((currentStep / totalSteps) * 100);
 
   const handleNext = async () => {
