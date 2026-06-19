@@ -99,32 +99,6 @@ export default function CommunityDiscoverTab({ me }: Props) {
         </div>
       ) : (
         <>
-          {/* Trending hashtags */}
-          <section style={{ marginTop: 14 }}>
-            <h2 style={{ fontFamily: '"Playfair Display",Georgia,serif', fontSize: 16, color: TEXT, margin: '0 0 8px 4px', fontWeight: 800 }}>
-              Trending
-            </h2>
-            {trending.length === 0 ? (
-              <div style={{ background: '#fff', borderRadius: 12, padding: 18, textAlign: 'center', color: TEXT3, fontSize: 12.5, border: '1px solid rgba(200,146,10,0.20)' }}>
-                No trending hashtags yet — be the first to post with one.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {trending.slice(0, 20).map(t => (
-                  <button key={t.tag} style={{
-                    background: '#fff', border: '1px solid rgba(200,146,10,0.30)',
-                    color: NAVY, fontWeight: 800, fontSize: 12,
-                    padding: '6px 12px', borderRadius: 16, cursor: 'pointer',
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                  }}>
-                    #{t.tag}
-                    <span style={{ color: TEXT3, fontWeight: 500, fontSize: 10 }}>{t.postCount}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-
           {/* Suggested seekers */}
           <section style={{ marginTop: 18 }}>
             <h2 style={{ fontFamily: '"Playfair Display",Georgia,serif', fontSize: 16, color: TEXT, margin: '0 0 8px 4px', fontWeight: 800 }}>
