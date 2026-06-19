@@ -366,151 +366,23 @@ export class SocialService {
 
   // ── Posts ────────────────────────────────────────────────────────────────
   async createPost(authorId: string, dto: CreatePostDto) {
-    // Accept both naming conventions: caption|text, imageUrls|photoUrls
     const caption = dto.caption ?? (dto as any).text ?? null;
-    const imageUrls = dto.imageUrls ?? (dto as any).photoUrls ?? [];
-    if (!caption && (!imageUrls || imageUrls.length === 0)) {
-      throw new BadRequestException('Post must have caption or at least one image');
-    }
-
-    this.logger.log(`[createPost] start authorId=${authorId} captionLen=${caption?.length ?? 0} images=${imageUrls.length}`);
-
-    // Generate UUID in app — never rely on DB-side defaults
+    const imageUrls: string[] = dto.imageUrls ?? (dto as any).photoUrls ?? [];
+    if (!caption && (!imageUrls || imageUrls.length === 0)) throw new BadRequestException('Post must have caption or at least one image');
     const { randomUUID } = await import('crypto');
     const postId = randomUUID();
     const now = new Date();
-
-    // Try multiple INSERT shapes — image_urls might be jsonb OR text[] depending
-    // on which migration created the column. Try jsonb first, fall back to text[].
-    let inserted = false;
-    let lastErr: any = null;
-
-    try {
-      await this.ds.query(
-        `INSERT INTO social_posts (id, author_id, caption, image_urls, likes_count, comments_count, is_deleted, created_at, updated_at)
-         VALUES ($1, $2, $3, $5::jsonb, 0, 0, false, $4, $4)`,
-        [postId, authorId, caption, now, JSON.stringify(imageUrls)],
-      );
-      inserted = true;
-      this.logger.log(`[createPost] jsonb insert ok id=${postId}`);
-    } catch (err: any) {
-      lastErr = err;
-      this.logger.warn(`[createPost] jsonb insert failed: ${err?.message}`);
-    }
-
-    if (!inserted) {
+    let inserted = false; let lastErr: any = null;
+    for (const a of [{cast:'jsonb',val:JSON.stringify(imageUrls)},{cast:'text[]',val:imageUrls},{cast:null,val:null}]) {
       try {
-        await this.ds.query(
-          `INSERT INTO social_posts (id, author_id, caption, image_urls, likes_count, comments_count, is_deleted, created_at, updated_at)
-           VALUES ($1, $2, $3, $5::text[], 0, 0, false, $4, $4)`,
-          [postId, authorId, caption, now, imageUrls],
-        );
-        inserted = true;
-        this.logger.log(`[createPost] text[] insert ok id=${postId}`);
-      } catch (err: any) {
-        lastErr = err;
-        this.logger.warn(`[createPost] text[] insert failed: ${err?.message}`);
-      }
+        if (a.cast === null) await this.ds.query(`INSERT INTO social_posts (id,author_id,caption,likes_count,comments_count,is_deleted,created_at,updated_at) VALUES ($1,$2,$3,0,0,false,$4,$4)`, [postId,authorId,caption,now]);
+        else await this.ds.query(`INSERT INTO social_posts (id,author_id,caption,image_urls,likes_count,comments_count,is_deleted,created_at,updated_at) VALUES ($1,$2,$3,$5::${a.cast},0,0,false,$4,$4)`, [postId,authorId,caption,now,a.val]);
+        inserted = true; break;
+      } catch (err: any) { lastErr = err; }
     }
-
-    if (!inserted) {
-      try {
-        await this.ds.query(
-          `INSERT INTO social_posts (id, author_id, caption, likes_count, comments_count, is_deleted, created_at, updated_at)
-           VALUES ($1, $2, $3, 0, 0, false, $4, $4)`,
-          [postId, authorId, caption, now],
-        );
-        inserted = true;
-        this.logger.log(`[createPost] minimal insert ok id=${postId}`);
-      } catch (err: any) {
-        lastErr = err;
-        this.logger.error(`[createPost] all inserts failed: ${err?.message}`, err?.stack);
-      }
-    }
-
-    if (!inserted) {
-      throw new BadRequestException(`Could not create post: ${lastErr?.message ?? 'unknown DB error'}`);
-    }
-
-    const saved = {
-      id: postId,
-      authorId,
-      caption,
-      imageUrls,
-      likesCount: 0,
-      commentsCount: 0,
-      sharesCount: 0,
-      isDeleted: false,
-      hashtags: [] as string[],
-      postType: 'text',
-      category: null as string | null,
-      text: caption,
-      imageUrl: null as string | null,
-      createdAt: now,
-      updatedAt: now,
-    } as any;
-
-    // Fan-out: insert into author's own feed_items + every follower's feed_items
-    let followerIds: string[] = [];
-    try {
-      await this.ds.query(
-        `INSERT INTO feed_items (user_id, post_id, inserted_at)
-         SELECT $1, $2, $3
-         UNION
-         SELECT
-           CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END,
-           $2, $3
-         FROM friendships f
-         WHERE (f.requester_id = $1 OR f.addressee_id = $1)
-           AND f.status = 'accepted'
-         ON CONFLICT DO NOTHING`,
-        [authorId, saved.id, saved.createdAt],
-      );
-      // Get follower ids for socket notification
-      const followers: Array<{ user_id: string }> = await this.ds.query(
-        `SELECT
-           CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END AS user_id
-         FROM friendships f
-         WHERE (f.requester_id = $1 OR f.addressee_id = $1) AND f.status = 'accepted'`,
-        [authorId],
-      );
-      followerIds = followers.map((r) => r.user_id);
-    } catch (err) {
-      console.error('[social] fan-out failed (non-fatal):', err);
-    }
-    // Notify followers in real-time via Redis pub/sub → SocialGateway → socket `post.new`
-    try {
-      const evt = JSON.stringify({ postId: saved.id, authorId, createdAt: saved.createdAt });
-      this.redis.publish(`feed:${authorId}`, evt);
-      for (const uid of followerIds) {
-        this.redis.publish(`feed:${uid}`, evt);
-      }
-    } catch { /* non-fatal */ }
-
-    // ── Fan-out strategy ──────────────────────────────────────────────────
-    // For most users (< threshold friends): fan-out inline (sync, fire-and-forget).
-    // For high-follower authors: defer to BullMQ when ENABLE_ASYNC_FANOUT is on.
-    // Wrapped in try/catch so DB/queue/schema issues don't fail the user's post.
-    try {
-      await this._fanOutPost(saved.id, authorId, saved.createdAt);
-    } catch (err) {
-      // log but don't fail — post is saved, fan-out can be retried
-      console.error('[social] fanOut failed (non-fatal):', err);
-    }
-
-    // Emit Kafka event for other async consumers.
-    try {
-      this.events.publishPostPublished({
-        eventType: 'post.published',
-        postId: saved.id,
-        authorId,
-        postCreatedAt: saved.createdAt.toISOString(),
-      });
-    } catch (err) {
-      console.error('[social] event publish failed (non-fatal):', err);
-    }
-
-    return saved;
+    if (!inserted) throw new BadRequestException(`Could not create post: ${lastErr?.message ?? 'DB error'}`);
+    setImmediate(() => { this.ds.query(`INSERT INTO feed_items (user_id,post_id,inserted_at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [authorId,postId,now]).catch(()=>{}); try { this.redis.publish(`feed:${authorId}`, JSON.stringify({postId,authorId,createdAt:now})); } catch {} });
+    return { id: postId, authorId, caption, imageUrls, likesCount: 0, commentsCount: 0, sharesCount: 0, isDeleted: false, hashtags: [], postType: 'text', category: null, text: caption, imageUrl: null, createdAt: now, updatedAt: now } as any;
   }
 
   // ── Fan-out routing ────────────────────────────────────────────────────────
