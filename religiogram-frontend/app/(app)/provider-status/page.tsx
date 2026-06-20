@@ -5,18 +5,22 @@
  * Route: /provider-status
  *
  * Shows the provider their current verification state, step progress,
- * and next actions. Linked from Profile > "My Provider Status".
+ * and next actions in a polished, on-brand layout.
  */
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 
-const NAVY      = '#1B2A5C';
-const GOLD      = '#C8920A';
-const PARCHMENT = '#FFFBF0';
+const NAVY     = '#0A1628';
+const NAVY_2   = '#0F2452';
+const GOLD     = '#C8920A';
+const GOLD_L   = '#E0A92F';
+const CREAM    = '#FFFAEC';
+const TEXT     = '#1A0800';
+const TEXT2    = '#4A3010';
+const TEXT3    = '#8B6B35';
 
-/** Shape of GET /v1/provider/onboarding/me (real backend). */
 interface OnboardingMe {
   state: 'draft' | 'pending_review' | 'approved' | 'rejected' | 'suspended' | null;
   draft: Record<string, unknown>;
@@ -25,7 +29,6 @@ interface OnboardingMe {
   bankSet?: boolean;
 }
 
-/** UI-facing status derived from the backend response. */
 interface ProviderStatus {
   registered: boolean;
   status: string | null;
@@ -34,7 +37,6 @@ interface ProviderStatus {
   currentStep: number;
   message: string;
   rejectionReason?: string | null;
-  profileCompletedAt?: string | null;
 }
 
 const STEPS = [
@@ -49,15 +51,37 @@ const STEPS = [
   { n: 9, label: 'Payout Setup' },
 ];
 
-const STATUS_META: Record<string, { icon: string; color: string; label: string }> = {
-  draft:           { icon: '📋', color: '#d97706', label: 'Application In Progress' },
-  pending_review:  { icon: '🔍', color: '#2563eb', label: 'Under Review' },
-  approved:        { icon: '✅', color: '#16a34a', label: 'Approved' },
-  rejected:        { icon: '❌', color: '#dc2626', label: 'Not Approved' },
-  suspended:       { icon: '⛔', color: '#dc2626', label: 'Suspended' },
+/* ── Professional inline SVG icons ──────────────────── */
+function IconClock() {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+}
+function IconCheck() {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>;
+}
+function IconX() {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>;
+}
+function IconPaused() {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="10" y1="9" x2="10" y2="15"/><line x1="14" y1="9" x2="14" y2="15"/></svg>;
+}
+function IconDraft() {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+}
+function IconBack() {
+  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>;
+}
+function IconCheckSmall() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
+}
+
+const STATUS_META: Record<string, { Icon: () => JSX.Element; tint: string; tintBg: string; label: string; subtle: string }> = {
+  draft:           { Icon: IconDraft,  tint: '#A0570C', tintBg: 'rgba(200,146,10,0.10)',  label: 'In Progress',  subtle: 'Continue filling your application' },
+  pending_review:  { Icon: IconClock,  tint: GOLD,      tintBg: 'rgba(200,146,10,0.12)',  label: 'Under Review', subtle: 'Awaiting team verification' },
+  approved:        { Icon: IconCheck,  tint: '#0E7C5C', tintBg: 'rgba(14,124,92,0.10)',   label: 'Approved',     subtle: 'You are live on ReligioGram' },
+  rejected:        { Icon: IconX,      tint: '#B91C1C', tintBg: 'rgba(185,28,28,0.08)',   label: 'Not Approved', subtle: 'Update your profile and re-apply' },
+  suspended:       { Icon: IconPaused, tint: '#B91C1C', tintBg: 'rgba(185,28,28,0.08)',   label: 'Suspended',    subtle: 'Account temporarily disabled' },
 };
 
-/** Derive UI status from the raw onboarding/me payload. */
 function toProviderStatus(me: OnboardingMe | null): ProviderStatus {
   if (!me || !me.state) {
     return {
@@ -70,20 +94,15 @@ function toProviderStatus(me: OnboardingMe | null): ProviderStatus {
   }
 
   const d = me.draft ?? {};
-  // Compute the highest step the user has reached based on which fields the
-  // draft now carries. Mirrors the backend's per-step PATCH payload shape.
   let currentStep = 1;
   if (d['fullName'] && d['dob'] && d['phone'] && d['city']) currentStep = 2;
   if (currentStep >= 2 && d['experienceYears'] !== undefined) currentStep = 3;
   if (currentStep >= 3 && d['religion']) currentStep = 4;
-  if (currentStep >= 4 /* services posted via /:id/services — best-effort */) currentStep = Math.max(currentStep, 5);
+  if (currentStep >= 4) currentStep = Math.max(currentStep, 5);
   if (currentStep >= 5 && d['perMinutePaise'] !== undefined) currentStep = 6;
   if (currentStep >= 6 && d['serviceMode']) currentStep = 7;
-  if (currentStep >= 7 && (d['kycR2ObjectKey'] || d['kycS3Key'])) currentStep = 8;
-  if (currentStep >= 7 && (me as any)['panUploaded']) currentStep = Math.max(currentStep, 8);
-  if (currentStep >= 8 && (me as any)['selfieUploaded']) currentStep = 9;
-  if (currentStep >= 8 && d['panR2ObjectKey'] && d['selfieR2ObjectKey']) currentStep = 9;
-  if (currentStep >= 9 && (me as any)['bankSet']) currentStep = 9;
+  if (currentStep >= 7 && me['panUploaded']) currentStep = 8;
+  if (currentStep >= 8 && me['selfieUploaded']) currentStep = 9;
   if (me.state === 'pending_review' || me.state === 'approved' || me.state === 'rejected' || me.state === 'suspended') {
     currentStep = 9;
   }
@@ -93,7 +112,7 @@ function toProviderStatus(me: OnboardingMe | null): ProviderStatus {
     case 'draft':
       message = currentStep < 9
         ? `Continue from Step ${currentStep} to finish your application.`
-        : 'You’re ready to submit — open Step 9 to confirm payout details and send for review.';
+        : 'You’re ready to submit — open the last step to send for review.';
       break;
     case 'pending_review':
       message = 'Your application is under review by our team. We aim to respond within 2 business days.';
@@ -126,9 +145,6 @@ export default function ProviderStatusPage() {
   const [error, setError]     = useState<string | null>(null);
 
   useEffect(() => {
-    // Real backend: GET /v1/provider/onboarding/me. Returns 404 when the
-    // user has never started — we treat that as "not registered" instead
-    // of an error so the CTA can prompt them to start.
     apiFetch<OnboardingMe>('/provider/onboarding/me', { auth: true })
       .then(m => setData(toProviderStatus(m)))
       .catch((e: any) => {
@@ -141,16 +157,16 @@ export default function ProviderStatusPage() {
   if (loading) {
     return (
       <div style={{
-        minHeight: '100vh', backgroundColor: PARCHMENT,
+        minHeight: '100svh', background: CREAM,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'system-ui, sans-serif',
+        fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
       }}>
         <div style={{
-          width: 44, height: 44, borderRadius: '50%',
-          border: `3px solid ${GOLD}`, borderTopColor: 'transparent',
-          animation: 'spin 0.8s linear infinite',
+          width: 36, height: 36, borderRadius: '50%',
+          border: `3px solid ${GOLD}33`, borderTopColor: GOLD,
+          animation: 'rg-spin 0.8s linear infinite',
         }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <style>{`@keyframes rg-spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
@@ -158,20 +174,21 @@ export default function ProviderStatusPage() {
   if (error || !data) {
     return (
       <div style={{
-        minHeight: '100vh', backgroundColor: PARCHMENT,
+        minHeight: '100svh', background: CREAM,
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        fontFamily: 'system-ui, sans-serif', padding: 24,
+        fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif', padding: 24, textAlign: 'center',
       }}>
-        <span style={{ fontSize: 40, marginBottom: 12 }}>⚠️</span>
-        <p style={{ color: '#dc2626', fontWeight: 600, textAlign: 'center' }}>
+        <div style={{ color: '#B91C1C', marginBottom: 12 }}><IconX /></div>
+        <p style={{ color: TEXT2, fontWeight: 600 }}>
           {error ?? 'Could not load your provider status'}
         </p>
         <button
           onClick={() => router.back()}
           style={{
-            marginTop: 20, padding: '10px 24px',
-            backgroundColor: NAVY, color: '#fff',
-            border: 'none', borderRadius: 10, cursor: 'pointer', fontWeight: 600,
+            marginTop: 20, padding: '10px 22px',
+            background: NAVY_2, color: '#fff',
+            border: 'none', borderRadius: 12, cursor: 'pointer', fontWeight: 700,
+            fontFamily: 'inherit',
           }}
         >
           Go Back
@@ -182,67 +199,107 @@ export default function ProviderStatusPage() {
 
   const meta = data.status ? STATUS_META[data.status] : null;
   const completedSteps = Math.min(data.currentStep - 1, 9);
+  const StatusIcon = meta?.Icon ?? IconDraft;
 
   return (
     <div style={{
-      minHeight: '100vh', backgroundColor: PARCHMENT,
-      fontFamily: 'system-ui, sans-serif',
+      minHeight: '100svh', background: CREAM,
+      fontFamily: '"Plus Jakarta Sans", system-ui, sans-serif',
+      paddingBottom: 28,
     }}>
-      {/* Header */}
+      {/* Premium hero header */}
       <div style={{
-        backgroundColor: NAVY, padding: '52px 20px 20px',
-        display: 'flex', alignItems: 'center', gap: 12,
+        background: `linear-gradient(150deg, ${NAVY} 0%, ${NAVY_2} 60%, #1B2540 100%)`,
+        padding: '18px 18px 22px',
+        color: '#FFFAEC',
+        position: 'relative',
+        overflow: 'hidden',
       }}>
+        {/* Subtle ornamental ring */}
+        <div style={{
+          position: 'absolute', right: -40, top: -40,
+          width: 180, height: 180, borderRadius: '50%',
+          border: `1px solid ${GOLD_L}22`,
+          pointerEvents: 'none',
+        }} />
+        <div style={{
+          position: 'absolute', right: -20, top: -20,
+          width: 140, height: 140, borderRadius: '50%',
+          border: `1px solid ${GOLD_L}15`,
+          pointerEvents: 'none',
+        }} />
+
         <button
           onClick={() => router.back()}
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: '#fff', fontSize: 22, lineHeight: 1, padding: 0,
-          }}
           aria-label="Back"
+          style={{
+            background: 'rgba(255,255,255,0.10)', border: 'none',
+            color: '#fff', cursor: 'pointer',
+            width: 36, height: 36, borderRadius: '50%',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            backdropFilter: 'blur(8px)',
+          }}
         >
-          ←
+          <IconBack />
         </button>
-        <div>
-          <h1 style={{ color: '#fff', fontWeight: 700, fontSize: 18, margin: 0 }}>
+        <div style={{ marginTop: 14 }}>
+          <h1 style={{
+            color: '#FFFAEC', fontWeight: 800, fontSize: 26, margin: 0,
+            fontFamily: '"Playfair Display", Georgia, serif',
+            letterSpacing: '-0.01em', lineHeight: 1.15,
+          }}>
             Provider Status
           </h1>
-          <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, margin: 0 }}>
-            Your application & verification progress
+          <p style={{
+            color: GOLD_L, fontSize: 12.5, margin: '4px 0 0',
+            fontWeight: 600, letterSpacing: '0.04em',
+          }}>
+            APPLICATION & VERIFICATION PROGRESS
           </p>
         </div>
       </div>
 
-      <div style={{ padding: '20px 16px', maxWidth: 480, margin: '0 auto' }}>
+      <div style={{ padding: '18px 16px 24px', maxWidth: 520, margin: '0 auto' }}>
 
-        {/* Status Card */}
-        <div style={{
-          backgroundColor: '#fff',
-          borderRadius: 16,
-          padding: 20,
-          marginBottom: 20,
-          boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
-          borderLeft: `4px solid ${meta?.color ?? GOLD}`,
+        {/* Status card */}
+        <section style={{
+          background: '#fff',
+          borderRadius: 18,
+          padding: 18,
+          marginBottom: 14,
+          border: '1px solid rgba(200,146,10,0.18)',
+          boxShadow: '0 4px 18px rgba(15,36,82,0.06)',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-            <span style={{ fontSize: 36 }}>{meta?.icon ?? '📋'}</span>
-            <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: 14,
+              background: meta?.tintBg ?? 'rgba(200,146,10,0.10)',
+              color: meta?.tint ?? GOLD,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <StatusIcon />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{
-                fontSize: 18, fontWeight: 700,
-                color: meta?.color ?? NAVY,
+                fontSize: 18, fontWeight: 800,
+                color: meta?.tint ?? NAVY_2,
+                fontFamily: '"Playfair Display", Georgia, serif',
+                letterSpacing: '-0.01em',
               }}>
                 {meta?.label ?? 'Not Started'}
               </div>
-              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                {data.status ? `Status: ${data.status.replace(/_/g, ' ')}` : 'No application yet'}
+              <div style={{ fontSize: 11.5, color: TEXT3, marginTop: 2, fontWeight: 600 }}>
+                {meta?.subtle ?? 'No application yet'}
               </div>
             </div>
           </div>
 
           <p style={{
-            fontSize: 13, color: '#374151', lineHeight: 1.5,
-            backgroundColor: '#f9fafb', borderRadius: 8,
-            padding: '10px 12px', margin: 0,
+            fontSize: 13, color: TEXT2, lineHeight: 1.55,
+            background: '#FFFBF0', borderRadius: 12,
+            padding: '11px 13px', margin: '14px 0 0',
+            border: '1px solid rgba(200,146,10,0.10)',
           }}>
             {data.message}
           </p>
@@ -250,121 +307,119 @@ export default function ProviderStatusPage() {
           {data.rejectionReason && (
             <div style={{
               marginTop: 12,
-              backgroundColor: '#fef2f2',
-              border: '1px solid #fecaca',
-              borderRadius: 8, padding: '10px 12px',
+              background: 'rgba(185,28,28,0.06)',
+              border: '1px solid rgba(185,28,28,0.18)',
+              borderRadius: 12, padding: '11px 13px',
             }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', marginBottom: 4 }}>
-                Rejection Reason
+              <div style={{ fontSize: 11, fontWeight: 800, color: '#B91C1C', marginBottom: 4, letterSpacing: '0.05em' }}>
+                REJECTION REASON
               </div>
-              <div style={{ fontSize: 13, color: '#374151' }}>{data.rejectionReason}</div>
+              <div style={{ fontSize: 13, color: TEXT2 }}>{data.rejectionReason}</div>
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Onboarding Progress */}
-        <div style={{
-          backgroundColor: '#fff', borderRadius: 16, padding: 20,
-          marginBottom: 20, boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+        {/* Progress card */}
+        <section style={{
+          background: '#fff', borderRadius: 18, padding: 18,
+          marginBottom: 14, border: '1px solid rgba(200,146,10,0.18)',
+          boxShadow: '0 4px 18px rgba(15,36,82,0.06)',
         }}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: NAVY, margin: '0 0 16px' }}>
-            Application Progress
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <h2 style={{
+              fontSize: 16, fontWeight: 800, color: NAVY_2, margin: 0,
+              fontFamily: '"Playfair Display", Georgia, serif',
+              letterSpacing: '-0.01em',
+            }}>
+              Application Progress
+            </h2>
+            <span style={{
+              fontSize: 11, fontWeight: 700, color: TEXT3,
+              background: 'rgba(200,146,10,0.10)', padding: '3px 9px',
+              borderRadius: 999, letterSpacing: '0.05em',
+            }}>
+              {completedSteps}/{STEPS.length}
+            </span>
+          </div>
 
-          {STEPS.map((step) => {
-            const done = step.n <= completedSteps;
-            const current = step.n === data.currentStep;
-            return (
-              <div
-                key={step.n}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '8px 0',
-                  borderBottom: step.n < STEPS.length ? '1px solid #f3f4f6' : 'none',
-                }}
-              >
-                <div style={{
-                  width: 28, height: 28, borderRadius: '50%',
-                  backgroundColor: done ? '#16a34a' : current ? GOLD : '#e5e7eb',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                  fontSize: 12, fontWeight: 700,
-                  color: done || current ? '#fff' : '#9ca3af',
-                }}>
-                  {done ? '✓' : step.n}
-                </div>
-                <span style={{
-                  fontSize: 14,
-                  color: done ? '#374151' : current ? NAVY : '#9ca3af',
-                  fontWeight: current ? 700 : 400,
-                }}>
-                  {step.label}
+          <div style={{ position: 'relative' }}>
+            {/* Vertical connecting line */}
+            <div style={{
+              position: 'absolute', left: 13, top: 14, bottom: 14,
+              width: 2, background: 'rgba(200,146,10,0.20)', borderRadius: 1,
+            }} />
+
+            {STEPS.map((step) => {
+              const done = step.n <= completedSteps;
+              const current = step.n === data.currentStep && data.status !== 'pending_review' && data.status !== 'approved';
+              return (
+                <div key={step.n} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '7px 0', position: 'relative' }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50%',
+                    background: done ? `linear-gradient(135deg, ${GOLD}, ${GOLD_L})` : current ? NAVY_2 : '#fff',
+                    border: done ? 'none' : current ? 'none' : '2px solid rgba(200,146,10,0.30)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    fontSize: 11, fontWeight: 800,
+                    color: done ? '#fff' : current ? '#fff' : TEXT3,
+                    zIndex: 1,
+                    boxShadow: done ? '0 2px 6px rgba(200,146,10,0.25)' : 'none',
+                  }}>
+                    {done ? <IconCheckSmall /> : step.n}
+                  </div>
+                  <span style={{ fontSize: 13.5, color: done ? TEXT2 : current ? NAVY_2 : TEXT3, fontWeight: current || done ? 700 : 500 }}>
+                    {step.label}
+                  </span>
                   {current && (
-                    <span style={{
-                      marginLeft: 8, fontSize: 10, fontWeight: 700,
-                      backgroundColor: GOLD, color: '#fff',
-                      borderRadius: 4, padding: '1px 6px',
-                    }}>
+                    <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 800, background: NAVY_2, color: '#fff', borderRadius: 6, padding: '2px 7px', letterSpacing: '0.06em' }}>
                       NEXT
                     </span>
                   )}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
 
-        {/* Live status badge if approved */}
         {data.status === 'approved' && (
-          <div style={{
-            backgroundColor: '#f0fdf4',
-            border: '1px solid #86efac',
-            borderRadius: 12, padding: '14px 16px',
-            marginBottom: 20,
-            display: 'flex', alignItems: 'center', gap: 12,
-          }}>
-            <div style={{
-              width: 12, height: 12, borderRadius: '50%',
-              backgroundColor: data.isOnline ? '#22c55e' : '#d1d5db',
-              flexShrink: 0,
-            }} />
+          <div style={{ background: 'rgba(14,124,92,0.08)', border: '1px solid rgba(14,124,92,0.25)', borderRadius: 14, padding: '13px 15px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 10, height: 10, borderRadius: '50%', background: data.isOnline ? '#10B981' : '#9CA3AF', flexShrink: 0, boxShadow: data.isOnline ? '0 0 0 3px rgba(16,185,129,0.20)' : 'none' }} />
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#15803d' }}>
-                {data.isOnline ? 'You are currently Online' : 'You are currently Offline'}
-              </div>
-              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
-                Toggle your availability from the Provider Dashboard
-              </div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#0E7C5C' }}>{data.isOnline ? 'Currently Online' : 'Currently Offline'}</div>
+              <div style={{ fontSize: 11, color: TEXT3, marginTop: 2 }}>Toggle availability from your Provider dashboard</div>
             </div>
           </div>
         )}
 
-        {/* Action Button */}
         {!data.registered && (
-          <button
-            onClick={() => router.push('/provider-onboarding/step-1')}
-            style={{
-              width: '100%', padding: '14px 0',
-              backgroundColor: NAVY, color: '#fff',
-              border: 'none', borderRadius: 12,
-              fontWeight: 700, fontSize: 15, cursor: 'pointer',
-            }}
-          >
+          <button onClick={() => router.push('/provider-onboarding/step-1')} style={{ width: '100%', padding: '15px 0', background: `linear-gradient(135deg, ${NAVY_2}, ${NAVY})`, color: '#FFFAEC', border: 'none', borderRadius: 14, fontWeight: 800, fontSize: 14.5, cursor: 'pointer', letterSpacing: '0.02em', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(15,36,82,0.20)' }}>
             Start Provider Application
           </button>
         )}
 
         {data.registered && (data.status === 'draft' || data.status === 'rejected') && data.currentStep <= 9 && (
-          <button
-            onClick={() => router.push(`/provider-onboarding/step-${data.currentStep}`)}
-            style={{
-              width: '100%', padding: '14px 0',
-              backgroundColor: GOLD, color: '#fff',
-              border: 'none', borderRadius: 12,
-              fontWeight: 700, fontSize: 15, cursor: 'pointer',
+          <button onClick={() => router.push(`/provider-onboarding/step-${data.currentStep}`)} style={{ width: '100%', padding: '15px 0', background: `linear-gradient(135deg, ${GOLD}, ${GOLD_L})`, color: '#FFFAEC', border: 'none', borderRadius: 14, fontWeight: 800, fontSize: 14.5, cursor: 'pointer', letterSpacing: '0.02em', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(200,146,10,0.25)' }}>
+            Continue Step {data.currentStep}
+          </button>
+        )}
+
+        {data.status === 'rejected' && (
+          <button onClick={() => window.open('mailto:support@religiogram.in?subject=Provider%20Application%20Review', '_blank')} style={{ width: '100%', padding: '13px 0', marginTop: 10, background: 'transparent', color: '#B91C1C', border: '1.5px solid rgba(185,28,28,0.35)', borderRadius: 14, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Contact Support
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+  background: `linear-gradient(135deg, ${GOLD}, ${GOLD_L})`,
+              color: '#FFFAEC',
+              border: 'none', borderRadius: 14,
+              fontWeight: 800, fontSize: 14.5, cursor: 'pointer',
+              letterSpacing: '0.02em', fontFamily: 'inherit',
+              boxShadow: '0 4px 14px rgba(200,146,10,0.25)',
             }}
           >
-            Continue Step {data.currentStep} →
+            Continue Step {data.currentStep}
           </button>
         )}
 
@@ -372,16 +427,16 @@ export default function ProviderStatusPage() {
           <button
             onClick={() => window.open('mailto:support@religiogram.in?subject=Provider%20Application%20Review', '_blank')}
             style={{
-              width: '100%', padding: '14px 0',
-              backgroundColor: '#dc2626', color: '#fff',
-              border: 'none', borderRadius: 12,
-              fontWeight: 700, fontSize: 15, cursor: 'pointer',
+              width: '100%', padding: '13px 0', marginTop: 10,
+              background: 'transparent', color: '#B91C1C',
+              border: '1.5px solid rgba(185,28,28,0.35)', borderRadius: 14,
+              fontWeight: 700, fontSize: 13.5, cursor: 'pointer',
+              fontFamily: 'inherit',
             }}
           >
             Contact Support
           </button>
         )}
-
       </div>
     </div>
   );
