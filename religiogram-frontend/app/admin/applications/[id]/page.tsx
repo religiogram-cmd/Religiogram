@@ -570,30 +570,9 @@ export default function AdminApplicationDetailPage({
                     className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
                   />
                 </label>
-                <div className="flex justify-end gap-2 mt-4">
-                  <button type="button" onClick={() => setModal(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm font-medium">Cancel</button>
-                  <button type="button" onClick={onConfirmRequestInfo} disabled={reqInfoText.trim().length < 10 || acting} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium disabled:opacity-50">Send</button>
-                </div>
-              </div>
             </div>
           )}
         </>
-      )}
-    </div>
-  );
-}
-n>
-              <button
-                type="button"
-                onClick={runAction}
-                disabled={submitting}
-                className={`px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50 ${modalCopy.ctaClass}`}
-              >
-                {submitting ? 'Working…' : modalCopy.cta}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
