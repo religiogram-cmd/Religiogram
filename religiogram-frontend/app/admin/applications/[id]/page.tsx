@@ -557,20 +557,6 @@ export default function AdminApplicationDetailPage({
                 </label>
               )}
 
-              {action === 'request_info' && (
-                <label className="block">
-                  <span className="text-xs font-medium text-slate-700">
-                    What should they fix? (required, min 10 chars)
-                  </span>
-                  <textarea
-                    value={reqInfoText}
-                    onChange={(e) => setReqInfoText(e.target.value)}
-                    rows={3}
-                    minLength={10}
-                    className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
-                  />
-                </label>
-          )}
         </>
       )}
     </div>
