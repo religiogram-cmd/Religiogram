@@ -31,17 +31,7 @@ function rupeesFromPaise(paise?: number | null): string {
 }
 
 /** Fetches an admin KYC file via Bearer-auth, displays as blob URL (bypasses SW). */
-function AuthedImage({
-  kind,
-  providerId,
-  alt,
-  className,
-}: {
-  kind: 'pan' | 'selfie';
-  providerId: string;
-  alt: string;
-  className?: string;
-}) {
+function useAuthedBlob(providerId: string, kind: string) {
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -70,12 +60,42 @@ function AuthedImage({
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
   }, [kind, providerId]);
+  return { src, error };
+}
+
+function AuthedImage({
+  kind,
+  providerId,
+  alt,
+  className,
+}: {
+  kind: 'pan' | 'selfie';
+  providerId: string;
+  alt: string;
+  className?: string;
+}) {
+  const { src, error } = useAuthedBlob(providerId, kind);
   if (error)
     return <div className="text-xs text-rose-600 p-3 bg-rose-50 rounded">Failed: {error}</div>;
   if (!src)
     return <div className="text-xs text-slate-400 p-3 bg-slate-50 rounded">Loading {alt}…</div>;
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt={alt} className={className} />;
+}
+
+function AuthedVideo({
+  providerId,
+  className,
+}: {
+  providerId: string;
+  className?: string;
+}) {
+  const { src, error } = useAuthedBlob(providerId, 'video-0');
+  if (error)
+    return <div className="text-xs text-rose-600 p-3 bg-rose-50 rounded">Video load failed: {error}</div>;
+  if (!src)
+    return <div className="text-xs text-slate-400 p-3 bg-slate-50 rounded">Loading video…</div>;
+  return <video src={src} controls className={className} />;
 }
 
 function StatusBadge({ status }: { status: AdminApplicationStatus | string }) {
@@ -313,11 +333,10 @@ export default function AdminApplicationDetailPage({
         </Card>
 
         <Card title="Introduction Video">
-          {firstVideo?.signedUrl ? (
+          {firstVideo ? (
             <div className="space-y-2">
-              <video
-                src={firstVideo.signedUrl}
-                controls
+              <AuthedVideo
+                providerId={providerId}
                 className="w-full rounded-lg border border-slate-200 bg-black"
               />
               <p className="text-xs text-slate-500">

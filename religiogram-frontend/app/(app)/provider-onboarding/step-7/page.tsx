@@ -32,22 +32,52 @@ const MIN_SECONDS = 30;
 const MAX_SECONDS = 120;
 const MAX_SIZE_BYTES = 80 * 1024 * 1024; // 80 MB hard cap
 
-/** Prefer codecs by support — webm/vp9 first, then webm, then mp4. */
+/** Pick the most reliable codec. VP8 is universally encodable on Android;
+ *  VP9 looks supported but often produces black frames on real devices.
+ *  Force mp4 on iOS where WebM support is hit-and-miss. */
+function isIOS(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return /iPad|iPhone|iPod/.test(ua) || (ua.includes('Macintosh') && 'ontouchend' in document);
+}
 function pickMimeType(): string {
-  if (typeof MediaRecorder === 'undefined') return 'video/webm';
-  const candidates = [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm',
-    'video/mp4;codecs=h264,aac',
-    'video/mp4',
-  ];
+  if (typeof MediaRecorder === 'undefined') return '';
+  const candidates = isIOS()
+    ? ['video/mp4;codecs=h264,aac', 'video/mp4', 'video/webm']
+    : [
+        'video/webm;codecs=vp8,opus',  // most reliable on Android
+        'video/webm;codecs=vp9,opus',
+        'video/webm',
+        'video/mp4;codecs=h264,aac',
+        'video/mp4',
+      ];
   for (const m of candidates) {
     try {
       if (MediaRecorder.isTypeSupported(m)) return m;
     } catch {}
   }
-  return 'video/webm';
+  return '';
+}
+
+/** Wait until the live video element has rendered at least one real frame.
+ *  Prevents the MediaRecorder from starting before frames are flowing,
+ *  which is the #1 cause of "black recording" on lower-end Android. */
+function waitForFirstFrame(video: HTMLVideoElement, timeoutMs = 2000): Promise<void> {
+  return new Promise((resolve) => {
+    if (video.readyState >= 2 && video.videoWidth > 0) {
+      resolve();
+      return;
+    }
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    video.addEventListener('loadeddata', finish, { once: true });
+    video.addEventListener('playing', finish, { once: true });
+    setTimeout(finish, timeoutMs);
+  });
 }
 
 type Phase = 'idle' | 'previewing' | 'recording' | 'review' | 'uploading' | 'done';
@@ -115,11 +145,21 @@ export default function Step7Page() {
 
   const startCamera = async () => {
     setErr(null);
+    if (typeof MediaRecorder === 'undefined') {
+      setErr('Your browser does not support video recording. Please open ReligioGram in Chrome or Safari and try again.');
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } },
         audio: true,
       });
+      // Verify we actually got both tracks.
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack || videoTrack.readyState !== 'live') {
+        stream.getTracks().forEach((t) => t.stop());
+        throw new Error('Camera did not deliver video. Try closing other apps using the camera and reopen.');
+      }
       streamRef.current = stream;
       if (liveVideoRef.current) {
         liveVideoRef.current.srcObject = stream;
@@ -136,16 +176,39 @@ export default function Step7Page() {
     }
   };
 
-  const startRecording = () => {
+  const startRecording = async () => {
     if (!streamRef.current) return;
     setErr(null);
+
+    // Wait until the preview element has at least one decoded frame.
+    // Without this, MediaRecorder can start before the encoder has any
+    // real frames to read, producing a "black" recording.
+    if (liveVideoRef.current) {
+      await waitForFirstFrame(liveVideoRef.current);
+    }
+
+    // Defensive: re-validate stream just before recording.
+    const videoTrack = streamRef.current.getVideoTracks()[0];
+    if (!videoTrack || videoTrack.readyState !== 'live') {
+      setErr('Camera stream stopped. Tap "Start camera" again.');
+      setPhase('idle');
+      return;
+    }
+
     chunksRef.current = [];
     const mime = pickMimeType();
     let recorder: MediaRecorder;
     try {
-      recorder = new MediaRecorder(streamRef.current, { mimeType: mime });
+      recorder = mime
+        ? new MediaRecorder(streamRef.current, { mimeType: mime })
+        : new MediaRecorder(streamRef.current);
     } catch {
-      recorder = new MediaRecorder(streamRef.current);
+      try {
+        recorder = new MediaRecorder(streamRef.current);
+      } catch (err: any) {
+        setErr(err?.message ?? 'Recording not supported on this device.');
+        return;
+      }
     }
     recorderRef.current = recorder;
 
@@ -153,9 +216,17 @@ export default function Step7Page() {
       if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
     };
     recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mime });
-      const url = URL.createObjectURL(blob);
+      const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mime || 'video/webm' });
       const durationSec = Math.round((Date.now() - startedAtRef.current) / 1000);
+
+      // Sanity check: very small blob = no frames captured.
+      if (blob.size < 1024) {
+        setErr('Recording captured no video. Please ensure the camera lens is uncovered and try again.');
+        setPhase('previewing');
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
       setRecordedBlob(blob);
       setRecordedUrl(url);
       setRecordedDuration(durationSec);
@@ -167,7 +238,10 @@ export default function Step7Page() {
       }
     };
 
-    recorder.start(250);
+    // No timeslice: receive ONE big chunk on stop. This guarantees a
+    // single keyframe at the start of the file and matches how Safari/iOS
+    // expect WebM/MP4 streams to look.
+    recorder.start();
     startedAtRef.current = Date.now();
     setElapsed(0);
     setPhase('recording');
@@ -186,7 +260,7 @@ export default function Step7Page() {
     }
   };
 
-  const discardAndRetry = () => {
+  const discardAndRetry = async () => {
     if (recordedUrl) URL.revokeObjectURL(recordedUrl);
     setRecordedBlob(null);
     setRecordedUrl(null);
@@ -194,6 +268,8 @@ export default function Step7Page() {
     setElapsed(0);
     setErr(null);
     setPhase('idle');
+    // Auto-restart camera so the user can re-record without an extra tap.
+    await startCamera();
   };
 
   /* ──────────────────── Upload pipeline ──────────────────── */
