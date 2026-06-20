@@ -131,7 +131,9 @@ function UserSearchView({ me, onClose, onPick }: { me: CommunityProfile; onClose
   return (
     <div>
       <div style={{ padding: 12, background: '#fff', borderBottom: '1px solid rgba(200,146,10,0.18)', display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button onClick={onClose} style={{ background: 'transparent', border: 'none', fontSize: 18, color: TEXT2, cursor: 'pointer' }}>Back</button>
+        <button onClick={onClose} aria-label="Back" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: TEXT2 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search @username or name..." autoFocus style={{
           flex: 1, border: '1px solid rgba(200,146,10,0.25)', borderRadius: 18, padding: '9px 14px',
           fontSize: 13, background: '#FFFCF5', outline: 'none', fontFamily: 'inherit',

@@ -187,11 +187,28 @@ export default function Step7Page() {
       await waitForFirstFrame(liveVideoRef.current);
     }
 
+    // HARD GUARD: if the preview never delivered a real frame, refuse to
+    // record — we've seen this on DevTools mobile emulation and when the
+    // camera is busy in another app. Recording would just be black.
+    if (liveVideoRef.current && liveVideoRef.current.videoWidth === 0) {
+      setErr(
+        'Camera preview is blank. If you are using browser device emulation, please test on a real phone. Otherwise close any other app using the camera and tap "Start camera" again.',
+      );
+      return;
+    }
+
     // Defensive: re-validate stream just before recording.
     const videoTrack = streamRef.current.getVideoTracks()[0];
     if (!videoTrack || videoTrack.readyState !== 'live') {
       setErr('Camera stream stopped. Tap "Start camera" again.');
       setPhase('idle');
+      return;
+    }
+    const settings = videoTrack.getSettings?.();
+    if (settings && (settings.width === 0 || settings.height === 0)) {
+      setErr(
+        'Camera is connected but producing no frames. Try a different browser or test on a physical phone.',
+      );
       return;
     }
 
