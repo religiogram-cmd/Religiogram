@@ -804,11 +804,3 @@ export default function ProfileScreen() {
     </div>
   );
 }
-    onConfirm={handleDeleteAccount}
-          onClose={() => setShowDeleteModal(false)}
-          isDeleting={isDeleting}
-        />
-      )}
-    </div>
-  );
-}
