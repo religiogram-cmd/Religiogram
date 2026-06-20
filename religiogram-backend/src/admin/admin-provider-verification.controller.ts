@@ -74,15 +74,21 @@ export class AdminProviderVerificationController {
     private readonly config: ConfigService,
     private readonly encryption: EncryptionService,
   ) {
+    const r2Endpoint = this.config.get<string>('storage.r2Endpoint');
+    const accessKeyId = this.config.get<string>('storage.accessKeyId', '');
+    const secretAccessKey = this.config.get<string>('storage.secretAccessKey', '');
     this.s3 = new S3Client({
       region: this.config.get<string>('storage.region', 'ap-south-1'),
-      endpoint: this.config.get<string>('storage.endpoint'),
-      credentials: {
-        accessKeyId: this.config.get<string>('storage.accessKeyId', ''),
-        secretAccessKey: this.config.get<string>('storage.secretAccessKey', ''),
-      },
+      ...(r2Endpoint ? { endpoint: r2Endpoint, forcePathStyle: true } : {}),
+      credentials:
+        accessKeyId && secretAccessKey
+          ? { accessKeyId, secretAccessKey }
+          : undefined,
     });
-    this.bucket = this.config.get<string>('storage.bucket', 'religiogram-dev');
+    this.bucket = this.config.get<string>('storage.bucket', 'religiogram-uploads');
+    this.logger.log(
+      `[admin] S3 client init bucket=${this.bucket} backend=${r2Endpoint ? `R2 (${r2Endpoint})` : 'AWS S3'}`,
+    );
   }
 
   /* ─── GET /v1/admin/verifications/queue ─── */
