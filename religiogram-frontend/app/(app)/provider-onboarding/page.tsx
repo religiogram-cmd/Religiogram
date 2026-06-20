@@ -12,11 +12,32 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProviderOnboarding } from '@/lib/provider-onboarding-store';
+import { providerOnboardingApi } from '@/lib/provider-onboarding-api';
 
 export default function ProviderOnboardingEntry() {
   const router = useRouter();
   const { step, saveStatus } = useProviderOnboarding();
   const [checked, setChecked] = useState(false);
+
+  // Block re-fill if the application is already submitted/decided.
+  useEffect(() => {
+    let cancelled = false;
+    providerOnboardingApi
+      .getDraft()
+      .then((d) => {
+        if (cancelled) return;
+        const st = d.providerStatus;
+        if (st === 'pending_review' || st === 'approved' || st === 'rejected') {
+          router.replace('/provider-status');
+        }
+      })
+      .catch(() => {
+        /* non-fatal — let the normal flow continue */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   useEffect(() => {
     // Wait for the context to hydrate from the server before deciding

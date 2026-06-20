@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import WizardShell from '@/components/provider-onboarding/WizardShell';
 import { useProviderOnboarding } from '@/lib/provider-onboarding-store';
 import {
@@ -28,9 +29,23 @@ const OPTIONS: Array<{ value: Religion; label: string; emoji: string }> = [
 ];
 
 export default function Step3Page() {
+  const router = useRouter();
   const { data, update, flush, advance } = useProviderOnboarding();
   const [religion, setReligion] = useState<Religion | ''>(data.religion ?? '');
   const [err, setErr] = useState<string | null>(null);
+
+  /* Gate: if already submitted/decided, jump to status page. */
+  useEffect(() => {
+    let cancelled = false;
+    providerOnboardingApi.getDraft().then((d) => {
+      if (cancelled) return;
+      const st = d.providerStatus;
+      if (st === 'pending_review' || st === 'approved' || st === 'rejected') {
+        router.replace('/provider-status');
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [router]);
 
   useEffect(() => {
     update({ religion: religion || undefined });

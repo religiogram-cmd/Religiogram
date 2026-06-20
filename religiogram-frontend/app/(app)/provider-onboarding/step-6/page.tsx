@@ -119,6 +119,19 @@ export default function Step6Page() {
     else if (!data.pricing?.length) router.replace('/provider-onboarding/step-5');
   }, [data.religion, data.pricing, router]);
 
+  /* Gate: if already submitted/decided, jump to status page. */
+  useEffect(() => {
+    let cancelled = false;
+    providerOnboardingApi.getDraft().then((d) => {
+      if (cancelled) return;
+      const st = d.providerStatus;
+      if (st === 'pending_review' || st === 'approved' || st === 'rejected') {
+        router.replace('/provider-status');
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [router]);
+
   /* Sync */
   useEffect(() => {
     const wire: AvailabilitySlot[] = slots.map(({ id: _id, ...rest }: DraftSlot) => rest);

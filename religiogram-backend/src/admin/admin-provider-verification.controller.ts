@@ -147,6 +147,14 @@ export class AdminProviderVerificationController {
       signKey(provider.selfieS3Key),
     ]);
 
+    // Diagnostic logging so we can see in Railway logs why a URL is empty/invalid.
+    this.logger.log(
+      `[admin] bucket=${this.bucket} PAN key=${provider.panS3Key} signedUrl=${panSignedUrl?.substring(0, 80) ?? 'null'}`,
+    );
+    this.logger.log(
+      `[admin] bucket=${this.bucket} Selfie key=${provider.selfieS3Key} signedUrl=${selfieSignedUrl?.substring(0, 80) ?? 'null'}`,
+    );
+
     // Load primary bank row; mask account number — never return plaintext
     const bankRow = await this.bankAccounts.findOne({
       where: { providerId, isPrimary: true },

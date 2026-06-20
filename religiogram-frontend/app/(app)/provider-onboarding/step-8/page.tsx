@@ -75,6 +75,19 @@ export default function Step8Page() {
     else if (!data.slots?.length) router.replace('/provider-onboarding/step-6');
   }, [data.religion, data.pricing, data.slots, router]);
 
+  /* Gate: if already submitted/decided, jump to status page. */
+  useEffect(() => {
+    let cancelled = false;
+    providerOnboardingApi.getDraft().then((d) => {
+      if (cancelled) return;
+      const st = d.providerStatus;
+      if (st === 'pending_review' || st === 'approved' || st === 'rejected') {
+        router.replace('/provider-status');
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [router]);
+
   // Revoke object URLs on unmount so we don't leak.
   useEffect(() => {
     return () => {

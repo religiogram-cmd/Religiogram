@@ -311,6 +311,9 @@ export default function AdminApplicationDetailPage({
                   src={data.panSignedUrl}
                   alt="PAN document"
                   className="w-full rounded-lg border border-slate-200 object-contain bg-slate-50"
+                  onError={() =>
+                    console.error('PAN image failed to load:', data.panSignedUrl)
+                  }
                 />
               ) : (
                 <p className="text-sm text-slate-500">Not uploaded.</p>
@@ -326,6 +329,9 @@ export default function AdminApplicationDetailPage({
                   src={data.selfieSignedUrl}
                   alt="Selfie"
                   className="w-full rounded-lg border border-slate-200 object-contain bg-slate-50"
+                  onError={() =>
+                    console.error('Selfie image failed to load:', data.selfieSignedUrl)
+                  }
                 />
               ) : (
                 <p className="text-sm text-slate-500">Not uploaded.</p>

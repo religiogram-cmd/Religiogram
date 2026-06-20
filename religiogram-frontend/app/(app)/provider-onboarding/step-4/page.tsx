@@ -45,6 +45,19 @@ export default function Step4Page() {
     }
   }, [data.religion, router]);
 
+  /* Gate: if already submitted/decided, jump to status page. */
+  useEffect(() => {
+    let cancelled = false;
+    providerOnboardingApi.getDraft().then((d) => {
+      if (cancelled) return;
+      const st = d.providerStatus;
+      if (st === 'pending_review' || st === 'approved' || st === 'rejected') {
+        router.replace('/provider-status');
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [router]);
+
   /* Fetch catalogue once religion is known. */
   useEffect(() => {
     if (!data.religion) return;

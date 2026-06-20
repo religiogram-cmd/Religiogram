@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import WizardShell from '@/components/provider-onboarding/WizardShell';
 import { useProviderOnboarding } from '@/lib/provider-onboarding-store';
 import { providerOnboardingApi } from '@/lib/provider-onboarding-api';
@@ -30,12 +31,26 @@ function maxDobIso(): string {
 }
 
 export default function Step1Page() {
+  const router = useRouter();
   const { data, update, flush, advance } = useProviderOnboarding();
   const [fullName, setFullName] = useState(data.fullName ?? '');
   const [dob, setDob] = useState(data.dob ?? '');
   const [phone, setPhone] = useState(data.phone ?? '');
   const [city, setCity] = useState(data.city ?? '');
   const [err, setErr] = useState<string | null>(null);
+
+  /* Gate: if already submitted/decided, jump to status page. */
+  useEffect(() => {
+    let cancelled = false;
+    providerOnboardingApi.getDraft().then((d) => {
+      if (cancelled) return;
+      const st = d.providerStatus;
+      if (st === 'pending_review' || st === 'approved' || st === 'rejected') {
+        router.replace('/provider-status');
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [router]);
 
   // Mirror state → store on each edit (debounced autosave lives in store).
   useEffect(() => {

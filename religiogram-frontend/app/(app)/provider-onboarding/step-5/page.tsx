@@ -2,22 +2,6 @@
 
 /**
  * Step 5 — Pricing setup.
- *
- * For every service the provider selected in Step 4, they set:
- *   · Base price (rupees)       → stored as integer paise
- *   · Add-on fee (optional)     → things like kit / prasad / extras
- *   · Travel fee (optional)     → in-person visits only
- *   · Duration in minutes
- *   · Mode: online / offline / both
- *
- * The final price shown to devotees is:
- *
- *     Final = Base + Add-ons + Travel + PlatformFee(subtotal)
- *
- * where PlatformFee is tiered (10% / 8% / 6%). This mirror lives in
- * `computeFinalPricePaise` below so the user sees the same number the
- * backend will eventually compute — no nasty surprises on the booking
- * screen.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -38,10 +22,8 @@ import {
   type ServicesCatalogue,
 } from '@/lib/provider-onboarding-api';
 
-/* ──────────────────── Pricing mirror (keep in sync with backend) ──────────────────── */
-
+/* Pricing mirror */
 function computePlatformFeePaise(subtotalPaise: number): number {
-  // Tiered: 10% ≤ ₹5,000; 8% ≤ ₹20,000; 6% above.
   if (subtotalPaise <= 500_000) return Math.round(subtotalPaise * 0.1);
   if (subtotalPaise <= 2_000_000) return Math.round(subtotalPaise * 0.08);
   return Math.round(subtotalPaise * 0.06);
@@ -57,9 +39,7 @@ function computeFinalPricePaise(
   return { subtotal, platformFee, final: subtotal + platformFee };
 }
 
-/* ──────────────────── Row model ──────────────────── */
-
-type RowKey = string; // `svc:${id}` or `custom:${name}`
+type RowKey = string;
 
 interface PricingRow {
   key: RowKey;
@@ -72,7 +52,6 @@ interface PricingRow {
   travelFeeRupees: string;
   durationMinutes: string;
   mode: ServiceMode;
-  /** Server-suggested band, used as ghost placeholder. */
   suggestedMinRupees?: number | null;
   suggestedMaxRupees?: number | null;
   suggestedDuration?: number | null;
@@ -118,7 +97,6 @@ export default function Step5Page() {
   const [rows, setRows] = useState<PricingRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
-  /* Gate: if no religion or no services, bounce back. */
   useEffect(() => {
     if (!data.religion) {
       router.replace('/provider-onboarding/step-3');
@@ -130,7 +108,19 @@ export default function Step5Page() {
     }
   }, [data.religion, data.selectedServiceIds, data.customServiceNames, router]);
 
-  /* Load catalogue (to resolve service names) */
+  /* Gate: if already submitted/decided, jump to status page. */
+  useEffect(() => {
+    let cancelled = false;
+    providerOnboardingApi.getDraft().then((d) => {
+      if (cancelled) return;
+      const st = d.providerStatus;
+      if (st === 'pending_review' || st === 'approved' || st === 'rejected') {
+        router.replace('/provider-status');
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [router]);
+
   useEffect(() => {
     if (!data.religion) return;
     let ignore = false;
@@ -149,8 +139,6 @@ export default function Step5Page() {
     };
   }, [data.religion]);
 
-  /* Build the row list once the catalogue arrives. Preserve any existing values
-   * from the store so revisiting the step doesn't nuke the provider's work. */
   useEffect(() => {
     if (!catalogue) return;
 
@@ -212,7 +200,6 @@ export default function Step5Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalogue]);
 
-  /* Sync rows → store on change. Converts rupees → paise for the wire. */
   useEffect(() => {
     if (!rows.length) return;
     const pricing: PricingItem[] = rows.map((r: any) => ({
@@ -231,7 +218,6 @@ export default function Step5Page() {
   const setRow = (key: RowKey, patch: Partial<PricingRow>) =>
     setRows((cur: any) => cur.map((r: any) => (r.key === key ? { ...r, ...patch } : r)));
 
-  /* Validation: every row must have base > 0 and duration ≥ 5. */
   const validation = useMemo(() => {
     const invalid: string[] = [];
     for (const r of rows) {
@@ -239,8 +225,8 @@ export default function Step5Page() {
       const dur = Number(r.durationMinutes);
       if (!base || base < 1) invalid.push(`${r.title}: base price missing`);
       else if (base > 500_000) invalid.push(`${r.title}: base price looks too high`);
-      if (!dur || dur < 5) invalid.push(`${r.title}: duration must be ≥ 5 min`);
-      else if (dur > 720) invalid.push(`${r.title}: duration must be ≤ 12 h`);
+      if (!dur || dur < 5) invalid.push(`${r.title}: duration must be >= 5 min`);
+      else if (dur > 720) invalid.push(`${r.title}: duration must be <= 12 h`);
     }
     return invalid;
   }, [rows]);
@@ -284,9 +270,7 @@ export default function Step5Page() {
       {!loading && rows.length > 0 && (
         <div className="space-y-4">
           <p className="text-sm text-gray-700/80">
-            Set a fair price for each service. We show devotees the{' '}
-            <b>final amount</b> — including our small platform fee — so they
-            know exactly what they'll pay.
+            Set a fair price for each service.
           </p>
 
           {rows.map((r: any) => {
@@ -312,7 +296,6 @@ export default function Step5Page() {
                   )}
                 </div>
 
-                {/* Price row */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <MoneyField
                     label="Base price"
@@ -321,13 +304,8 @@ export default function Step5Page() {
                     onChange={(v) => setRow(r.key, { basePriceRupees: v })}
                     placeholder={
                       r.suggestedMinRupees && r.suggestedMaxRupees
-                        ? `${r.suggestedMinRupees} – ${r.suggestedMaxRupees}`
+                        ? `${r.suggestedMinRupees} - ${r.suggestedMaxRupees}`
                         : '0'
-                    }
-                    hint={
-                      r.suggestedMinRupees && r.suggestedMaxRupees
-                        ? `Typical: ₹${r.suggestedMinRupees} – ₹${r.suggestedMaxRupees}`
-                        : undefined
                     }
                   />
                   <MoneyField
@@ -336,7 +314,6 @@ export default function Step5Page() {
                     value={r.addonFeeRupees}
                     onChange={(v) => setRow(r.key, { addonFeeRupees: v })}
                     placeholder="0"
-                    hint="Kit / prasad / extras"
                   />
                   <MoneyField
                     label="Travel fee"
@@ -344,12 +321,10 @@ export default function Step5Page() {
                     value={r.travelFeeRupees}
                     onChange={(v) => setRow(r.key, { travelFeeRupees: v })}
                     placeholder="0"
-                    hint="In-person visits only"
                     disabled={r.mode === 'online'}
                   />
                 </div>
 
-                {/* Duration + mode */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="block">
                     <span className="text-sm font-medium text-gray-700/90 block mb-1.5">
@@ -368,8 +343,7 @@ export default function Step5Page() {
                       placeholder={
                         r.suggestedDuration ? String(r.suggestedDuration) : '60'
                       }
-                      className="w-full px-4 py-3 rounded-xl border border-[#0F2452]/20 bg-white text-base
-                                 focus:outline-none focus:ring-2 focus:ring-[#0F2452]/40"
+                      className="w-full px-4 py-3 rounded-xl border border-[#0F2452]/20 bg-white text-base focus:outline-none focus:ring-2 focus:ring-[#0F2452]/40"
                     />
                   </label>
 
@@ -387,16 +361,14 @@ export default function Step5Page() {
                             onClick={() =>
                               setRow(r.key, {
                                 mode: m.value,
-                                // Zero out travel fee if going online-only
                                 ...(m.value === 'online' ? { travelFeeRupees: '' } : {}),
                               })
                             }
-                            className={`px-3 py-2 rounded-full text-sm border transition
-                              ${
-                                on
-                                  ? 'bg-[#0F2452] text-[#F7EFE1] border-[#0F2452]'
-                                  : 'bg-white text-gray-700 border-[#0F2452]/20 hover:bg-[#0F2452]/5'
-                              }`}
+                            className={`px-3 py-2 rounded-full text-sm border transition ${
+                              on
+                                ? 'bg-[#0F2452] text-[#F7EFE1] border-[#0F2452]'
+                                : 'bg-white text-gray-700 border-[#0F2452]/20 hover:bg-[#0F2452]/5'
+                            }`}
                           >
                             {m.label}
                           </button>
@@ -406,7 +378,6 @@ export default function Step5Page() {
                   </div>
                 </div>
 
-                {/* Live breakdown */}
                 {hasBase && (
                   <div className="rounded-xl bg-[#0F2452]/5 px-4 py-3 text-sm text-gray-700/90 space-y-1">
                     <Line label="Base" paise={basePaise} />
@@ -415,11 +386,10 @@ export default function Step5Page() {
                     <Line label="Platform fee" paise={platformFee} muted />
                     <div className="pt-2 mt-1 border-t border-[#0F2452]/15 flex justify-between">
                       <span className="font-semibold">Devotee pays</span>
-                      <span className="font-semibold">₹{formatRupees(final)}</span>
+                      <span className="font-semibold">{`Rs.${formatRupees(final)}`}</span>
                     </div>
                     <p className="text-[11px] text-gray-700/50 pt-0.5">
-                      You receive ₹{formatRupees(subtotal)} · platform fee covers
-                      booking, payment, and support.
+                      {`You receive Rs.${formatRupees(subtotal)} . platform fee covers booking, payment, and support.`}
                     </p>
                   </div>
                 )}
@@ -445,8 +415,6 @@ export default function Step5Page() {
   );
 }
 
-/* ──────────────────── Small helpers ──────────────────── */
-
 function formatRupees(paise: number): string {
   const n = (paise | 0) / 100;
   return n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -464,7 +432,7 @@ function Line({
   return (
     <div className={`flex justify-between ${muted ? 'text-gray-700/60' : ''}`}>
       <span>{label}</span>
-      <span>₹{formatRupees(paise)}</span>
+      <span>{`Rs.${formatRupees(paise)}`}</span>
     </div>
   );
 }
@@ -474,7 +442,6 @@ function MoneyField({
   value,
   onChange,
   placeholder,
-  hint,
   required,
   optional,
   disabled,
@@ -483,7 +450,6 @@ function MoneyField({
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
-  hint?: string;
   required?: boolean;
   optional?: boolean;
   disabled?: boolean;
@@ -496,16 +462,16 @@ function MoneyField({
         {optional && <span className="text-gray-700/50 font-normal"> (optional)</span>}
       </span>
       <div
-        className={`flex items-stretch rounded-xl border overflow-hidden
-          ${disabled ? 'border-[#0F2452]/10 bg-[#0F2452]/[0.03]' : 'border-[#0F2452]/20 bg-white'}
-          focus-within:ring-2 focus-within:ring-[#0F2452]/40`}
+        className={`flex items-stretch rounded-xl border overflow-hidden ${
+          disabled ? 'border-[#0F2452]/10 bg-[#0F2452]/[0.03]' : 'border-[#0F2452]/20 bg-white'
+        } focus-within:ring-2 focus-within:ring-[#0F2452]/40`}
       >
         <span
           className={`px-3 flex items-center text-base ${
             disabled ? 'text-gray-700/40' : 'text-gray-700/70'
           }`}
         >
-          ₹
+          Rs.
         </span>
         <input
           type="text"
@@ -513,7 +479,6 @@ function MoneyField({
           value={value}
           disabled={disabled}
           onChange={(e) => {
-            // Allow digits + one decimal point, 0-2 decimal places
             const cleaned = e.target.value
               .replace(/[^\d.]/g, '')
               .replace(/(\..*)\./g, '$1')
@@ -524,7 +489,6 @@ function MoneyField({
           className="flex-1 px-2 py-3 bg-transparent text-base focus:outline-none disabled:cursor-not-allowed"
         />
       </div>
-      {hint && <p className="text-[11px] text-gray-700/55 mt-1">{hint}</p>}
     </label>
   );
 }
