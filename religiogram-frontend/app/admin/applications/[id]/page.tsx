@@ -2,19 +2,10 @@
 
 /**
  * /admin/applications/[id] — single application review.
- *
- * NEXT 15: params is a Promise that must be `await`ed. We unwrap it inside
- * a useEffect, then drive the data fetch off the resolved id. Doing the unwrap
- * synchronously (or via React.use directly without a guard) breaks the build.
- *
- * Actions live in a sticky right-side (desktop) / bottom (mobile) panel:
- *   Approve    — optional notes
- *   Reject     — reason required (>= 10 chars), optional internal notes
- *   Request Info — whatToFix required (>= 10 chars)
- *   Suspend    — visible only if current status is `approved`; reason required
+ * Clean rewrite. Approve / Reject / Suspend only (no Request Info).
  */
 
-import { use, useCallback, useEffect, useMemo, useState } from 'react';
+import { use, useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -23,9 +14,34 @@ import {
   type AdminApplicationStatus,
 } from '@/lib/admin-api';
 import { ApiError, tokenStore } from '@/lib/api';
+import { showToast } from '@/components/ui/Toast';
+
+type ActionKind = 'approve' | 'reject' | 'suspend';
+
+function formatDate(iso?: string | null): string {
+  if (!iso) return '—';
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '—';
+  return new Date(t).toLocaleString();
+}
+
+function rupeesFromPaise(paise?: number | null): string {
+  if (typeof paise !== 'number' || !Number.isFinite(paise)) return '—';
+  return `₹${(paise / 100).toFixed(2)}`;
+}
 
 /** Fetches an admin KYC file via Bearer-auth, displays as blob URL (bypasses SW). */
-function AuthedImage({ kind, providerId, alt, className }: { kind: 'pan' | 'selfie'; providerId: string; alt: string; className?: string }) {
+function AuthedImage({
+  kind,
+  providerId,
+  alt,
+  className,
+}: {
+  kind: 'pan' | 'selfie';
+  providerId: string;
+  alt: string;
+  className?: string;
+}) {
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -33,7 +49,9 @@ function AuthedImage({ kind, providerId, alt, className }: { kind: 'pan' | 'self
     let blobUrl: string | null = null;
     (async () => {
       try {
-        const tok = tokenStore.access ?? (typeof window !== 'undefined' ? localStorage.getItem('rg_access') : null);
+        const tok =
+          tokenStore.access ??
+          (typeof window !== 'undefined' ? localStorage.getItem('rg_access') : null);
         const base = process.env.NEXT_PUBLIC_API_BASE ?? '/v1';
         const r = await fetch(`${base}/admin/verifications/${providerId}/file/${kind}`, {
           headers: tok ? { Authorization: `Bearer ${tok}` } : {},
@@ -52,25 +70,12 @@ function AuthedImage({ kind, providerId, alt, className }: { kind: 'pan' | 'self
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
   }, [kind, providerId]);
-  if (error) return <div className="text-xs text-rose-600 p-3 bg-rose-50 rounded">Failed: {error}</div>;
-  if (!src) return <div className="text-xs text-slate-400 p-3 bg-slate-50 rounded">Loading {alt}…</div>;
+  if (error)
+    return <div className="text-xs text-rose-600 p-3 bg-rose-50 rounded">Failed: {error}</div>;
+  if (!src)
+    return <div className="text-xs text-slate-400 p-3 bg-slate-50 rounded">Loading {alt}…</div>;
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt={alt} className={className} />;
-}
-import { showToast } from '@/components/ui/Toast';
-
-type ActionKind = 'approve' | 'reject' | 'request_info' | 'suspend';
-
-function formatDate(iso?: string | null): string {
-  if (!iso) return '—';
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return '—';
-  return new Date(t).toLocaleString();
-}
-
-function rupeesFromPaise(paise?: number | null): string {
-  if (typeof paise !== 'number' || !Number.isFinite(paise)) return '—';
-  return `₹${(paise / 100).toFixed(2)}`;
 }
 
 function StatusBadge({ status }: { status: AdminApplicationStatus | string }) {
@@ -86,7 +91,7 @@ function StatusBadge({ status }: { status: AdminApplicationStatus | string }) {
   const label =
     s === 'pending_review'
       ? 'Pending review'
-      : status.charAt(0).toUpperCase() + status.slice(1);
+      : String(status).charAt(0).toUpperCase() + String(status).slice(1);
   return (
     <span
       className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${styles}`}
@@ -96,40 +101,31 @@ function StatusBadge({ status }: { status: AdminApplicationStatus | string }) {
   );
 }
 
-function Card({
-  title,
-  children,
-  right,
-}: {
-  title?: string;
-  children: React.ReactNode;
-  right?: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm">
-      {(title || right) && (
-        <div className="flex items-center justify-between mb-4">
-          {title && (
-            <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
-              {title}
-            </h2>
-          )}
-          {right}
-        </div>
-      )}
-      {children}
-    </section>
-  );
-}
-
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-slate-500 font-medium">
-        {label}
-      </dt>
+      <dt className="text-xs uppercase tracking-wide text-slate-500 font-medium">{label}</dt>
       <dd className="mt-1 text-sm text-slate-900 break-words">{value || '—'}</dd>
     </div>
+  );
+}
+
+function Card({
+  title,
+  children,
+}: {
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm">
+      {title && (
+        <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wide mb-4">
+          {title}
+        </h2>
+      )}
+      {children}
+    </section>
   );
 }
 
@@ -145,12 +141,9 @@ export default function AdminApplicationDetailPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [action, setAction] = useState<ActionKind | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  // Modal form state — kept here so opening/closing resets cleanly.
   const [notes, setNotes] = useState('');
   const [reason, setReason] = useState('');
-  const [whatToFix, setWhatToFix] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const fetchDetail = useCallback(async () => {
     setLoading(true);
@@ -169,15 +162,9 @@ export default function AdminApplicationDetailPage({
     fetchDetail();
   }, [fetchDetail]);
 
-  const provider = data?.provider ?? {};
-  const status: AdminApplicationStatus =
-    (provider.status as AdminApplicationStatus) ?? 'pending_review';
-  const firstVideo = data?.kycVideos?.[0];
-
   const openAction = (kind: ActionKind) => {
     setNotes('');
     setReason('');
-    setWhatToFix('');
     setAction(kind);
   };
 
@@ -207,19 +194,6 @@ export default function AdminApplicationDetailPage({
         router.push('/admin/applications');
         return;
       }
-      if (action === 'request_info') {
-        if (whatToFix.trim().length < 10) {
-          showToast('Please describe what to fix (10+ characters)', 'error');
-          setSubmitting(false);
-          return;
-        }
-        await adminApi.applications.requestInfo(id, whatToFix.trim());
-        showToast('Info requested', 'success');
-        setAction(null);
-        setSubmitting(false);
-        await fetchDetail();
-        return;
-      }
       if (action === 'suspend') {
         if (reason.trim().length < 10) {
           showToast('Reason must be at least 10 characters', 'error');
@@ -236,39 +210,7 @@ export default function AdminApplicationDetailPage({
       showToast(msg, 'error');
       setSubmitting(false);
     }
-  }, [action, id, notes, reason, whatToFix, router, fetchDetail]);
-
-  const modalCopy = useMemo(() => {
-    if (action === 'approve')
-      return {
-        title: 'Approve application',
-        body: 'This will let the priest start receiving bookings immediately.',
-        cta: 'Approve',
-        ctaClass: 'bg-emerald-600 hover:bg-emerald-700',
-      };
-    if (action === 'reject')
-      return {
-        title: 'Reject application',
-        body: 'The priest will be notified. Provide a clear reason.',
-        cta: 'Reject',
-        ctaClass: 'bg-rose-600 hover:bg-rose-700',
-      };
-    if (action === 'request_info')
-      return {
-        title: 'Request more info',
-        body: 'The priest will see exactly what you ask them to fix.',
-        cta: 'Send request',
-        ctaClass: 'bg-amber-600 hover:bg-amber-700',
-      };
-    if (action === 'suspend')
-      return {
-        title: 'Suspend provider',
-        body: 'They will be hidden from devotees until reinstated.',
-        cta: 'Suspend',
-        ctaClass: 'bg-slate-900 hover:bg-slate-800',
-      };
-    return null;
-  }, [action]);
+  }, [action, id, notes, reason, router]);
 
   if (loading) {
     return (
@@ -302,19 +244,32 @@ export default function AdminApplicationDetailPage({
     );
   }
 
+  const provider: any = data.provider ?? {};
+  const status: AdminApplicationStatus =
+    (provider.status as AdminApplicationStatus) ?? 'pending_review';
+  const firstVideo = data.kycVideos?.[0];
+  const providerId = String(provider.id ?? id);
+
+  const modalTitle =
+    action === 'approve' ? 'Approve application' : action === 'reject' ? 'Reject application' : 'Suspend provider';
+  const modalCta =
+    action === 'approve' ? 'Approve' : action === 'reject' ? 'Reject' : 'Suspend';
+  const modalCtaClass =
+    action === 'approve'
+      ? 'bg-emerald-600 hover:bg-emerald-700'
+      : action === 'reject'
+      ? 'bg-rose-600 hover:bg-rose-700'
+      : 'bg-slate-900 hover:bg-slate-800';
+
   return (
     <div className="space-y-5 lg:grid lg:grid-cols-[1fr_320px] lg:gap-6 lg:space-y-0">
       <div className="space-y-5">
         <div>
-          <Link
-            href="/admin/applications"
-            className="text-sm text-slate-500 hover:text-slate-700"
-          >
+          <Link href="/admin/applications" className="text-sm text-slate-500 hover:text-slate-700">
             ← All applications
           </Link>
         </div>
 
-        {/* Header card */}
         <Card>
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div>
@@ -332,43 +287,31 @@ export default function AdminApplicationDetailPage({
           </div>
         </Card>
 
-        {/* Identity */}
         <Card title="Identity">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <p className="text-xs uppercase tracking-wide text-slate-500 font-medium mb-2">
-                PAN
-              </p>
-              {data.panSignedUrl || data.provider?.panS3Key ? (
-                <AuthedImage
-                  kind="pan"
-                  providerId={String(data.provider?.id ?? appId)}
-                  alt="PAN document"
-                  className="w-full rounded-lg border border-slate-200 object-contain bg-slate-50"
-                />
-              ) : (
-                <p className="text-sm text-slate-500">Not uploaded.</p>
-              )}
+              <p className="text-xs uppercase tracking-wide text-slate-500 font-medium mb-2">PAN</p>
+              <AuthedImage
+                kind="pan"
+                providerId={providerId}
+                alt="PAN document"
+                className="w-full rounded-lg border border-slate-200 object-contain bg-slate-50"
+              />
             </div>
             <div>
               <p className="text-xs uppercase tracking-wide text-slate-500 font-medium mb-2">
                 Selfie
               </p>
-              {data.selfieSignedUrl || data.provider?.selfieS3Key ? (
-                <AuthedImage
-                  kind="selfie"
-                  providerId={String(data.provider?.id ?? appId)}
-                  alt="Selfie"
-                  className="w-full rounded-lg border border-slate-200 object-contain bg-slate-50"
-                />
-              ) : (
-                <p className="text-sm text-slate-500">Not uploaded.</p>
-              )}
+              <AuthedImage
+                kind="selfie"
+                providerId={providerId}
+                alt="Selfie"
+                className="w-full rounded-lg border border-slate-200 object-contain bg-slate-50"
+              />
             </div>
           </div>
         </Card>
 
-        {/* Introduction Video */}
         <Card title="Introduction Video">
           {firstVideo?.signedUrl ? (
             <div className="space-y-2">
@@ -378,8 +321,7 @@ export default function AdminApplicationDetailPage({
                 className="w-full rounded-lg border border-slate-200 bg-black"
               />
               <p className="text-xs text-slate-500">
-                Duration: {firstVideo.durationSeconds ?? '—'}s • Status:{' '}
-                {firstVideo.status || '—'}
+                Duration: {firstVideo.durationSeconds ?? '—'}s • Status: {firstVideo.status || '—'}
               </p>
             </div>
           ) : (
@@ -387,14 +329,19 @@ export default function AdminApplicationDetailPage({
           )}
         </Card>
 
-        {/* Profile */}
         <Card title="Profile">
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Full name" value={provider.fullName} />
-            <Field label="Date of birth" value={provider.dob ? String(provider.dob).slice(0, 10) : null} />
+            <Field
+              label="Date of birth"
+              value={provider.dob ? String(provider.dob).slice(0, 10) : null}
+            />
             <Field label="Phone" value={provider.phone} />
             <Field label="City" value={provider.city} />
-            <Field label="Religion" value={<span className="capitalize">{provider.religion}</span>} />
+            <Field
+              label="Religion"
+              value={<span className="capitalize">{provider.religion}</span>}
+            />
             <Field label="Experience (years)" value={provider.experienceYears} />
             <Field
               label="Languages"
@@ -408,7 +355,6 @@ export default function AdminApplicationDetailPage({
           </dl>
         </Card>
 
-        {/* Pricing */}
         <Card title="Pricing">
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field
@@ -426,7 +372,6 @@ export default function AdminApplicationDetailPage({
           </dl>
         </Card>
 
-        {/* Payout */}
         <Card title="Payout">
           {data.bank ? (
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -450,7 +395,6 @@ export default function AdminApplicationDetailPage({
         </Card>
       </div>
 
-      {/* Action panel */}
       <aside className="lg:sticky lg:top-6 lg:self-start">
         <Card title="Decision">
           <div className="flex flex-col gap-2">
@@ -470,13 +414,6 @@ export default function AdminApplicationDetailPage({
             >
               Reject
             </button>
-            <button
-              type="button"
-              onClick={() => openAction('request_info')}
-              className="w-full px-4 py-2.5 rounded-lg bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600"
-            >
-              Request info
-            </button>
             {status === 'approved' && (
               <button
                 type="button"
@@ -488,14 +425,12 @@ export default function AdminApplicationDetailPage({
             )}
           </div>
           <p className="text-xs text-slate-500 mt-3 leading-relaxed">
-            Approve unlocks bookings instantly. Reject and Request info notify
-            the priest by SMS/email.
+            Approve unlocks bookings instantly. Reject notifies the priest by SMS/email.
           </p>
         </Card>
       </aside>
 
-      {/* Modal */}
-      {action && modalCopy && (
+      {action && (
         <div
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 px-4 py-6"
           role="dialog"
@@ -506,27 +441,9 @@ export default function AdminApplicationDetailPage({
             className="w-full max-w-md rounded-2xl bg-white shadow-xl border border-slate-200 p-5"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-base font-semibold text-slate-900">
-              {modalCopy.title}
-            </h3>
-            <p className="text-sm text-slate-600 mt-1">{modalCopy.body}</p>
+            <h3 className="text-base font-semibold text-slate-900">{modalTitle}</h3>
 
             <div className="mt-4 space-y-3">
-              {action === 'approve' && (
-                <label className="block">
-                  <span className="text-xs font-medium text-slate-700">
-                    Internal notes (optional)
-                  </span>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={3}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-                    placeholder="Anything for the audit log…"
-                  />
-                </label>
-              )}
-
               {(action === 'reject' || action === 'suspend') && (
                 <label className="block">
                   <span className="text-xs font-medium text-slate-700">
@@ -537,12 +454,12 @@ export default function AdminApplicationDetailPage({
                     onChange={(e) => setReason(e.target.value)}
                     rows={3}
                     className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-                    placeholder="Why is this being rejected?"
+                    placeholder="Why?"
                   />
                 </label>
               )}
 
-              {action === 'reject' && (
+              {(action === 'approve' || action === 'reject') && (
                 <label className="block">
                   <span className="text-xs font-medium text-slate-700">
                     Internal notes (optional)
@@ -556,8 +473,28 @@ export default function AdminApplicationDetailPage({
                   />
                 </label>
               )}
+            </div>
 
-        </>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeAction}
+                disabled={submitting}
+                className="px-4 py-2 rounded-lg bg-white text-slate-700 border border-slate-200 text-sm font-medium disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={runAction}
+                disabled={submitting}
+                className={`px-4 py-2 rounded-lg text-white text-sm font-semibold disabled:opacity-50 ${modalCtaClass}`}
+              >
+                {submitting ? 'Working…' : modalCta}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
