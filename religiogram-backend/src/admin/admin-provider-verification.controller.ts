@@ -13,16 +13,16 @@ import {
   Req,
   Res,
   Logger,
+  UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -30,7 +30,10 @@ import {
   ProviderEntity,
   ProviderStatus,
 } from '../service-providers/entities/provider.entity';
-import { KycVideoEntity } from '../service-providers/entities/kyc-video.entity';
+import {
+  KycVideoEntity,
+  KycStatus,
+} from '../service-providers/entities/kyc-video.entity';
 import { ProviderBankAccount } from '../service-providers/entities/provider-bank-account.entity';
 import { EncryptionService } from '../common/encryption/encryption.service';
 import { AdminActionLog } from './entities/admin-action-log.entity';
@@ -41,6 +44,7 @@ import { NotificationType } from '../notifications/entities/notification.entity'
  * AdminProviderVerificationController
  *
  * GET  /v1/admin/verifications/queue
+ * GET  /v1/admin/verifications/:providerId/file/:kind
  * GET  /v1/admin/verifications/:providerId
  * POST /v1/admin/verifications/:providerId/approve
  * POST /v1/admin/verifications/:providerId/reject
@@ -53,6 +57,7 @@ import { NotificationType } from '../notifications/entities/notification.entity'
 @Roles('admin')
 @Controller({ path: 'admin', version: '1' })
 export class AdminProviderVerificationController {
+  private readonly logger = new Logger(AdminProviderVerificationController.name);
   private readonly s3: S3Client;
   private readonly bucket: string;
 
@@ -70,10 +75,10 @@ export class AdminProviderVerificationController {
     private readonly encryption: EncryptionService,
   ) {
     this.s3 = new S3Client({
-      region:   this.config.get<string>('storage.region', 'ap-south-1'),
+      region: this.config.get<string>('storage.region', 'ap-south-1'),
       endpoint: this.config.get<string>('storage.endpoint'),
       credentials: {
-        accessKeyId:     this.config.get<string>('storage.accessKeyId', ''),
+        accessKeyId: this.config.get<string>('storage.accessKeyId', ''),
         secretAccessKey: this.config.get<string>('storage.secretAccessKey', ''),
       },
     });
@@ -87,24 +92,33 @@ export class AdminProviderVerificationController {
     @Query('limit') limit = '50',
     @Query('offset') offset = '0',
   ) {
-    const take = Math.min(200, parseInt(limit, 10));
-    const skip = parseInt(offset, 10);
+    const take = Math.min(200, parseInt(limit, 10) || 50);
+    const skip = parseInt(offset, 10) || 0;
 
     const [items, total] = await this.providers.findAndCount({
       where: { status: status as ProviderStatus },
       order: { updatedAt: 'ASC' },
       skip,
       take,
-      select: ['id', 'userId', 'fullName', 'religion', 'city', 'status', 'updatedAt', 'createdAt'],
+      select: [
+        'id',
+        'userId',
+        'fullName',
+        'religion',
+        'city',
+        'status',
+        'updatedAt',
+        'createdAt',
+      ],
     });
 
     return { items, total };
   }
 
   /* ─── GET /v1/admin/verifications/:providerId/file/:kind ───
-   * Streams the requested KYC document (pan | selfie | video-0)
-   * through Railway so the admin frontend can fetch as a blob with
-   * Bearer auth. Avoids signed-URL CORS/SW issues entirely.            */
+   * Streams the requested KYC document (pan | selfie | video-N)
+   * through the backend so the admin frontend can fetch as a blob
+   * with Bearer auth. Avoids signed-URL CORS/SW issues entirely.   */
   @Get('verifications/:providerId/file/:kind')
   async streamFile(
     @Param('providerId') providerId: string,
@@ -117,6 +131,7 @@ export class AdminProviderVerificationController {
 
     let key: string | null = null;
     let contentType = 'application/octet-stream';
+
     if (kind === 'pan') {
       key = provider.panS3Key;
       contentType = 'image/jpeg';
@@ -141,17 +156,22 @@ export class AdminProviderVerificationController {
       const out = await this.s3.send(cmd);
       res.setHeader('Content-Type', out.ContentType ?? contentType);
       res.setHeader('Cache-Control', 'private, max-age=300');
-      if (out.ContentLength) res.setHeader('Content-Length', String(out.ContentLength));
-      // Stream the body
+      if (out.ContentLength) {
+        res.setHeader('Content-Length', String(out.ContentLength));
+      }
       if (out.Body) {
-        // @ts-ignore — Body is a stream in Node SDK
+        // @ts-ignore — Body is a Node stream in the AWS SDK runtime
         out.Body.pipe(res);
       } else {
         res.status(204).end();
       }
     } catch (err: any) {
-      this.logger.error(`[admin] streamFile failed kind=${kind} key=${key} err=${err?.message}`);
-      throw new NotFoundException(`File not retrievable: ${err?.message ?? 'unknown'}`);
+      this.logger.error(
+        `[admin] streamFile failed kind=${kind} key=${key} err=${err?.message}`,
+      );
+      throw new NotFoundException(
+        `File not retrievable: ${err?.message ?? 'unknown'}`,
+      );
     }
   }
 
@@ -167,29 +187,6 @@ export class AdminProviderVerificationController {
       take: 100,
     });
 
-    // Generate signed R2/S3 URLs valid for 24 hours
-    const kycVideosOut = await Promise.all(
-      videos.map(async (v) => {
-        let signedUrl: string | null = null;
-        try {
-          const cmd = new GetObjectCommand({ Bucket: this.bucket, Key: v.s3Key });
-          signedUrl = await getSignedUrl(this.s3, cmd, { expiresIn: 86_400 });
-        } catch (_) {
-          // non-fatal: return null URL if signing fails
-        }
-        return {
-          id:              v.id,
-          r2ObjectKey:     v.s3Key,
-          signedUrl,
-          durationSeconds: v.durationSeconds,
-          status:          v.status,
-          rejectionReason: v.rejectionReason,
-          createdAt:       v.createdAt,
-        };
-      }),
-    );
-
-    // Sign 24h URLs for PAN + selfie if present
     const signKey = async (key: string | null): Promise<string | null> => {
       if (!key) return null;
       try {
@@ -199,12 +196,24 @@ export class AdminProviderVerificationController {
         return null;
       }
     };
+
+    const kycVideosOut = await Promise.all(
+      videos.map(async (v) => ({
+        id: v.id,
+        r2ObjectKey: v.s3Key,
+        signedUrl: await signKey(v.s3Key),
+        durationSeconds: v.durationSeconds,
+        status: v.status,
+        rejectionReason: v.rejectionReason,
+        createdAt: v.createdAt,
+      })),
+    );
+
     const [panSignedUrl, selfieSignedUrl] = await Promise.all([
       signKey(provider.panS3Key),
       signKey(provider.selfieS3Key),
     ]);
 
-    // Diagnostic logging so we can see in Railway logs why a URL is empty/invalid.
     this.logger.log(
       `[admin] bucket=${this.bucket} PAN key=${provider.panS3Key} signedUrl=${panSignedUrl?.substring(0, 80) ?? 'null'}`,
     );
@@ -212,18 +221,21 @@ export class AdminProviderVerificationController {
       `[admin] bucket=${this.bucket} Selfie key=${provider.selfieS3Key} signedUrl=${selfieSignedUrl?.substring(0, 80) ?? 'null'}`,
     );
 
-    // Load primary bank row; mask account number — never return plaintext
     const bankRow = await this.bankAccounts.findOne({
       where: { providerId, isPrimary: true },
     });
-    let bankOut: {
-      bankName: string | null;
-      ifscCode: string | null;
-      upiId: string | null;
-      beneficiaryName: string | null;
-      masked: string;
-      verificationStatus: string;
-    } | null = null;
+
+    let bankOut:
+      | {
+          bankName: string | null;
+          ifscCode: string | null;
+          upiId: string | null;
+          beneficiaryName: string | null;
+          masked: string;
+          verificationStatus: string;
+        }
+      | null = null;
+
     if (bankRow) {
       let masked = '****';
       if (bankRow.upiId) {
@@ -240,16 +252,22 @@ export class AdminProviderVerificationController {
         }
       }
       bankOut = {
-        bankName:        bankRow.bankName ?? null,
-        ifscCode:        bankRow.ifscCode ?? null,
-        upiId:           bankRow.upiId ?? null,
+        bankName: bankRow.bankName ?? null,
+        ifscCode: bankRow.ifscCode ?? null,
+        upiId: bankRow.upiId ?? null,
         beneficiaryName: bankRow.beneficiaryName ?? null,
         masked,
         verificationStatus: bankRow.verificationStatus,
       };
     }
 
-    return { provider, kycVideos: kycVideosOut, panSignedUrl, selfieSignedUrl, bank: bankOut };
+    return {
+      provider,
+      kycVideos: kycVideosOut,
+      panSignedUrl,
+      selfieSignedUrl,
+      bank: bankOut,
+    };
   }
 
   /* ─── POST /v1/admin/verifications/:providerId/approve ─── */
@@ -262,17 +280,16 @@ export class AdminProviderVerificationController {
   ) {
     const provider = await this.mustFind(providerId);
 
-    const approveResult = await this.providers.update(
+    await this.providers.update(
       { id: providerId },
       { status: ProviderStatus.Approved, approvedAt: new Date() },
     );
-    if (approveResult.affected === 0) throw new NotFoundException(`Provider ${providerId} not found`);
 
     await this.logAction({
-      adminId:    me.id,
+      adminId: me.id,
       actionType: 'provider.approve',
-      targetId:   providerId,
-      notes:      body.notes ?? 'Approved',
+      targetId: providerId,
+      notes: body.notes ?? 'Approved',
     });
 
     await this.notifs.send(
@@ -296,17 +313,16 @@ export class AdminProviderVerificationController {
     if (!body.reason) throw new BadRequestException('reason is required');
     const provider = await this.mustFind(providerId);
 
-    const rejectResult = await this.providers.update(
+    await this.providers.update(
       { id: providerId },
       { status: ProviderStatus.Rejected, rejectionReason: body.reason },
     );
-    if (rejectResult.affected === 0) throw new NotFoundException(`Provider ${providerId} not found`);
 
     await this.logAction({
-      adminId:    me.id,
+      adminId: me.id,
       actionType: 'provider.reject',
-      targetId:   providerId,
-      notes:      body.reason,
+      targetId: providerId,
+      notes: body.reason,
     });
 
     await this.notifs.send(
@@ -331,10 +347,10 @@ export class AdminProviderVerificationController {
     const provider = await this.mustFind(providerId);
 
     await this.logAction({
-      adminId:    me.id,
+      adminId: me.id,
       actionType: 'provider.request_info',
-      targetId:   providerId,
-      notes:      body.whatToFix,
+      targetId: providerId,
+      notes: body.whatToFix,
     });
 
     await this.notifs.send(
@@ -358,14 +374,16 @@ export class AdminProviderVerificationController {
     if (!body.reason) throw new BadRequestException('reason is required');
     const provider = await this.mustFind(providerId);
 
-    const suspendResult = await this.providers.update({ id: providerId }, { status: ProviderStatus.Suspended });
-    if (suspendResult.affected === 0) throw new NotFoundException(`Provider ${providerId} not found`);
+    await this.providers.update(
+      { id: providerId },
+      { status: ProviderStatus.Suspended },
+    );
 
     await this.logAction({
-      adminId:    me.id,
+      adminId: me.id,
       actionType: 'provider.suspend',
-      targetId:   providerId,
-      notes:      body.reason,
+      targetId: providerId,
+      notes: body.reason,
     });
 
     await this.notifs.send(
@@ -388,17 +406,19 @@ export class AdminProviderVerificationController {
   ) {
     const provider = await this.mustFind(providerId);
 
-    const reinstateResult = await this.providers.update(
+    await this.providers.update(
       { id: providerId },
-      { status: ProviderStatus.Approved, approvedAt: provider.approvedAt ?? new Date() },
+      {
+        status: ProviderStatus.Approved,
+        approvedAt: provider.approvedAt ?? new Date(),
+      },
     );
-    if (reinstateResult.affected === 0) throw new NotFoundException(`Provider ${providerId} not found`);
 
     await this.logAction({
-      adminId:    me.id,
+      adminId: me.id,
       actionType: 'provider.reinstate',
-      targetId:   providerId,
-      notes:      'Reinstated by admin',
+      targetId: providerId,
+      notes: 'Reinstated by admin',
     });
 
     await this.notifs.send(
@@ -422,50 +442,78 @@ export class AdminProviderVerificationController {
     if (!body.reason) throw new BadRequestException('reason is required');
     const provider = await this.mustFind(providerId);
 
-    // Store block as Rejected with a BLOCKED prefix in rejection_reason
-    const blockResult = await this.providers.update(
+    await this.providers.update(
       { id: providerId },
-      { status: ProviderStatus.Rejected, rejectionReason: `BLOCKED: ${body.reason}` },
+      {
+        status: ProviderStatus.Rejected,
+        rejectionReason: `BLOCKED: ${body.reason}`,
+      },
     );
-    if (blockResult.affected === 0) throw new NotFoundException(`Provider ${providerId} not found`);
 
     await this.logAction({
-      adminId:    me.id,
+      adminId: me.id,
       actionType: 'provider.block',
-      targetId:   providerId,
-      notes:      body.reason,
+      targetId: providerId,
+      notes: body.reason,
     });
 
     await this.notifs.send(
       provider.userId,
       NotificationType.SYSTEM,
-      'Account suspended',
-      `Your provider account has been suspended. Reason: ${body.reason}. Contact support for assistance.`,
+      'Account blocked',
+      `Your provider account has been blocked. Reason: ${body.reason}. Contact support for assistance.`,
     );
 
-    return { providerState: ProviderStatus.Suspended };
+    return { providerState: ProviderStatus.Rejected };
   }
 
-  @Post('providers/:providerId/reinstate')
-  @HttpCode(HttpStatus.OK)
-  async reinstate(
-    @Param('providerId') providerId: string,
-    @CurrentUser() me: AuthenticatedUser,
-  ) {
-    const provider = await this.mustFind(providerId);
-    await this.providers.update({ id: providerId }, { status: ProviderStatus.Approved, approvedAt: provider.approvedAt ?? new Date() });
-    await this.logAction({ adminId: me.id, actionType: 'provider.reinstate', targetId: providerId, notes: 'Reinstated' });
-    await this.notifs.send(provider.userId, NotificationType.SYSTEM, 'Account reinstated', 'Your provider account has been reinstated.');
-    return { providerState: ProviderStatus.Approved };
+  /* ─── Internal: SLA alert cron (hourly) ─── */
+  @Cron(CronExpression.EVERY_HOUR)
+  async checkKycSlaBreach(): Promise<void> {
+    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+    const stale = await this.kycVideos.count({
+      where: {
+        status: KycStatus.PendingReview,
+        createdAt: LessThan(cutoff),
+      },
+    });
+
+    if (stale === 0) return;
+
+    this.logger.warn(
+      `KYC SLA BREACH: ${stale} submission(s) pending > 48 hours`,
+    );
+
+    const webhookUrl = this.config.get<string>('slack.webhookUrl', '');
+    if (!webhookUrl) return;
+
+    try {
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: `ReligioGram KYC SLA Alert: ${stale} provider submission(s) have been waiting more than 48 hours for review. Please action them now.`,
+        }),
+      });
+    } catch (e) {
+      this.logger.error('Failed to send Slack SLA alert', e as any);
+    }
   }
 
+  /* ─── Private helpers ─── */
   private async mustFind(providerId: string): Promise<ProviderEntity> {
     const p = await this.providers.findOne({ where: { id: providerId } });
     if (!p) throw new NotFoundException('Provider not found');
     return p;
   }
 
-  private async logAction(params: { adminId: string; actionType: string; targetId: string; notes: string; }): Promise<void> {
+  private async logAction(params: {
+    adminId: string;
+    actionType: string;
+    targetId: string;
+    notes: string;
+  }): Promise<void> {
     const log = this.actionLog.create({
       adminId: params.adminId,
       actionType: params.actionType,
@@ -475,25 +523,4 @@ export class AdminProviderVerificationController {
     } as any);
     await this.actionLog.save(log);
   }
-}
- (stale === 0) return;
-
-    this.logger.warn(`KYC SLA BREACH: ${stale} submission(s) pending > 48 hours`);
-
-    const webhookUrl = this.config.get<string>('slack.webhookUrl', '');
-    if (webhookUrl) {
-      try {
-        await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: `🚨 *ReligioGram KYC SLA Alert*: ${stale} provider submission(s) have been waiting more than 48 hours for review. Please action them now.`,
-          }),
-        });
-      } catch (e) {
-        this.logger.error('Failed to send Slack SLA alert', e);
-      }
-    }
-  }
-
 }
