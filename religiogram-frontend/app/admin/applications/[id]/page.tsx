@@ -570,7 +570,6 @@ export default function AdminApplicationDetailPage({
                     className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
                   />
                 </label>
-            </div>
           )}
         </>
       )}
