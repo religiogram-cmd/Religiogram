@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { community, CommunityProfile, Post, Comment } from '@/lib/community-api';
 import { getInitials, initialsAvatarStyle } from '@/lib/avatar-utils';
 
@@ -305,13 +306,14 @@ export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
         </button>
       )}
 
-      {commentsFor && (
+      {commentsFor && typeof document !== 'undefined' && createPortal(
         <CommentsSheet
           post={commentsFor}
           me={me}
           onClose={() => setCommentsFor(null)}
           onCountChange={(n) => patchPost(commentsFor.id, p => ({ ...p, commentCount: n }))}
-        />
+        />,
+        document.body
       )}
     </div>
   );

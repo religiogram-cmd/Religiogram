@@ -70,7 +70,6 @@ export async function connectSocket(token?: string): Promise<any> {
   return socket;
 }
 
-/** Subscribe to a server event. Returns an unsubscribe function. */
 export function onSocketEvent(event: string, fn: Listener): () => void {
   if (!listeners.has(event)) listeners.set(event, new Set());
   listeners.get(event)!.add(fn);
