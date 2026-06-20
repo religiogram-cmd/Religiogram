@@ -251,7 +251,9 @@ function DMThreadView({ me, peer, onBack, onThreadUpdate }: { me: CommunityProfi
       background: '#FAF6E8',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#fff', borderBottom: '1px solid rgba(200,146,10,0.18)' }}>
-        <button onClick={onBack} style={{ background: 'transparent', border: 'none', fontSize: 20, color: TEXT2, cursor: 'pointer' }}>Back</button>
+        <button onClick={onBack} aria-label="Back" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: TEXT2 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
         {peer.avatarUrl ? (
           <div style={{ width: 36, height: 36, borderRadius: '50%', background: `center/cover url('${peer.avatarUrl}')`, flexShrink: 0 }} />
         ) : (
@@ -303,8 +305,6 @@ function DMThreadView({ me, peer, onBack, onThreadUpdate }: { me: CommunityProfi
 
       {canMessage && (
         <div style={{ display: 'flex', gap: 8, padding: '10px 10px calc(10px + env(safe-area-inset-bottom))', borderTop: '1px solid rgba(200,146,10,0.18)', background: '#fff', alignItems: 'flex-end' }}>
-          <button onClick={() => fileRef.current?.click()} style={{ background: '#F6F1E5', border: 'none', borderRadius: '50%', width: 36, height: 36, fontSize: 16, cursor: 'pointer', flexShrink: 0 }}>+</button>
-          <input ref={fileRef} type="file" accept="image/png,image/jpeg" onChange={onPhotoPick} style={{ display: 'none' }} />
           <textarea value={text} onChange={(e) => setText(e.target.value.slice(0, 2000))} rows={1} placeholder="Write a message..."
             style={{ flex: 1, resize: 'none', border: '1px solid rgba(200,146,10,0.25)', borderRadius: 18, padding: '8px 12px', fontSize: 13, fontFamily: 'inherit', background: '#FFFCF5', outline: 'none' }} />
           <button onClick={() => send()} disabled={sending || !text.trim()} style={{
