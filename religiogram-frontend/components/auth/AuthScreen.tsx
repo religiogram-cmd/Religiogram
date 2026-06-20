@@ -134,7 +134,7 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps = {}) {
         ? await authApi.register(email, password)
         : await authApi.emailLogin(email, password);
       saveTokens(res);
-      if (onSuccess) { onSuccess(); } else { const permsDone = localStorage.getItem('rg_permissions_done'); router.replace(permsDone ? (res.isNewUser ? '/profile-setup' : '/home') : '/permissions'); }
+      if (onSuccess) { onSuccess(); } else { const permsDone = localStorage.getItem('rg_permissions_done'); router.replace(permsDone ? '/home' : '/permissions'); }
     } catch (err) {
       setEmailErr(err instanceof ApiError ? err.message : isSignUp ? 'Registration failed. Try again.' : 'Invalid email or password.');
       setLoading(false);

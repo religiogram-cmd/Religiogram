@@ -89,8 +89,9 @@ function VerifyOtpInner() {
     try {
       const res = await authApi.verifyOtp(phone, code, getDeviceId());
       tokenStore.set(res.tokens.accessToken, res.tokens.refreshToken);
-      // Use replace (not push) so Back doesn't ricochet between OTP and setup.
-      router.replace(res.isNewUser ? '/profile-setup' : '/home');
+      // Use replace (not push) so Back doesn't ricochet between OTP and home.
+      // MVP: send everyone straight to /home, skip the profile-setup wizard.
+      router.replace('/home');
     } catch (err) {
       setVerifying(false);
       if (err instanceof ApiError) {
