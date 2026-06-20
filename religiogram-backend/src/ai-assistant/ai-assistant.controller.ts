@@ -54,7 +54,7 @@ export class AiAssistantController {
       imageMimeType?:  string;
     },
   ) {
-    const userId: string = req.user.sub ?? req.user.userId;
+    const userId: string = req.user.id ?? req.user.sub ?? req.user.userId;
 
     res.setHeader('Content-Type',      'text/event-stream');
     res.setHeader('Cache-Control',     'no-cache');
@@ -100,7 +100,7 @@ export class AiAssistantController {
   @Get('conversations')
   @ApiOperation({ summary: 'List user AI conversations' })
   async listConversations(@Req() req: any) {
-    const userId: string = req.user.sub ?? req.user.userId;
+    const userId: string = req.user.id ?? req.user.sub ?? req.user.userId;
     return this.orchestrator.listConversations(userId);
   }
 
@@ -110,7 +110,7 @@ export class AiAssistantController {
     @Req() req: any,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    const userId: string = req.user.sub ?? req.user.userId;
+    const userId: string = req.user.id ?? req.user.sub ?? req.user.userId;
     return this.orchestrator.getConversation(userId, id);
   }
 
@@ -121,7 +121,7 @@ export class AiAssistantController {
     @Req() req: any,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    const userId: string = req.user.sub ?? req.user.userId;
+    const userId: string = req.user.id ?? req.user.sub ?? req.user.userId;
     return this.orchestrator.deleteConversation(userId, id);
   }
 
@@ -140,14 +140,14 @@ export class AiAssistantController {
       isSelf?:    boolean;
     },
   ) {
-    const userId: string = req.user.sub ?? req.user.userId;
+    const userId: string = req.user.id ?? req.user.sub ?? req.user.userId;
     return this.orchestrator.saveBirthProfile(userId, body);
   }
 
   @Get('birth-profile')
   @ApiOperation({ summary: 'Get user birth profile' })
   async getBirthProfile(@Req() req: any) {
-    const userId: string = req.user.sub ?? req.user.userId;
+    const userId: string = req.user.id ?? req.user.sub ?? req.user.userId;
     return this.orchestrator.getBirthProfile(userId);
   }
 
@@ -158,7 +158,7 @@ export class AiAssistantController {
     @Req() req: any,
     @Body() body: { profileId?: string },
   ) {
-    const userId: string = req.user.sub ?? req.user.userId;
+    const userId: string = req.user.id ?? req.user.sub ?? req.user.userId;
     const result = await this.kundli.getKundliForUser(body.profileId ?? userId);
     if (!result) {
       return { error: 'no_birth_profile', message: 'Please save your birth profile first.' };
@@ -217,7 +217,7 @@ export class AiAssistantController {
   @Get('usage')
   @ApiOperation({ summary: "Today's AI usage quota + premium status" })
   async getUsage(@Req() req: any) {
-    const userId: string = req.user.sub ?? req.user.userId;
+    const userId: string = req.user.id ?? req.user.sub ?? req.user.userId;
     return this.orchestrator.getQuota(userId);
   }
 
@@ -231,7 +231,7 @@ export class AiAssistantController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Create Razorpay subscription for RG AI Premium (Rs.49/month)' })
   async subscribePremium(@Req() req: any) {
-    const userId: string = req.user.sub ?? req.user.userId;
+    const userId: string = req.user.id ?? req.user.sub ?? req.user.userId;
     return this.subscription.createSubscription(userId);
   }
   @Post('messages/:messageId/flag')
@@ -242,9 +242,7 @@ export class AiAssistantController {
     @Param('messageId') messageId: string,
     @Body() body: { reason?: string },
   ) {
-    const userId: string = req.user.sub ?? req.user.userId;
-    return this.orchestrator.flagMessage(userId, messageId, body.reason ?? 'user_report');
+    const userId: string = req.user.id ?? req.user.sub ?? req.user.userId;
+    return this.orchestrator.flagMessage(userId, messageId, body.reason ?? '');
   }
-
-
 }
