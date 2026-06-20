@@ -3,6 +3,10 @@
  * Replaces polling for DMs + new post events.
  *
  * Backend gateway is at /v1/social (NestJS SocialGateway).
+ *
+ * If NEXT_PUBLIC_API_BASE is relative (e.g. "/v1"), sockets are skipped
+ * because Vercel rewrites don't proxy WebSocket upgrades. Polling fallback
+ * handles real-time updates in that case.
  */
 
 type Listener = (payload: any) => void;
@@ -10,23 +14,32 @@ const listeners = new Map<string, Set<Listener>>();
 let socket: any = null;
 let connecting = false;
 
-function getApiBase(): string {
+function getApiBase(): string | null {
   // Next.js inlines process.env.NEXT_PUBLIC_* at build time; reference it directly.
   const fromEnv = process.env.NEXT_PUBLIC_API_BASE;
-  if (fromEnv) return fromEnv;
-  return typeof window !== 'undefined' ? window.location.origin : '';
+  // Only use an absolute URL — relative paths (e.g. "/v1") can't carry WebSockets
+  // through Vercel rewrites.
+  if (fromEnv && /^https?:\/\//i.test(fromEnv)) return fromEnv;
+  return null;
 }
 
-/** Connect once, reuse forever. Safe to call repeatedly. */
+/** Connect once, reuse forever. Safe to call repeatedly. Returns null if no absolute API base. */
 export async function connectSocket(token?: string): Promise<any> {
   if (socket?.connected) return socket;
   if (connecting) return socket;
+
+  const apiBase = getApiBase();
+  if (!apiBase) {
+    // Silently skip — polling fallback handles real-time updates in this mode.
+    return null;
+  }
+
   connecting = true;
   try {
     const { io } = await import('socket.io-client');
     const auth = token || (typeof window !== 'undefined' ? localStorage.getItem('rg_access') : null);
     // Backend SocialGateway uses /social namespace
-    const base = getApiBase().replace(/\/v1\/?$/, '');
+    const base = apiBase.replace(/\/v1\/?$/, '');
     socket = io(`${base}/social`, {
       auth: { token: auth ? `Bearer ${auth}` : auth },
       transports: ['websocket', 'polling'],
