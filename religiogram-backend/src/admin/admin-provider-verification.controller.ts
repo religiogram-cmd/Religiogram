@@ -10,8 +10,11 @@ import {
   Param,
   Post,
   Query,
+  Req,
+  Res,
   Logger,
 } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
@@ -96,6 +99,60 @@ export class AdminProviderVerificationController {
     });
 
     return { items, total };
+  }
+
+  /* ─── GET /v1/admin/verifications/:providerId/file/:kind ───
+   * Streams the requested KYC document (pan | selfie | video-0)
+   * through Railway so the admin frontend can fetch as a blob with
+   * Bearer auth. Avoids signed-URL CORS/SW issues entirely.            */
+  @Get('verifications/:providerId/file/:kind')
+  async streamFile(
+    @Param('providerId') providerId: string,
+    @Param('kind') kind: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const provider = await this.providers.findOne({ where: { id: providerId } });
+    if (!provider) throw new NotFoundException('Provider not found');
+
+    let key: string | null = null;
+    let contentType = 'application/octet-stream';
+    if (kind === 'pan') {
+      key = provider.panS3Key;
+      contentType = 'image/jpeg';
+    } else if (kind === 'selfie') {
+      key = provider.selfieS3Key;
+      contentType = 'image/jpeg';
+    } else if (kind.startsWith('video-')) {
+      const videoIdx = parseInt(kind.replace('video-', ''), 10);
+      const videos = await this.kycVideos.find({
+        where: { providerId },
+        order: { createdAt: 'DESC' },
+        take: 100,
+      });
+      key = videos[videoIdx]?.s3Key ?? null;
+      contentType = videos[videoIdx]?.mimeType ?? 'video/mp4';
+    }
+
+    if (!key) throw new NotFoundException(`No ${kind} file uploaded`);
+
+    try {
+      const cmd = new GetObjectCommand({ Bucket: this.bucket, Key: key });
+      const out = await this.s3.send(cmd);
+      res.setHeader('Content-Type', out.ContentType ?? contentType);
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      if (out.ContentLength) res.setHeader('Content-Length', String(out.ContentLength));
+      // Stream the body
+      if (out.Body) {
+        // @ts-ignore — Body is a stream in Node SDK
+        out.Body.pipe(res);
+      } else {
+        res.status(204).end();
+      }
+    } catch (err: any) {
+      this.logger.error(`[admin] streamFile failed kind=${kind} key=${key} err=${err?.message}`);
+      throw new NotFoundException(`File not retrievable: ${err?.message ?? 'unknown'}`);
+    }
   }
 
   /* ─── GET /v1/admin/verifications/:providerId ─── */
@@ -382,54 +439,44 @@ export class AdminProviderVerificationController {
     await this.notifs.send(
       provider.userId,
       NotificationType.SYSTEM,
-      'Account blocked',
-      'Your provider account has been permanently blocked due to policy violations.',
+      'Account suspended',
+      `Your provider account has been suspended. Reason: ${body.reason}. Contact support for assistance.`,
     );
 
-    return { providerState: 'blocked' };
+    return { providerState: ProviderStatus.Suspended };
   }
 
-  /* ── helpers ── */
+  @Post('providers/:providerId/reinstate')
+  @HttpCode(HttpStatus.OK)
+  async reinstate(
+    @Param('providerId') providerId: string,
+    @CurrentUser() me: AuthenticatedUser,
+  ) {
+    const provider = await this.mustFind(providerId);
+    await this.providers.update({ id: providerId }, { status: ProviderStatus.Approved, approvedAt: provider.approvedAt ?? new Date() });
+    await this.logAction({ adminId: me.id, actionType: 'provider.reinstate', targetId: providerId, notes: 'Reinstated' });
+    await this.notifs.send(provider.userId, NotificationType.SYSTEM, 'Account reinstated', 'Your provider account has been reinstated.');
+    return { providerState: ProviderStatus.Approved };
+  }
+
   private async mustFind(providerId: string): Promise<ProviderEntity> {
     const p = await this.providers.findOne({ where: { id: providerId } });
     if (!p) throw new NotFoundException('Provider not found');
     return p;
   }
 
-  private async logAction(params: {
-    adminId: string;
-    actionType: string;
-    targetId: string;
-    notes: string;
-  }): Promise<void> {
+  private async logAction(params: { adminId: string; actionType: string; targetId: string; notes: string; }): Promise<void> {
     const log = this.actionLog.create({
-      adminId:    params.adminId,
+      adminId: params.adminId,
       actionType: params.actionType,
       targetType: 'provider',
-      targetId:   params.targetId,
+      targetId: params.targetId,
       payloadJson: { notes: params.notes },
     } as any);
     await this.actionLog.save(log);
   }
-
-  private readonly logger = new Logger(AdminProviderVerificationController.name);
-
-  /**
-   * Runs every hour — fires a log warning (+ Slack webhook if configured)
-   * for any KYC submission that has been waiting more than 48 hours.
-   * §6.4 acceptance: "Admin gets a Slack/email alert if any submission
-   * ages past 48 hours."
-   */
-  @Cron('0 * * * *')   // every hour
-  async checkKycSlaBreaches(): Promise<void> {
-    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
-    const stale = await this.kycVideos
-      .createQueryBuilder('k')
-      .where('k.review_decision IS NULL')
-      .andWhere('k.created_at < :cutoff', { cutoff })
-      .getCount();
-
-    if (stale === 0) return;
+}
+ (stale === 0) return;
 
     this.logger.warn(`KYC SLA BREACH: ${stale} submission(s) pending > 48 hours`);
 

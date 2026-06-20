@@ -22,7 +22,41 @@ import {
   type AdminApplicationDetail,
   type AdminApplicationStatus,
 } from '@/lib/admin-api';
-import { ApiError } from '@/lib/api';
+import { ApiError, tokenStore } from '@/lib/api';
+
+/** Fetches an admin KYC file via Bearer-auth, displays as blob URL (bypasses SW). */
+function AuthedImage({ kind, providerId, alt, className }: { kind: 'pan' | 'selfie'; providerId: string; alt: string; className?: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let blobUrl: string | null = null;
+    (async () => {
+      try {
+        const tok = tokenStore.access ?? (typeof window !== 'undefined' ? localStorage.getItem('rg_access') : null);
+        const base = process.env.NEXT_PUBLIC_API_BASE ?? '/v1';
+        const r = await fetch(`${base}/admin/verifications/${providerId}/file/${kind}`, {
+          headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+          cache: 'no-store',
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const blob = await r.blob();
+        blobUrl = URL.createObjectURL(blob);
+        if (!cancelled) setSrc(blobUrl);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message ?? 'load failed');
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [kind, providerId]);
+  if (error) return <div className="text-xs text-rose-600 p-3 bg-rose-50 rounded">Failed: {error}</div>;
+  if (!src) return <div className="text-xs text-slate-400 p-3 bg-slate-50 rounded">Loading {alt}…</div>;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt={alt} className={className} />;
+}
 import { showToast } from '@/components/ui/Toast';
 
 type ActionKind = 'approve' | 'reject' | 'request_info' | 'suspend';
@@ -305,15 +339,12 @@ export default function AdminApplicationDetailPage({
               <p className="text-xs uppercase tracking-wide text-slate-500 font-medium mb-2">
                 PAN
               </p>
-              {data.panSignedUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={data.panSignedUrl}
+              {data.panSignedUrl || data.provider?.panS3Key ? (
+                <AuthedImage
+                  kind="pan"
+                  providerId={String(data.provider?.id ?? appId)}
                   alt="PAN document"
                   className="w-full rounded-lg border border-slate-200 object-contain bg-slate-50"
-                  onError={() =>
-                    console.error('PAN image failed to load:', data.panSignedUrl)
-                  }
                 />
               ) : (
                 <p className="text-sm text-slate-500">Not uploaded.</p>
@@ -323,15 +354,12 @@ export default function AdminApplicationDetailPage({
               <p className="text-xs uppercase tracking-wide text-slate-500 font-medium mb-2">
                 Selfie
               </p>
-              {data.selfieSignedUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={data.selfieSignedUrl}
+              {data.selfieSignedUrl || data.provider?.selfieS3Key ? (
+                <AuthedImage
+                  kind="selfie"
+                  providerId={String(data.provider?.id ?? appId)}
                   alt="Selfie"
                   className="w-full rounded-lg border border-slate-200 object-contain bg-slate-50"
-                  onError={() =>
-                    console.error('Selfie image failed to load:', data.selfieSignedUrl)
-                  }
                 />
               ) : (
                 <p className="text-sm text-slate-500">Not uploaded.</p>
@@ -535,25 +563,26 @@ export default function AdminApplicationDetailPage({
                     What should they fix? (required, min 10 chars)
                   </span>
                   <textarea
-                    value={whatToFix}
-                    onChange={(e) => setWhatToFix(e.target.value)}
-                    rows={4}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-                    placeholder="e.g. Re-record intro video in a brighter room, holding ID up to the camera."
+                    value={reqInfoText}
+                    onChange={(e) => setReqInfoText(e.target.value)}
+                    rows={3}
+                    minLength={10}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
                   />
                 </label>
-              )}
+                <div className="flex justify-end gap-2 mt-4">
+                  <button type="button" onClick={() => setModal(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm font-medium">Cancel</button>
+                  <button type="button" onClick={onConfirmRequestInfo} disabled={reqInfoText.trim().length < 10 || acting} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium disabled:opacity-50">Send</button>
+                </div>
+              </div>
             </div>
-
-            <div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
-              <button
-                type="button"
-                onClick={closeAction}
-                disabled={submitting}
-                className="px-4 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 text-sm font-medium disabled:opacity-50"
-              >
-                Cancel
-              </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+n>
               <button
                 type="button"
                 onClick={runAction}
