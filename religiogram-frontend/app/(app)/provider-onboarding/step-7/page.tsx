@@ -54,7 +54,7 @@ type Phase = 'idle' | 'previewing' | 'recording' | 'review' | 'uploading' | 'don
 
 export default function Step7Page() {
   const router = useRouter();
-  const { data, update, flush } = useProviderOnboarding();
+  const { data, update, flush, advance } = useProviderOnboarding();
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [elapsed, setElapsed] = useState(0);
@@ -246,6 +246,7 @@ export default function Step7Page() {
         durationSeconds: recordedDuration,
       });
 
+      advance(8);
       setPhase('done');
       // KYC video accepted — continue to Identity Documents (Step 8).
       router.push('/provider-onboarding/step-8');
@@ -420,7 +421,7 @@ export default function Step7Page() {
         )}
 
         {err && <p className="text-sm text-red-700">{err}</p>}
-      </div>
-    </WizardShell>
+      </div>    </WizardShell>
   );
 }
+

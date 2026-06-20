@@ -49,7 +49,7 @@ const initialUpload = (): UploadState => ({
 
 export default function Step8Page() {
   const router = useRouter();
-  const { data, update, flush } = useProviderOnboarding();
+  const { data, update, flush, advance } = useProviderOnboarding();
 
   const [pan, setPan] = useState<UploadState>(initialUpload);
   const [selfie, setSelfie] = useState<UploadState>(initialUpload);
@@ -175,6 +175,7 @@ export default function Step8Page() {
   const canContinue = pan.status === 'done' && selfie.status === 'done';
 
   const onContinue = async () => {
+    advance(9);
     router.push('/provider-onboarding/step-9');
   };
 

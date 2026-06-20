@@ -607,9 +607,9 @@ export class ProviderOnboardingV2Controller {
     if (row) {
       row.bankName        = dto.bankName ?? row.bankName;
       row.accountNumberEncrypted = encrypted;
-      row.ifscCode        = hasAccount ? dto.ifscCode : undefined;
+      row.ifscCode        = hasAccount ? (dto.ifscCode ?? null) : null;
       row.beneficiaryName = dto.beneficiaryName ?? row.beneficiaryName;
-      row.upiId           = hasUpi ? dto.upiId : undefined;
+      row.upiId           = hasUpi ? (dto.upiId ?? null) : null;
       row.verificationStatus = BankVerificationStatus.UNVERIFIED;
       await this.bankRepo.save(row);
     } else {
@@ -617,18 +617,22 @@ export class ProviderOnboardingV2Controller {
         providerId: provider.id,
         bankName:   dto.bankName,
         accountNumberEncrypted: encrypted,
-        ifscCode:   hasAccount ? dto.ifscCode : undefined,
+        ifscCode:   hasAccount ? (dto.ifscCode ?? null) : null,
         beneficiaryName: dto.beneficiaryName,
-        upiId:      hasUpi ? dto.upiId : undefined,
+        upiId:      hasUpi ? (dto.upiId ?? null) : null,
         verificationStatus: BankVerificationStatus.UNVERIFIED,
         isPrimary:  true,
       });
       await this.bankRepo.save(row);
     }
 
-    const masked = hasAccount
-      ? `****${dto.accountNumber!.slice(-4)}`
-      : `****${(dto.upiId ?? '').replace(/^[^@]+/, '')}`;
+    let masked: string;
+    if (hasAccount) {
+      masked = `****${dto.accountNumber!.slice(-4)}`;
+    } else {
+      const upiHandle = dto.upiId!.split('@')[0] || '';
+      masked = `${upiHandle.slice(0, 2)}***@${dto.upiId!.split('@')[1] || 'upi'}`;
+    }
 
     return { ok: true, masked };
   }
@@ -748,9 +752,15 @@ export class ProviderOnboardingV2Controller {
     const userId = this.userId(req);
     const provider = await this.providers.findOne({ where: { userId } });
     const draft    = await this.drafts.findOne({ where: { userId } });
+    const bankCount = provider
+      ? await this.bankRepo.count({ where: { providerId: provider.id } })
+      : 0;
     return {
       state: provider?.status ?? null,
       draft: draft?.data ?? {},
+      panUploaded: !!provider?.panS3Key,
+      selfieUploaded: !!provider?.selfieS3Key,
+      bankSet: bankCount > 0,
     };
   }
 }

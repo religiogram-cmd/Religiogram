@@ -21,8 +21,14 @@ export default function ProviderOnboardingEntry() {
   useEffect(() => {
     // Wait for the context to hydrate from the server before deciding
     // whether to resume.
-    if (saveStatus === 'idle') return;
-    setChecked(true);
+    if (saveStatus !== 'idle') {
+      setChecked(true);
+      return;
+    }
+    // Fallback: if hydration stalls (no local state, empty remote), proceed
+    // anyway after 1.5s so we don't hang on a blank screen.
+    const t = setTimeout(() => setChecked(true), 1500);
+    return () => clearTimeout(t);
   }, [saveStatus]);
 
   if (!checked) {
@@ -61,7 +67,7 @@ export default function ProviderOnboardingEntry() {
           className="mt-10 px-5 py-4 rounded-xl font-semibold text-[#F7EFE1]
                      bg-[#0F2452] hover:bg-[#0F2452] active:scale-[0.98] transition"
         >
-          {step > 1 ? `Resume — Step ${step} of 7` : 'Start onboarding'}
+          {step > 1 ? `Resume — Step ${step} of 9` : 'Start onboarding'}
         </button>
         <p className="mt-3 text-xs text-gray-700/60 text-center">
           Takes about 10 minutes. Saves automatically.

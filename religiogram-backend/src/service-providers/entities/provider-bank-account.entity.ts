@@ -21,20 +21,20 @@ export class ProviderBankAccount {
   provider!: ProviderEntity;
 
   @Column({ name: 'bank_name', length: 100, nullable: true })
-  bankName?: string;
+  bankName?: string | null;
 
   /** AES-256-GCM encrypted; key stored in AWS KMS */
   @Column({ name: 'account_number_encrypted', type: 'text' })
   accountNumberEncrypted!: string;
 
   @Column({ name: 'ifsc_code', length: 11, nullable: true })
-  ifscCode?: string;
+  ifscCode?: string | null;
 
   @Column({ name: 'beneficiary_name', length: 200, nullable: true })
-  beneficiaryName?: string;
+  beneficiaryName?: string | null;
 
   @Column({ name: 'upi_id', length: 100, nullable: true })
-  upiId?: string;
+  upiId?: string | null;
 
   @Column({
     name: 'verification_status',

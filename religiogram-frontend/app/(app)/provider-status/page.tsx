@@ -20,6 +20,9 @@ const PARCHMENT = '#FFFBF0';
 interface OnboardingMe {
   state: 'draft' | 'pending_review' | 'approved' | 'rejected' | 'suspended' | null;
   draft: Record<string, unknown>;
+  panUploaded?: boolean;
+  selfieUploaded?: boolean;
+  bankSet?: boolean;
 }
 
 /** UI-facing status derived from the backend response. */
@@ -77,7 +80,10 @@ function toProviderStatus(me: OnboardingMe | null): ProviderStatus {
   if (currentStep >= 5 && d['perMinutePaise'] !== undefined) currentStep = 6;
   if (currentStep >= 6 && d['serviceMode']) currentStep = 7;
   if (currentStep >= 7 && (d['kycR2ObjectKey'] || d['kycS3Key'])) currentStep = 8;
+  if (currentStep >= 7 && (me as any)['panUploaded']) currentStep = Math.max(currentStep, 8);
+  if (currentStep >= 8 && (me as any)['selfieUploaded']) currentStep = 9;
   if (currentStep >= 8 && d['panR2ObjectKey'] && d['selfieR2ObjectKey']) currentStep = 9;
+  if (currentStep >= 9 && (me as any)['bankSet']) currentStep = 9;
   if (me.state === 'pending_review' || me.state === 'approved' || me.state === 'rejected' || me.state === 'suspended') {
     currentStep = 9;
   }
