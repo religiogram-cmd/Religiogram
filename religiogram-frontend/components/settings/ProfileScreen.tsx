@@ -700,6 +700,19 @@ export default function ProfileScreen() {
           <Row icon={<BellIcon />}   iconBg="#7C3AED"  label="Notifications"   sublabel="Manage alerts & reminders" onClick={() => router.push('/notifications')} />
         </Section>
 
+        {user?.role === 'admin' && (
+          <Section title="Admin">
+            <Row
+              icon={<ProviderIcon />}
+              iconBg="#0F172A"
+              label="Admin Dashboard"
+              sublabel="Review & approve priest applications"
+              badge="ADMIN"
+              onClick={() => router.push('/admin/applications')}
+            />
+          </Section>
+        )}
+
         <Section title="Account">
           <Row icon={<UserIcon />}    iconBg={NAVY}    label="Edit Profile"     sublabel="Update name, photo & details"        onClick={() => setShowEditModal(true)} />
           <Divider />
@@ -784,13 +797,14 @@ export default function ProfileScreen() {
       {showFaithSheet && (
         <FaithSheet
           current={religion}
-          onSelect={confirmReligion}
+          onSelect={(r: UserReligion) => { confirmReligion(r); setShowFaithSheet(false); }}
           onClose={() => setShowFaithSheet(false)}
         />
       )}
-      {showDeleteModal && (
-        <DeleteAccountModal
-          onConfirm={handleDeleteAccount}
+    </div>
+  );
+}
+    onConfirm={handleDeleteAccount}
           onClose={() => setShowDeleteModal(false)}
           isDeleting={isDeleting}
         />
