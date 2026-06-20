@@ -411,33 +411,3 @@ export default function ProviderStatusPage() {
     </div>
   );
 }
-  background: `linear-gradient(135deg, ${GOLD}, ${GOLD_L})`,
-              color: '#FFFAEC',
-              border: 'none', borderRadius: 14,
-              fontWeight: 800, fontSize: 14.5, cursor: 'pointer',
-              letterSpacing: '0.02em', fontFamily: 'inherit',
-              boxShadow: '0 4px 14px rgba(200,146,10,0.25)',
-            }}
-          >
-            Continue Step {data.currentStep}
-          </button>
-        )}
-
-        {data.status === 'rejected' && (
-          <button
-            onClick={() => window.open('mailto:support@religiogram.in?subject=Provider%20Application%20Review', '_blank')}
-            style={{
-              width: '100%', padding: '13px 0', marginTop: 10,
-              background: 'transparent', color: '#B91C1C',
-              border: '1.5px solid rgba(185,28,28,0.35)', borderRadius: 14,
-              fontWeight: 700, fontSize: 13.5, cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            Contact Support
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
