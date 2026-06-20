@@ -354,6 +354,7 @@ export default function RGAIBubble({ religion }: { religion?: string; userId?: s
       const decoder = new TextDecoder();
       let buffer = '';
       let fullContent = '';
+      let errorMessage: string | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -383,13 +384,33 @@ export default function RGAIBubble({ religion }: { religion?: string; userId?: s
                 setConvId(parsed.conversationId);
               } else if (parsed.event === 'quota') {
                 setQuota({ used: parsed.used, limit: parsed.limit });
+              } else if (parsed.event === 'error') {
+                // Backend signalled an error mid-stream (quota exhausted, cost
+                // lock, safety filter, missing API key). Surface it so the
+                // user sees what happened instead of an empty bubble.
+                errorMessage = parsed.message ?? 'AI service is temporarily unavailable.';
+              } else if (parsed.event === 'done') {
+                // Clean termination — break out of the read loop.
+                buffer = '';
               }
-            } catch { /* ignore */ }
+            } catch { /* ignore malformed line */ }
           }
         }
       }
 
-      setMsgs(prev => prev.map(m => m.id === assistantId ? { ...m, streaming: false } : m));
+      // If the stream ended with an error event OR with no content at all,
+      // replace the empty assistant bubble with a clear message.
+      if (errorMessage) {
+        setMsgs(prev => prev.map(m => m.id === assistantId
+          ? { ...m, content: `⚠️ ${errorMessage}`, streaming: false }
+          : m));
+      } else if (!fullContent.trim()) {
+        setMsgs(prev => prev.map(m => m.id === assistantId
+          ? { ...m, content: '⚠️ No response received. Please try again in a moment.', streaming: false }
+          : m));
+      } else {
+        setMsgs(prev => prev.map(m => m.id === assistantId ? { ...m, streaming: false } : m));
+      }
       if (!open) setUnread(true);
     } catch (err: any) {
       if (err?.name === 'AbortError') return;
