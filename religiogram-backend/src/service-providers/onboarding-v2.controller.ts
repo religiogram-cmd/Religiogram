@@ -731,7 +731,28 @@ export class ProviderOnboardingV2Controller {
       );
     }
 
-    await this.providers.update({ id: provider.id }, { status: ProviderStatus.PendingReview });
+    // Flush draft.data fields that patchDraft only stored in JSON onto
+    // the provider row so admin queries / search see the real values.
+    const sync: Partial<ProviderEntity> = { status: ProviderStatus.PendingReview };
+    if (typeof data['serviceMode'] === 'string') {
+      (sync as any).serviceMode = data['serviceMode'];
+    }
+    if (typeof data['perMinutePaise'] === 'number') {
+      (sync as any).perMinutePaise = data['perMinutePaise'];
+    }
+    if (typeof data['radius'] === 'number') {
+      (sync as any).radius = data['radius'];
+    }
+    if (!provider.fullName && typeof data['fullName'] === 'string') {
+      (sync as any).fullName = data['fullName'];
+    }
+    if (!provider.religion && typeof data['religion'] === 'string') {
+      (sync as any).religion = data['religion'];
+    }
+    if (!provider.city && typeof data['city'] === 'string') {
+      (sync as any).city = data['city'];
+    }
+    await this.providers.update({ id: provider.id }, sync);
 
     // Notify admins via system notification (admin userId placeholder)
     // In production this would fan out to all admin users; here we emit a
