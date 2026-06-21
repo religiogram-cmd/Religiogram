@@ -93,6 +93,10 @@ export default function Step7Page() {
   const [recordedDuration, setRecordedDuration] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  // Tracking stream in state so we can attach it to the <video> element via
+  // an effect AFTER React mounts the element (the video is conditionally
+  // rendered, so liveVideoRef.current is null during startCamera()).
+  const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
 
   const liveVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -149,23 +153,34 @@ export default function Step7Page() {
       setErr('Your browser does not support video recording. Please open ReligioGram in Chrome or Safari and try again.');
       return;
     }
+
+    // Try front camera first; if that fails (some Android devices report no
+    // front cam available), retry without facingMode hint.
+    const tryGetMedia = async (): Promise<MediaStream> => {
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } },
+          audio: true,
+        });
+      } catch {
+        return await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
+      }
+    };
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } },
-        audio: true,
-      });
-      // Verify we actually got both tracks.
+      const stream = await tryGetMedia();
       const videoTrack = stream.getVideoTracks()[0];
       if (!videoTrack || videoTrack.readyState !== 'live') {
         stream.getTracks().forEach((t) => t.stop());
         throw new Error('Camera did not deliver video. Try closing other apps using the camera and reopen.');
       }
       streamRef.current = stream;
-      if (liveVideoRef.current) {
-        liveVideoRef.current.srcObject = stream;
-        liveVideoRef.current.muted = true; // prevent feedback
-        await liveVideoRef.current.play().catch(() => {});
-      }
+      // Switch phase FIRST so the <video> element mounts. The useEffect below
+      // attaches srcObject once the ref is populated.
+      setActiveStream(stream);
       setPhase('previewing');
     } catch (e: any) {
       setErr(
@@ -175,6 +190,23 @@ export default function Step7Page() {
       );
     }
   };
+
+  // Attach the live stream to the video element AFTER React mounts it.
+  // This is the critical fix for "black preview" on real phones: the video
+  // element is conditionally rendered, so the ref is null during startCamera.
+  useEffect(() => {
+    const v = liveVideoRef.current;
+    if (!v || !activeStream) return;
+    try {
+      v.srcObject = activeStream;
+      v.muted = true;
+      v.playsInline = true;
+      const p = v.play();
+      if (p && typeof p.then === 'function') {
+        p.catch(() => {/* autoplay race — user can tap to retry */});
+      }
+    } catch {/* ignore */}
+  }, [activeStream, phase]);
 
   const startRecording = async () => {
     if (!streamRef.current) return;
@@ -253,6 +285,7 @@ export default function Step7Page() {
         streamRef.current.getTracks().forEach((t: any) => t.stop());
         streamRef.current = null;
       }
+      setActiveStream(null);
     };
 
     // No timeslice: receive ONE big chunk on stop. This guarantees a

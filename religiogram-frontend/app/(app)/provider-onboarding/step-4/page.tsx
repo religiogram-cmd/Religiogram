@@ -249,9 +249,9 @@ export default function Step4Page() {
             <p className="text-xs text-gray-700/70 mb-3">
               Offer something not in the list? Add it here — up to 10 custom services.
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-2 w-full">
               <input
-                className="flex-1 px-4 py-3 rounded-xl border border-[#0F2452]/20 bg-white text-base
+                className="flex-1 min-w-0 px-4 py-3 rounded-xl border border-[#0F2452]/20 bg-white text-base
                            focus:outline-none focus:ring-2 focus:ring-[#0F2452]/40"
                 value={customDraft}
                 onChange={(e) => setCustomDraft(e.target.value)}
@@ -267,7 +267,7 @@ export default function Step4Page() {
               <button
                 type="button"
                 onClick={addCustom}
-                className="px-4 py-3 rounded-xl bg-[#0F2452]/10 text-gray-700 font-medium
+                className="flex-shrink-0 px-4 py-3 rounded-xl bg-[#0F2452]/10 text-gray-700 font-medium
                            hover:bg-[#0F2452]/15"
               >
                 Add
