@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.religiogram.app",
+    "sha256_cert_fingerprints": ["1F:C4:77:F9:50:19:B9:81:DD:7C:C9:59:0C:75:CA:6C:52:88:3A:6E:25:41:1A:AE:6C:EE:3E:29:DE:08:9C:C3"]
+  }
+}]
