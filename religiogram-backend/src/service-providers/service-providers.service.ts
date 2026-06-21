@@ -409,12 +409,15 @@ export class ProviderOnboardingService {
         ? 'mov'
         : 'webm';
     const s3Key = `kyc/${p.id}/${randomUUID()}.${ext}`;
+    // NOTE: ServerSideEncryption is intentionally NOT set here. Supabase
+    // Storage's S3-compatible API does not implement the
+    // x-amz-server-side-encryption header — signing it in causes the
+    // presigned PUT to fail with a SignatureMismatch / silent reject.
     const cmd = new PutObjectCommand({
       Bucket: this.bucket,
       Key: s3Key,
       ContentType: dto.mimeType,
       ContentLength: dto.sizeBytes,
-      ServerSideEncryption: 'AES256',
     });
     const url = await getSignedUrl(this.s3, cmd, {
       expiresIn: this.kycUrlTtlSeconds,
