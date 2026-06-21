@@ -239,8 +239,8 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps = {}) {
             ))}
           </div>
 
-          {/* ── Phone Tab ── */}
-          {tab === 'phone' && (
+          {/* ── Phone Tab — DISABLED for MVP ── */}
+          {false && tab === 'phone' && (
             <>
               <label style={{ display:'block', fontSize:11, fontWeight:700, letterSpacing:'0.09em', textTransform:'uppercase', color:'#64748B', marginBottom:8 }}>
                 Mobile Number

@@ -42,6 +42,27 @@ export default function PwaInit() {
       .register('/sw.js')
       .then((reg) => {
         console.log('[SW] Registered, scope:', reg.scope);
+        // Force update check on every page load so new deploys land within
+        // one refresh instead of waiting for the SW idle timer.
+        reg.update().catch(() => {});
+        // When a new SW takes control, reload the page so the user sees
+        // the freshly deployed HTML/JS without manually clearing cache.
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (refreshing) return;
+          refreshing = true;
+          window.location.reload();
+        });
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+              // Tell the new SW to take control immediately.
+              nw.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
       })
       .catch((err) => {
         console.error('[SW] Registration failed:', err);
