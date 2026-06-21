@@ -122,9 +122,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     >
       <header className="bg-slate-900 text-white">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 h-14 flex items-center justify-between">
-          <Link href="/admin/applications" className="font-semibold tracking-tight">
-            ReligioGram Admin
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/home"
+              aria-label="Back to app"
+              className="p-1.5 rounded-md text-slate-200 hover:bg-slate-800"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </Link>
+            <Link href="/admin/applications" className="font-semibold tracking-tight">
+              ReligioGram Admin
+            </Link>
+          </div>
           <nav className="flex items-center gap-1 sm:gap-2 text-sm">
             <Link
               href="/admin/applications"
