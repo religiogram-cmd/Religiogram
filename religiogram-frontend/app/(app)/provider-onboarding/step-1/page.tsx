@@ -118,14 +118,14 @@ export default function Step1Page() {
           </p>
         </Field>
 
-        <Field label="Phone (your login number)">
+        <Field label="Phone (10-digit mobile)">
           <input
-            className={`${inputCls} bg-[#0F2452]/5`}
+            className={inputCls}
             value={phone}
             onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
             inputMode="numeric"
             autoComplete="tel-national"
-            readOnly={!!data.phone}
+            placeholder="9876543210"
           />
         </Field>
 
