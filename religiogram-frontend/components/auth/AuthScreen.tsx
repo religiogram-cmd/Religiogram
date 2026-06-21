@@ -101,7 +101,7 @@ interface AuthScreenProps {
 
 export default function AuthScreen({ onSuccess }: AuthScreenProps = {}) {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>('phone');
+  const [tab, setTab] = useState<Tab>('email');
   const [phone, setPhone] = useState('');
   const [phoneErr, setPhoneErr] = useState('');
   const [email, setEmail] = useState('');
@@ -199,9 +199,9 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps = {}) {
             {isSignUp ? 'Join thousands connecting with sacred spaces.' : 'Sign in to continue your spiritual journey.'}
           </p>
 
-          {/* Tab switcher */}
+          {/* Tab switcher — MVP: email + Google only, phone hidden */}
           <div style={{
-            display: 'flex', background: '#ECEEF4', borderRadius: 12, padding: 4, marginBottom: 24,
+            display: 'none', background: '#ECEEF4', borderRadius: 12, padding: 4, marginBottom: 24,
             border: '1px solid rgba(15,36,82,0.08)',
           }}>
             {(['phone', 'email'] as Tab[]).map(t => (
