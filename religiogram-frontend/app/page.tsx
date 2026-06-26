@@ -444,8 +444,8 @@ function Footer() {
             <div
               style={{
                 width: 36, height: 36, borderRadius: 8,
-                backgroundImage: `url('/rg-ai-button.png')`,
-                backgroundSize: 'cover', backgroundPosition: 'center',
+                backgroundImage: `url('/logo-icon-512.png')`,
+                backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center',
                 backgroundColor: NAVY_2,
               }}
             />

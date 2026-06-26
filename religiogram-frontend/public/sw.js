@@ -8,17 +8,20 @@
  *   - Everything else: Network-first, falling back to cache, then offline page
  */
 
-const CACHE_NAME  = 'religiogram-shell-v3';
-const IMG_CACHE   = 'religiogram-imgs-v3';
+// Bumped to v4 to discard caches that pre-dated the new public landing page.
+// Every cache version bump triggers a fresh install + skipWaiting flow in
+// PwaInit so existing PWAs pick up the new HTML on the next reload.
+const CACHE_NAME  = 'religiogram-shell-v4';
+const IMG_CACHE   = 'religiogram-imgs-v4';
 const OFFLINE_URL = '/offline.html';
 const IMG_CACHE_MAX = 80;            // hard ceiling so the cache doesn't grow forever
 
 const PRECACHE_URLS = [
   '/',
   '/manifest.json',
-  '/logo-icon.png',
+  '/logo-icon-512.png',
+  '/logo-icon-192.png',
   '/logo-icon.svg',
-  '/logo.png',
   // Hot heroes — pre-cached so they paint instantly on revisit even before
   // the page has fully booted.
   '/home-hero.jpg',
