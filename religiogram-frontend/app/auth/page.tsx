@@ -51,7 +51,7 @@ export default function AuthPage() {
   }, [router]);
 
   return (
-    <MobileAppFrame>
+    <MobileAppFrame variant="narrow">
       <AuthScreen />
     </MobileAppFrame>
   );

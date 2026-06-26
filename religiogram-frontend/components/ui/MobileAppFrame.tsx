@@ -27,10 +27,28 @@
 
 import type { ReactNode } from 'react';
 
-const FRAME_MAX = 560;          // slightly wider than a phone — reads as a website
 const BREAKPOINT = '768px';     // mobile vs desktop cutoff
 
-export default function MobileAppFrame({ children }: { children: ReactNode }) {
+// "page" — wide, website-like container (1120px) with NO visible box.
+//          Best for app pages with grids, hero images, multi-column content.
+// "narrow" — 480px centered phone-like column WITH soft shadow + border.
+//          Best for single-purpose forms (sign-in, sign-up).
+type Variant = 'page' | 'narrow';
+
+const WIDTHS: Record<Variant, number> = {
+  page:   1120,
+  narrow: 480,
+};
+
+export default function MobileAppFrame({
+  children,
+  variant = 'page',
+}: {
+  children: ReactNode;
+  variant?: Variant;
+}) {
+  const max = WIDTHS[variant];
+  const showBox = variant === 'narrow';
   return (
     <>
       {/* Inline style block — keeps the wrapper portable across pages without
@@ -41,38 +59,32 @@ export default function MobileAppFrame({ children }: { children: ReactNode }) {
         .rg-app-frame    { width: 100%; min-height: 100svh; position: relative; }
 
         @media (min-width: ${BREAKPOINT}) {
-          /* Desktop / large tablet — show backdrop, centre the column.
-             Backdrop is a warm cream tone so the page reads as a centred
-             single-column WEBSITE, not "phone screen on a dark wall". */
-          body { background: #F6EFDC; }
+          /* Desktop / large tablet — centre the content. Backdrop is a soft
+             cream that matches the app's own background so the frame feels
+             like a natural page boundary, not a card floating in a room. */
+          body { background: #FDF6E3; }
           .rg-app-backdrop {
             display: block;
             position: fixed; inset: 0;
             background:
-              radial-gradient(1100px 700px at 50% -100px, rgba(200,146,10,0.18), transparent 60%),
-              radial-gradient(900px  700px at 50% 110%, rgba(200,146,10,0.10), transparent 60%),
-              linear-gradient(180deg, #F6EFDC 0%, #EFE3C2 100%);
+              radial-gradient(900px 600px at 50% -120px, rgba(200,146,10,0.10), transparent 60%),
+              linear-gradient(180deg, #FDF6E3 0%, #F4EAC8 100%);
             z-index: 0;
             pointer-events: none;
           }
-          /* Hairline ornament on the backdrop */
-          .rg-app-backdrop::after {
-            content: '';
-            position: absolute; inset: 0;
-            background-image: radial-gradient(rgba(200,146,10,0.10) 1px, transparent 1px);
-            background-size: 28px 28px;
-            opacity: 0.35;
-          }
           .rg-app-frame {
             position: relative; z-index: 1;
-            max-width: ${FRAME_MAX}px;
+            max-width: ${max}px;
             margin: 0 auto;
             min-height: 100svh;
             background: #FDF6E3;
-            box-shadow:
-              0 24px 60px -22px rgba(15,36,82,0.18),
-              0 0 0 1px rgba(200,146,10,0.18);
-            overflow: hidden;
+            overflow: visible;
+            ${showBox ? `
+              box-shadow:
+                0 24px 60px -22px rgba(15,36,82,0.18),
+                0 0 0 1px rgba(200,146,10,0.18);
+              border-radius: 0;
+            ` : ''}
           }
 
           /* Constrain the fixed bottom nav to the same column. The nav uses
@@ -81,7 +93,7 @@ export default function MobileAppFrame({ children }: { children: ReactNode }) {
             left: 50% !important;
             right: auto !important;
             transform: translateX(-50%);
-            max-width: ${FRAME_MAX}px;
+            max-width: ${max}px;
             width: 100%;
           }
         }
