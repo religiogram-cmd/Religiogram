@@ -524,7 +524,7 @@ export default function ProfileScreen() {
 
   const handleLogout = useCallback(async () => {
     try { await authApi.logout(); } catch { /* ignore */ }
-    router.replace('/');
+    router.replace('/auth');
   }, [router]);
 
   // ── Edit Profile ──────────────────────────────────────
@@ -619,7 +619,7 @@ export default function ProfileScreen() {
         throw new Error(`Server responded ${res.status}`);
       }
       // tokenStore is in-memory — cleared automatically on navigation
-      router.replace('/');
+      router.replace('/auth');
     } catch (err) {
       console.error('Delete account failed:', err);
       setIsDeleting(false);

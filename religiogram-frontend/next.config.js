@@ -12,6 +12,10 @@ const ALLOW_UNSPLASH = process.env.NEXT_ALLOW_UNSPLASH === '1';
 
 const nextConfig = {
   reactStrictMode: true,
+  // Standalone build for Docker / Railway deployment. Produces a self-
+  // contained .next/standalone/ directory with a minimal node_modules so
+  // the runtime image stays small (~150MB vs ~1GB).
+  output: 'standalone',
   // Bundle perf: drop the `console.log` noise from prod bundles but keep
   // warnings + errors (those still bubble to Sentry).
   compiler: {

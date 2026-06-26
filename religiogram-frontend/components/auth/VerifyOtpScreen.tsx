@@ -27,7 +27,7 @@ function VerifyOtpInner() {
 
   /* ── Redirect if no phone ── */
   useEffect(() => {
-    if (!phone) router.replace('/');
+    if (!phone) router.replace('/auth');
   }, [phone, router]);
 
   /* ── Resend cooldown timer ── */

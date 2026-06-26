@@ -78,7 +78,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         if (!ok) {
           tokenStore.clear();
           setStatus('redirect');
-          router.replace('/');
+          router.replace('/auth');
           return;
         }
         hasToken = true;

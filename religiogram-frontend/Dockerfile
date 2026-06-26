@@ -1,19 +1,18 @@
+# ReligioGram Frontend — Railway production image
+# Multi-stage Next.js standalone build. Final image ~150MB.
+
 # ── Stage 1: install deps ──────────────────────────────────────────────────────
 FROM node:20-alpine AS deps
 WORKDIR /app
-
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 # ── Stage 2: build ────────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 WORKDIR /app
-
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
 ENV NEXT_TELEMETRY_DISABLED=1
-
 RUN npm run build
 
 # ── Stage 3: production runner ─────────────────────────────────────────────────
@@ -22,11 +21,19 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# Bind to all interfaces so Railway's proxy can reach the container.
+ENV HOSTNAME=0.0.0.0
+# Railway injects PORT at runtime; default for local docker runs.
+ENV PORT=3000
 
-COPY --from=builder /app/public              ./public
-COPY --from=builder /app/.next/standalone    ./
-COPY --from=builder /app/.next/static        ./.next/static
+# Run as a non-root user.
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser  --system --uid 1001 nextjs
 
+COPY --from=builder /app/public                          ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static     ./.next/static
+
+USER nextjs
 EXPOSE 3000
-
 CMD ["node", "server.js"]
