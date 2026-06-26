@@ -108,8 +108,8 @@ function NavBar({ authed }: { authed: boolean }) {
           <div
             style={{
               width: 36, height: 36, borderRadius: 8,
-              backgroundImage: `url('/rg-ai-button.png')`,
-              backgroundSize: 'cover', backgroundPosition: 'center',
+              backgroundImage: `url('/logo-icon-512.png')`,
+              backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center',
               backgroundColor: NAVY,
             }}
           />
@@ -157,7 +157,7 @@ function Hero({ authed }: { authed: boolean }) {
         background: NAVY,
       }}
     >
-      <BackgroundVideo src="/landing/section1-hero.mp4" opacity={0.45} />
+      <BackgroundVideo src="/landing/section1-hero.mp4" opacity={1} overlayStrength={0.35} />
 
       <div
         style={{
@@ -369,7 +369,7 @@ function ClosingCTA() {
         background: NAVY,
       }}
     >
-      <BackgroundVideo src="/landing/section4.mp4" opacity={0.32} />
+      <BackgroundVideo src="/landing/section4.mp4" opacity={1} overlayStrength={0.55} />
 
       <div
         style={{
@@ -532,7 +532,15 @@ function FooterCol({
 
 /* ─────────────────────────  MEDIA HELPERS  ───────────────────────── */
 
-function BackgroundVideo({ src, opacity }: { src: string; opacity: number }) {
+function BackgroundVideo({
+  src,
+  opacity = 1,
+  overlayStrength = 0.4,
+}: {
+  src: string;
+  opacity?: number;
+  overlayStrength?: number;
+}) {
   const ref = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
     // Some Android browsers ignore the autoplay attribute on first load until
@@ -540,6 +548,11 @@ function BackgroundVideo({ src, opacity }: { src: string; opacity: number }) {
     // background video starts immediately.
     ref.current?.play().catch(() => {});
   }, []);
+  // Lighter top, darker bottom so text remains readable but the video shows
+  // through clearly. overlayStrength controls the bottom darkness (0 = no
+  // overlay, 1 = solid).
+  const top = (overlayStrength * 0.4).toFixed(2);
+  const bot = (overlayStrength * 0.9).toFixed(2);
   return (
     <>
       <video
@@ -556,7 +569,7 @@ function BackgroundVideo({ src, opacity }: { src: string; opacity: number }) {
       <div
         style={{
           position: 'absolute', inset: 0,
-          background: 'linear-gradient(180deg, rgba(10,22,40,0.45) 0%, rgba(10,22,40,0.75) 100%)',
+          background: `linear-gradient(180deg, rgba(10,22,40,${top}) 0%, rgba(10,22,40,${bot}) 100%)`,
         }}
       />
     </>
