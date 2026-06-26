@@ -8,6 +8,7 @@ import { useAuthStore } from '@/lib/store';
 import { CityProvider } from '@/contexts/CityContext';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { RGLogo } from '@/components/ui/RGLogo';
+import MobileAppFrame from '@/components/ui/MobileAppFrame';
 
 // Dynamic imports — isolate heavy/optional components from the layout bundle
 const BottomNav = dynamic(() => import('@/components/ui/BottomNav'), { ssr: false });
@@ -46,14 +47,16 @@ function AppContent({ children }: { children: React.ReactNode }) {
   const showAiBubble = pathname === '/home';
 
   return (
-    <div className="relative min-h-svh" style={{ background: '#FDF6E3' }}>
-      <main className="pb-[calc(64px+env(safe-area-inset-bottom,0px))]">
-        {children}
-      </main>
-      <BottomNav />
-      {showAiBubble && <RGAIBubble />}
-      <ToastHost />
-    </div>
+    <MobileAppFrame>
+      <div className="relative min-h-svh" style={{ background: '#FDF6E3' }}>
+        <main className="pb-[calc(64px+env(safe-area-inset-bottom,0px))]">
+          {children}
+        </main>
+        <BottomNav />
+        {showAiBubble && <RGAIBubble />}
+        <ToastHost />
+      </div>
+    </MobileAppFrame>
   );
 }
 

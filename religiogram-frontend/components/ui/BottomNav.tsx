@@ -114,7 +114,7 @@ export default function BottomNav() {
     pathname.startsWith(href);
 
   return (
-    <nav style={{
+    <nav className="rg-bottom-nav" style={{
       position: 'fixed', bottom: 0, left: 0, right: 0,
       background: BG_NAV,
       borderTop: `1.5px solid rgba(200,146,10,0.25)`,

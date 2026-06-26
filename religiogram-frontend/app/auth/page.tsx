@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { tokenStore, tryRefresh } from '@/lib/api';
 import AuthScreen from '@/components/auth/AuthScreen';
+import MobileAppFrame from '@/components/ui/MobileAppFrame';
 
 // Bump this string whenever you edit this file. Watching it change in the
 // browser DevTools console is the easiest way to confirm the new bundle is
@@ -49,5 +50,9 @@ export default function AuthPage() {
     };
   }, [router]);
 
-  return <AuthScreen />;
+  return (
+    <MobileAppFrame>
+      <AuthScreen />
+    </MobileAppFrame>
+  );
 }
