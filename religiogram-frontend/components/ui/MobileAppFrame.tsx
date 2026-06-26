@@ -27,7 +27,7 @@
 
 import type { ReactNode } from 'react';
 
-const FRAME_MAX = 480;          // phone-like column width on desktop
+const FRAME_MAX = 560;          // slightly wider than a phone — reads as a website
 const BREAKPOINT = '768px';     // mobile vs desktop cutoff
 
 export default function MobileAppFrame({ children }: { children: ReactNode }) {
@@ -41,25 +41,27 @@ export default function MobileAppFrame({ children }: { children: ReactNode }) {
         .rg-app-frame    { width: 100%; min-height: 100svh; position: relative; }
 
         @media (min-width: ${BREAKPOINT}) {
-          /* Desktop / large tablet — show backdrop, centre the column. */
-          body { background: #0A1628; }
+          /* Desktop / large tablet — show backdrop, centre the column.
+             Backdrop is a warm cream tone so the page reads as a centred
+             single-column WEBSITE, not "phone screen on a dark wall". */
+          body { background: #F6EFDC; }
           .rg-app-backdrop {
             display: block;
             position: fixed; inset: 0;
             background:
               radial-gradient(1100px 700px at 50% -100px, rgba(200,146,10,0.18), transparent 60%),
-              radial-gradient(900px  700px at 50% 110%, rgba(15,36,82,0.55), transparent 60%),
-              linear-gradient(180deg, #0A1628 0%, #0F2452 100%);
+              radial-gradient(900px  700px at 50% 110%, rgba(200,146,10,0.10), transparent 60%),
+              linear-gradient(180deg, #F6EFDC 0%, #EFE3C2 100%);
             z-index: 0;
             pointer-events: none;
           }
-          /* Subtle dot lattice on top of the gradient */
+          /* Hairline ornament on the backdrop */
           .rg-app-backdrop::after {
             content: '';
             position: absolute; inset: 0;
             background-image: radial-gradient(rgba(200,146,10,0.10) 1px, transparent 1px);
-            background-size: 22px 22px;
-            opacity: 0.45;
+            background-size: 28px 28px;
+            opacity: 0.35;
           }
           .rg-app-frame {
             position: relative; z-index: 1;
@@ -68,8 +70,8 @@ export default function MobileAppFrame({ children }: { children: ReactNode }) {
             min-height: 100svh;
             background: #FDF6E3;
             box-shadow:
-              0 30px 80px -20px rgba(0,0,0,0.55),
-              0 0 0 1px rgba(200,146,10,0.20);
+              0 24px 60px -22px rgba(15,36,82,0.18),
+              0 0 0 1px rgba(200,146,10,0.18);
             overflow: hidden;
           }
 
@@ -81,17 +83,6 @@ export default function MobileAppFrame({ children }: { children: ReactNode }) {
             transform: translateX(-50%);
             max-width: ${FRAME_MAX}px;
             width: 100%;
-          }
-        }
-
-        /* Beyond very wide screens, soften the empty space with a deeper gold
-           glow at the top to keep the page interesting. */
-        @media (min-width: 1400px) {
-          .rg-app-backdrop {
-            background:
-              radial-gradient(1400px 900px at 50% -180px, rgba(200,146,10,0.22), transparent 60%),
-              radial-gradient(1100px 900px at 50% 110%, rgba(15,36,82,0.60), transparent 60%),
-              linear-gradient(180deg, #0A1628 0%, #0F2452 100%);
           }
         }
       `}</style>
