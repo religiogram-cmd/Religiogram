@@ -230,32 +230,8 @@ function Hero({ authed }: { authed: boolean }) {
           </a>
         </div>
 
-        <div
-          style={{
-            marginTop: 60,
-            display: 'flex', justifyContent: 'center',
-            gap: 'clamp(24px,5vw,56px)',
-            flexWrap: 'wrap',
-            color: 'rgba(255,250,236,0.85)', fontSize: 13,
-          }}
-        >
-          <Stat n="3,500+" label="Verified Priests" />
-          <Stat n="All faiths" label="Hindu · Islam · Sikh · Christian" />
-          <Stat n="₹0" label="To start" />
-        </div>
       </div>
     </section>
-  );
-}
-
-function Stat({ n, label }: { n: string; label: string }) {
-  return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{ fontFamily: '"Playfair Display", serif', fontSize: 24, fontWeight: 800, color: GOLD_L }}>
-        {n}
-      </div>
-      <div style={{ marginTop: 4, letterSpacing: '0.04em' }}>{label}</div>
-    </div>
   );
 }
 
