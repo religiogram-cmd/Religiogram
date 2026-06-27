@@ -48,7 +48,8 @@ export default function LandingPage() {
 
       <Hero authed={authed} />
 
-      <Section
+      <FullBgSection
+        videoSrc="/landing/section2.mp4"
         eyebrow="VERIFIED PRIESTS"
         title="Every priest, identity-checked."
         body="Every priest on ReligioGram completes our 9-step KYC — PAN, selfie verification, video introduction, payout setup. You see real people, real qualifications, real reviews from real devotees."
@@ -58,12 +59,10 @@ export default function LandingPage() {
           'Background-checked across India',
           'Ratings from real bookings',
         ]}
-        videoSrc="/landing/section2.mp4"
-        videoOrientation="portrait"
-        reverse={false}
       />
 
-      <Section
+      <FullBgSection
+        videoSrc="/landing/section3.mp4"
         eyebrow="RG AI"
         title="Your personal spiritual guide, free."
         body="Ask anything — your kundli, today's panchang, rashifal, scripture meanings, life decisions. RG AI answers in seconds, in your language, with voice and image support. No appointment, no fee."
@@ -73,9 +72,7 @@ export default function LandingPage() {
           'Multi-language: Hindi, English, regional',
           'Free for everyone — 20 messages a day',
         ]}
-        videoSrc="/landing/section3.mp4"
-        videoOrientation="portrait"
-        reverse={true}
+        align="right"
       />
 
       <ClosingCTA />
@@ -314,34 +311,63 @@ function FullBgSection({
   title,
   body,
   bullets,
+  align = 'left',
 }: {
   videoSrc: string;
   eyebrow: string;
   title: string;
   body: string;
   bullets: string[];
+  /** Which half of the screen the copy sits on. The video pans to the
+   *  opposite side via object-position so footage and text don't fight. */
+  align?: 'left' | 'right';
 }) {
+  // Directional gradient: dark on the copy side (so text is legible),
+  // transparent on the opposite side (so the video reads cleanly).
+  const grad =
+    align === 'left'
+      ? 'linear-gradient(90deg, rgba(10,22,40,0.82) 0%, rgba(10,22,40,0.60) 40%, rgba(10,22,40,0.10) 75%, rgba(10,22,40,0.00) 100%)'
+      : 'linear-gradient(270deg, rgba(10,22,40,0.82) 0%, rgba(10,22,40,0.60) 40%, rgba(10,22,40,0.10) 75%, rgba(10,22,40,0.00) 100%)';
+  // Push video footage away from the text side so it remains visible.
+  const videoPos = align === 'left' ? '85% center' : '15% center';
   return (
     <section
       style={{
         position: 'relative',
-        minHeight: '78svh',
+        minHeight: '88svh',
         display: 'flex', alignItems: 'center',
         overflow: 'hidden',
         background: NAVY,
       }}
     >
-      <BackgroundVideo src={videoSrc} opacity={1} overlayStrength={0.55} />
+      <BackgroundVideo
+        src={videoSrc}
+        opacity={1}
+        overlayStrength={0}
+        objectPosition={videoPos}
+      />
+      {/* Side-weighted dark gradient that keeps text legible while letting the
+          video show through on the opposite half. */}
+      <div
+        style={{
+          position: 'absolute', inset: 0,
+          background: grad,
+          pointerEvents: 'none',
+          zIndex: 1,
+        }}
+      />
 
       <div
         style={{
           position: 'relative', zIndex: 2,
-          maxWidth: 1180, margin: '0 auto',
-          padding: '90px 24px',
+          maxWidth: 1280, margin: '0 auto',
+          padding: '100px 48px',
           color: CREAM, width: '100%',
+          display: 'flex',
+          justifyContent: align === 'left' ? 'flex-start' : 'flex-end',
         }}
       >
-        <div style={{ maxWidth: 640 }}>
+        <div style={{ maxWidth: 560 }}>
           <p
             style={{
               fontSize: 12, letterSpacing: '0.18em', textTransform: 'uppercase',
@@ -598,6 +624,7 @@ function BackgroundVideo({
   opacity = 1,
   overlayStrength = 0.4,
   fit = 'cover',
+  objectPosition = 'center center',
 }: {
   src: string;
   opacity?: number;
@@ -606,6 +633,9 @@ function BackgroundVideo({
    *  cinematic footage). "contain" shows the entire video without cropping
    *  — letterbox bars get filled by the navy section background. */
   fit?: 'cover' | 'contain';
+  /** CSS object-position. Lets a parent shift which part of a cropped
+   *  video stays visible (e.g. "85% center" pushes content to the right). */
+  objectPosition?: string;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
@@ -629,6 +659,7 @@ function BackgroundVideo({
           position: 'absolute', inset: 0,
           width: '100%', height: '100%',
           objectFit: fit,
+          objectPosition,
           opacity,
         }}
       />
