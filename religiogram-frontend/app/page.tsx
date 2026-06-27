@@ -63,7 +63,8 @@ export default function LandingPage() {
         reverse={false}
       />
 
-      <Section
+      <FullBgSection
+        videoSrc="/landing/section3.mp4"
         eyebrow="RG AI"
         title="Your personal spiritual guide, free."
         body="Ask anything — your kundli, today's panchang, rashifal, scripture meanings, life decisions. RG AI answers in seconds, in your language, with voice and image support. No appointment, no fee."
@@ -73,9 +74,6 @@ export default function LandingPage() {
           'Multi-language: Hindi, English, regional',
           'Free for everyone — 20 messages a day',
         ]}
-        videoSrc="/landing/section3.mp4"
-        videoOrientation="portrait"
-        reverse={true}
       />
 
       <ClosingCTA />
@@ -326,6 +324,103 @@ function Section({
 
         <div style={{ flex: '1 1 320px', minWidth: 280, display: 'flex', justifyContent: 'center' }}>
           <InlineVideo src={videoSrc} orientation={videoOrientation} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─────────────────────────  FULL-BG SECTION  ───────────────────────── */
+
+/** Hero-style section where the video fills the entire background and the
+ *  copy is centred on top. Use for the marquee feature that deserves the
+ *  most visual real-estate (RG AI). */
+function FullBgSection({
+  videoSrc,
+  eyebrow,
+  title,
+  body,
+  bullets,
+}: {
+  videoSrc: string;
+  eyebrow: string;
+  title: string;
+  body: string;
+  bullets: string[];
+}) {
+  return (
+    <section
+      style={{
+        position: 'relative',
+        minHeight: '78svh',
+        display: 'flex', alignItems: 'center',
+        overflow: 'hidden',
+        background: NAVY,
+      }}
+    >
+      <BackgroundVideo src={videoSrc} opacity={1} overlayStrength={0.55} />
+
+      <div
+        style={{
+          position: 'relative', zIndex: 2,
+          maxWidth: 1180, margin: '0 auto',
+          padding: '90px 24px',
+          color: CREAM, width: '100%',
+        }}
+      >
+        <div style={{ maxWidth: 640 }}>
+          <p
+            style={{
+              fontSize: 12, letterSpacing: '0.18em', textTransform: 'uppercase',
+              color: GOLD_L, fontWeight: 800, marginBottom: 14,
+            }}
+          >
+            {eyebrow}
+          </p>
+          <h2
+            style={{
+              fontFamily: '"Playfair Display", Georgia, serif',
+              fontSize: 'clamp(30px,4.8vw,52px)',
+              fontWeight: 800, lineHeight: 1.08, margin: '0 0 20px',
+              letterSpacing: '-0.02em',
+              textShadow: '0 4px 24px rgba(0,0,0,0.45)',
+            }}
+          >
+            {title}
+          </h2>
+          <p style={{ fontSize: 17, lineHeight: 1.6, color: 'rgba(255,250,236,0.92)', margin: 0 }}>
+            {body}
+          </p>
+          <ul
+            style={{
+              marginTop: 26, padding: 0, listStyle: 'none',
+              display: 'flex', flexDirection: 'column', gap: 12,
+            }}
+          >
+            {bullets.map((b) => (
+              <li
+                key={b}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  fontSize: 15.5, color: CREAM,
+                }}
+              >
+                <span
+                  style={{
+                    width: 24, height: 24, borderRadius: '50%',
+                    background: `linear-gradient(135deg,${GOLD_L},${GOLD})`,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#fff', flexShrink: 0,
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                </span>
+                {b}
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </section>
