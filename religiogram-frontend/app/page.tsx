@@ -48,6 +48,8 @@ export default function LandingPage() {
 
       <Hero authed={authed} />
 
+      <SectionDivider />
+
       <FullBgSection
         videoSrc="/landing/section2.mp4"
         eyebrow="VERIFIED PRIESTS"
@@ -60,6 +62,8 @@ export default function LandingPage() {
           'Ratings from real bookings',
         ]}
       />
+
+      <SectionDivider />
 
       <FullBgSection
         videoSrc="/landing/section3.mp4"
@@ -74,6 +78,8 @@ export default function LandingPage() {
         ]}
         align="right"
       />
+
+      <SectionDivider />
 
       <ClosingCTA />
 
@@ -423,6 +429,33 @@ function FullBgSection({
         </div>
       </div>
     </section>
+  );
+}
+
+/* ─────────────────────────  SECTION DIVIDER  ───────────────────────── */
+
+/** Cream-coloured breathing-room band between two full-bg video sections.
+ *  Without this the cinematic sections butt up against each other and the
+ *  page feels visually crowded. A thin gold rule keeps the brand language
+ *  consistent with the rest of the site. */
+function SectionDivider() {
+  return (
+    <div
+      style={{
+        background: CREAM,
+        padding: '56px 24px',
+        display: 'flex', justifyContent: 'center',
+      }}
+      aria-hidden="true"
+    >
+      <div
+        style={{
+          width: 120, height: 2,
+          background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)`,
+          opacity: 0.55,
+        }}
+      />
+    </div>
   );
 }
 
