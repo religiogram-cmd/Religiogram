@@ -48,8 +48,7 @@ export default function LandingPage() {
 
       <Hero authed={authed} />
 
-      <FullBgSection
-        videoSrc="/landing/section2.mp4"
+      <Section
         eyebrow="VERIFIED PRIESTS"
         title="Every priest, identity-checked."
         body="Every priest on ReligioGram completes our 9-step KYC — PAN, selfie verification, video introduction, payout setup. You see real people, real qualifications, real reviews from real devotees."
@@ -59,10 +58,12 @@ export default function LandingPage() {
           'Background-checked across India',
           'Ratings from real bookings',
         ]}
+        videoSrc="/landing/section2.mp4"
+        videoOrientation="portrait"
+        reverse={false}
       />
 
-      <FullBgSection
-        videoSrc="/landing/section3.mp4"
+      <Section
         eyebrow="RG AI"
         title="Your personal spiritual guide, free."
         body="Ask anything — your kundli, today's panchang, rashifal, scripture meanings, life decisions. RG AI answers in seconds, in your language, with voice and image support. No appointment, no fee."
@@ -72,6 +73,9 @@ export default function LandingPage() {
           'Multi-language: Hindi, English, regional',
           'Free for everyone — 20 messages a day',
         ]}
+        videoSrc="/landing/section3.mp4"
+        videoOrientation="portrait"
+        reverse={true}
       />
 
       <ClosingCTA />
@@ -224,15 +228,16 @@ function Section({
     <section
       id="features"
       style={{
-        padding: '80px 24px',
+        padding: '110px 24px',
         background: reverse ? '#FFF6E0' : CREAM,
+        borderTop: '1px solid rgba(200,146,10,0.12)',
       }}
     >
       <div
         style={{
           maxWidth: 1180, margin: '0 auto',
           display: 'flex', flexDirection: reverse ? 'row-reverse' : 'row',
-          gap: 56, alignItems: 'center', flexWrap: 'wrap',
+          gap: 72, alignItems: 'center', flexWrap: 'wrap',
         }}
         className="rg-section-grid"
       >

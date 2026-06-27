@@ -11,8 +11,8 @@
 // Bumped to v4 to discard caches that pre-dated the new public landing page.
 // Every cache version bump triggers a fresh install + skipWaiting flow in
 // PwaInit so existing PWAs pick up the new HTML on the next reload.
-const CACHE_NAME  = 'religiogram-shell-v4';
-const IMG_CACHE   = 'religiogram-imgs-v4';
+const CACHE_NAME  = 'religiogram-shell-v5';
+const IMG_CACHE   = 'religiogram-imgs-v5';
 const OFFLINE_URL = '/offline.html';
 const IMG_CACHE_MAX = 80;            // hard ceiling so the cache doesn't grow forever
 
