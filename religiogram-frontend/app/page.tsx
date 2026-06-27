@@ -48,7 +48,8 @@ export default function LandingPage() {
 
       <Hero authed={authed} />
 
-      <Section
+      <FullBgSection
+        videoSrc="/landing/section2.mp4"
         eyebrow="VERIFIED PRIESTS"
         title="Every priest, identity-checked."
         body="Every priest on ReligioGram completes our 9-step KYC — PAN, selfie verification, video introduction, payout setup. You see real people, real qualifications, real reviews from real devotees."
@@ -58,9 +59,6 @@ export default function LandingPage() {
           'Background-checked across India',
           'Ratings from real bookings',
         ]}
-        videoSrc="/landing/section2.mp4"
-        videoOrientation="portrait"
-        reverse={false}
       />
 
       <FullBgSection
