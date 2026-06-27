@@ -265,7 +265,13 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  // â”€â”€ URI versioning (/v1/â€¦) â”€â”€
+  // â”€â”€ Global "api" prefix â”€â”€
+  // All routes are served under /api/* so the frontend can use a single
+  // NEXT_PUBLIC_API_BASE that points at https://<host>/api. Without this
+  // prefix the frontend's existing /api/v1/* paths would 404.
+  app.setGlobalPrefix('api');
+
+  // â”€â”€ URI versioning (/api/v1/â€¦) â”€â”€
   app.enableVersioning({ type: VersioningType.URI });
 
   // â”€â”€ CORS â”€â”€

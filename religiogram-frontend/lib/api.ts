@@ -9,18 +9,31 @@
  *   - Network errors surfaced as a typed ApiError with code NETWORK_ERROR
  */
 
-const DEFAULT_API_BASE = 'https://api.religiogram.com/api/v1';
-
+/**
+ * Base URL for the backend.
+ *
+ * Resolution order:
+ *   1. NEXT_PUBLIC_API_BASE — explicit env var (set in Vercel / .env.local)
+ *   2. /api/v1 — relative path, used in local dev so Next.js rewrites can
+ *      proxy to the backend on a different port
+ *   3. /api/v1 — same relative path in prod when env var is missing. The
+ *      console warns loudly so a missing env var is immediately visible
+ *      instead of silently calling a non-existent api.religiogram.com.
+ */
 const API_BASE = (() => {
-  // Prefer explicit env var — set NEXT_PUBLIC_API_BASE in .env.local / .env.production
   const fromEnv = process.env.NEXT_PUBLIC_API_BASE;
-  if (fromEnv) return fromEnv;
-  // Dev convenience: use relative path so Next.js rewrites proxy to the backend.
-  // This avoids the frontend ever talking to its own port directly.
-  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-    return '/api/v1';
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  if (typeof window !== 'undefined') {
+    if (window.location.hostname !== 'localhost') {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[ReligioGram] NEXT_PUBLIC_API_BASE is not set. ' +
+          'Falling back to /api/v1 (relative) which will hit the frontend ' +
+          'host. Set NEXT_PUBLIC_API_BASE in Vercel to your Railway backend URL.',
+      );
+    }
   }
-  return DEFAULT_API_BASE;
+  return '/api/v1';
 })();
 
 /* ════════════════════════════════════════════════════════════════════════

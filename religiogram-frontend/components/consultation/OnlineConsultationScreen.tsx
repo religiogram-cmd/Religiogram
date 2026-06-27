@@ -8,7 +8,7 @@ const NAVY = '#1B2A5C';
 const GOLD = '#C8920A';
 const PARCHMENT = '#FFFBF0';
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? '';
+const API = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
 interface Consultant {
   id: string;

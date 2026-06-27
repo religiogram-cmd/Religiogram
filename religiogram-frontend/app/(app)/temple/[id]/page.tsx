@@ -54,7 +54,10 @@ function ReviewsSection({ templeId }: ReviewsSectionProps) {
   const [error, setError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
+  // Use NEXT_PUBLIC_API_BASE — the single env var that points at the
+  // backend (e.g. https://religiogram-backend.up.railway.app/api/v1).
+  // Falls back to the local mock at :3001/api/v1 in dev.
+  const API = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1';
 
   useEffect(() => {
     let cancelled = false;

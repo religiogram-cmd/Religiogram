@@ -9,7 +9,8 @@ import { GuideCard } from '@/components/places/GuideCard';
 import type { Temple } from '@/lib/temples-api';
 import type { GuideCardData } from '@/components/places/GuideCard';
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
+// Single env var across the app. See lib/api.ts for the canonical client.
+const API = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1';
 const RECENT_KEY = 'rg_recent_searches';
 const MAX_RECENT = 5;
 
