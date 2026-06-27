@@ -162,39 +162,9 @@ function Hero({ authed }: { authed: boolean }) {
           textAlign: 'center', color: CREAM,
         }}
       >
-        <p
-          style={{
-            fontSize: 13, letterSpacing: '0.18em', textTransform: 'uppercase',
-            color: GOLD_L, fontWeight: 700, marginBottom: 18,
-          }}
-        >
-          INDIA'S DEVOTION MARKETPLACE
-        </p>
-        <h1
-          style={{
-            fontFamily: '"Playfair Display", Georgia, serif',
-            fontSize: 'clamp(36px, 7vw, 76px)',
-            fontWeight: 800, lineHeight: 1.05,
-            letterSpacing: '-0.02em', margin: 0,
-            textShadow: '0 4px 30px rgba(0,0,0,0.4)',
-          }}
-        >
-          Sacred connections,<br/>
-          <span style={{ color: GOLD_L }}>simple as a tap.</span>
-        </h1>
-        <p
-          style={{
-            marginTop: 26, fontSize: 'clamp(15px,2.2vw,20px)',
-            lineHeight: 1.55, color: 'rgba(255,250,236,0.92)',
-            maxWidth: 720, marginLeft: 'auto', marginRight: 'auto',
-          }}
-        >
-          Verified priests across faiths. A free AI spiritual guide.
-          Sacred places near you. Communities of devotees. All in one app.
-        </p>
         <div
           style={{
-            marginTop: 38, display: 'flex', gap: 14,
+            display: 'flex', gap: 14,
             justifyContent: 'center', flexWrap: 'wrap',
           }}
         >
