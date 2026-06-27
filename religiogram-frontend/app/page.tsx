@@ -434,19 +434,36 @@ function ClosingCTA() {
     <section
       style={{
         position: 'relative',
-        minHeight: '56svh',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        overflow: 'hidden',
+        display: 'flex', flexDirection: 'column',
         background: NAVY,
       }}
     >
-      <BackgroundVideo src="/landing/section4.mp4" opacity={1} overlayStrength={0.55} />
-
+      {/* Video stage — sized at native 16:9 so the entire frame shows without
+          cropping. Navy fills any letterbox space on tall containers. */}
       <div
         style={{
-          position: 'relative', zIndex: 2,
-          maxWidth: 820, padding: '80px 24px',
+          position: 'relative',
+          width: '100%',
+          aspectRatio: '16 / 9',
+          maxHeight: '70svh',
+          overflow: 'hidden',
+          background: NAVY,
+        }}
+      >
+        <BackgroundVideo
+          src="/landing/section4.mp4"
+          opacity={1}
+          overlayStrength={0.25}
+          fit="contain"
+        />
+      </div>
+
+      {/* CTA copy sits BELOW the video so nothing overlaps the footage. */}
+      <div
+        style={{
+          maxWidth: 820, padding: '64px 24px 90px',
           textAlign: 'center', color: CREAM,
+          marginLeft: 'auto', marginRight: 'auto',
         }}
       >
         <h2
@@ -607,10 +624,15 @@ function BackgroundVideo({
   src,
   opacity = 1,
   overlayStrength = 0.4,
+  fit = 'cover',
 }: {
   src: string;
   opacity?: number;
   overlayStrength?: number;
+  /** "cover" fills the section, cropping if needed (best for hero with
+   *  cinematic footage). "contain" shows the entire video without cropping
+   *  — letterbox bars get filled by the navy section background. */
+  fit?: 'cover' | 'contain';
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
@@ -633,7 +655,7 @@ function BackgroundVideo({
         style={{
           position: 'absolute', inset: 0,
           width: '100%', height: '100%',
-          objectFit: 'cover',
+          objectFit: fit,
           opacity,
         }}
       />
@@ -641,6 +663,7 @@ function BackgroundVideo({
         style={{
           position: 'absolute', inset: 0,
           background: `linear-gradient(180deg, rgba(10,22,40,${top}) 0%, rgba(10,22,40,${bot}) 100%)`,
+          pointerEvents: 'none',
         }}
       />
     </>
