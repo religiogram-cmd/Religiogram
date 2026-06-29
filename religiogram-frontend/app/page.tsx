@@ -145,10 +145,11 @@ function Hero({ authed }: { authed: boolean }) {
         background: NAVY,
       }}
     >
-      {/* Hero video = the RG AI / astrology screen recording — the strongest
-          visual representation of what the app does. */}
+      {/* Desktop hero uses a dedicated cinematic clip; mobile keeps the
+          portrait WhatsApp recording (m3-ai.mp4) so the mobile view is
+          unchanged. */}
       <BackgroundVideo
-        src="/landing/section3.mp4"
+        src="/landing/desktop-hero.mp4"
         mobileSrc="/landing/mobile/m3-ai.mp4"
         opacity={1}
         overlayStrength={0.35}
