@@ -52,6 +52,7 @@ export default function LandingPage() {
 
       <FullBgSection
         videoSrc="/landing/section2.mp4"
+        mobileVideoSrc="/landing/mobile/m2-priests.mp4"
         eyebrow="VERIFIED PRIESTS"
         title="Every priest, identity-checked."
         body="Every priest on ReligioGram completes our 9-step KYC — PAN, selfie verification, video introduction, payout setup. You see real people, real qualifications, real reviews from real devotees."
@@ -61,22 +62,6 @@ export default function LandingPage() {
           'Background-checked across India',
           'Ratings from real bookings',
         ]}
-      />
-
-      <SectionDivider />
-
-      <FullBgSection
-        videoSrc="/landing/section3.mp4"
-        eyebrow="RG AI"
-        title="Your personal spiritual guide, free."
-        body="Ask anything — your kundli, today's panchang, rashifal, scripture meanings, life decisions. RG AI answers in seconds, in your language, with voice and image support. No appointment, no fee."
-        bullets={[
-          'Kundli, panchang, rashifal — instant',
-          'Voice + image input',
-          'Multi-language: Hindi, English, regional',
-          'Free for everyone — 20 messages a day',
-        ]}
-        align="right"
       />
 
       <SectionDivider />
@@ -160,7 +145,14 @@ function Hero({ authed }: { authed: boolean }) {
         background: NAVY,
       }}
     >
-      <BackgroundVideo src="/landing/section1-hero.mp4" opacity={1} overlayStrength={0.35} />
+      {/* Hero video = the RG AI / astrology screen recording — the strongest
+          visual representation of what the app does. */}
+      <BackgroundVideo
+        src="/landing/section3.mp4"
+        mobileSrc="/landing/mobile/m3-ai.mp4"
+        opacity={1}
+        overlayStrength={0.35}
+      />
 
       <div
         style={{
@@ -192,11 +184,12 @@ function Hero({ authed }: { authed: boolean }) {
             href="#features"
             style={{
               padding: '16px 30px',
-              background: 'rgba(255,250,236,0.10)',
+              background: `linear-gradient(135deg,${NAVY_2},${NAVY})`,
               color: CREAM,
               borderRadius: 14, textDecoration: 'none',
               fontWeight: 700, fontSize: 16,
-              border: '1px solid rgba(255,250,236,0.25)',
+              border: `1px solid ${GOLD}40`,
+              boxShadow: '0 6px 20px rgba(10,22,40,0.4)',
             }}
           >
             Watch demo
@@ -313,6 +306,7 @@ function Section({
  *  most visual real-estate (RG AI). */
 function FullBgSection({
   videoSrc,
+  mobileVideoSrc,
   eyebrow,
   title,
   body,
@@ -320,6 +314,9 @@ function FullBgSection({
   align = 'left',
 }: {
   videoSrc: string;
+  /** Mobile-only override served for viewports <768px. Lets us ship a
+   *  portrait phone-shot recording on mobile and a cinematic 16:9 on desktop. */
+  mobileVideoSrc?: string;
   eyebrow: string;
   title: string;
   body: string;
@@ -328,8 +325,8 @@ function FullBgSection({
    *  opposite side via object-position so footage and text don't fight. */
   align?: 'left' | 'right';
 }) {
-  // Directional gradient: dark on the copy side (so text is legible),
-  // transparent on the opposite side (so the video reads cleanly).
+  // Directional gradient (DESKTOP only): dark on the copy side (so text is
+  // legible), transparent on the opposite side (so the video reads cleanly).
   const grad =
     align === 'left'
       ? 'linear-gradient(90deg, rgba(10,22,40,0.82) 0%, rgba(10,22,40,0.60) 40%, rgba(10,22,40,0.10) 75%, rgba(10,22,40,0.00) 100%)'
@@ -337,43 +334,84 @@ function FullBgSection({
   // Push video footage away from the text side so it remains visible.
   const videoPos = align === 'left' ? '85% center' : '15% center';
   return (
-    <section
-      style={{
-        position: 'relative',
-        minHeight: '88svh',
-        display: 'flex', alignItems: 'center',
-        overflow: 'hidden',
-        background: NAVY,
-      }}
-    >
-      <BackgroundVideo
-        src={videoSrc}
-        opacity={1}
-        overlayStrength={0}
-        objectPosition={videoPos}
-      />
-      {/* Side-weighted dark gradient that keeps text legible while letting the
-          video show through on the opposite half. */}
-      <div
-        style={{
-          position: 'absolute', inset: 0,
-          background: grad,
-          pointerEvents: 'none',
-          zIndex: 1,
-        }}
-      />
+    <section className="rg-fbg">
+      {/*
+        Scoped styles: stack on mobile (video at top, text in a solid navy
+        block below), overlay on desktop (video fills section, text overlaid
+        with a directional gradient). Single component, two layouts — no
+        duplicate copy needed.
+      */}
+      <style>{`
+        .rg-fbg { background: ${NAVY}; overflow: hidden; }
 
-      <div
-        style={{
-          position: 'relative', zIndex: 2,
-          maxWidth: 1280, margin: '0 auto',
-          padding: '100px 48px',
-          color: CREAM, width: '100%',
-          display: 'flex',
-          justifyContent: align === 'left' ? 'flex-start' : 'flex-end',
-        }}
-      >
-        <div style={{ maxWidth: 560 }}>
+        /* ──── MOBILE (default) — stacked, no overlap ────
+           No max-height: the 9:16 aspect-ratio dictates the full height so
+           the entire portrait video is visible without clipping. */
+        .rg-fbg-video-wrap {
+          position: relative;
+          width: 100%;
+          aspect-ratio: 9 / 16;
+          background: ${NAVY};
+          overflow: hidden;
+        }
+        .rg-fbg-grad { display: none; }
+        .rg-fbg-text {
+          padding: 36px 24px 56px;
+          color: ${CREAM};
+          background: ${NAVY};
+        }
+        .rg-fbg-text-inner { max-width: 560px; margin: 0 auto; }
+
+        /* ──── DESKTOP (≥768px) — cinematic overlay ──── */
+        @media (min-width: 768px) {
+          .rg-fbg {
+            position: relative;
+            min-height: 88svh;
+            display: flex;
+            align-items: center;
+          }
+          .rg-fbg-video-wrap {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            aspect-ratio: auto;
+            max-height: none;
+          }
+          .rg-fbg-grad {
+            display: block;
+            position: absolute; inset: 0;
+            background: ${grad};
+            pointer-events: none;
+            z-index: 1;
+          }
+          .rg-fbg-text {
+            position: relative; z-index: 2;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 100px 48px;
+            background: transparent;
+            width: 100%;
+            display: flex;
+            justify-content: ${align === 'left' ? 'flex-start' : 'flex-end'};
+          }
+          .rg-fbg-text-inner { max-width: 560px; margin: 0; }
+        }
+      `}</style>
+
+      <div className="rg-fbg-video-wrap">
+        <BackgroundVideo
+          src={videoSrc}
+          mobileSrc={mobileVideoSrc}
+          opacity={1}
+          overlayStrength={0}
+          objectPosition={videoPos}
+        />
+        <div className="rg-fbg-grad" />
+      </div>
+
+      <div className="rg-fbg-text">
+        <div className="rg-fbg-text-inner">
           <p
             style={{
               fontSize: 12, letterSpacing: '0.18em', textTransform: 'uppercase',
@@ -385,21 +423,20 @@ function FullBgSection({
           <h2
             style={{
               fontFamily: '"Playfair Display", Georgia, serif',
-              fontSize: 'clamp(30px,4.8vw,52px)',
-              fontWeight: 800, lineHeight: 1.08, margin: '0 0 20px',
+              fontSize: 'clamp(28px,4.8vw,52px)',
+              fontWeight: 800, lineHeight: 1.1, margin: '0 0 18px',
               letterSpacing: '-0.02em',
-              textShadow: '0 4px 24px rgba(0,0,0,0.45)',
             }}
           >
             {title}
           </h2>
-          <p style={{ fontSize: 17, lineHeight: 1.6, color: 'rgba(255,250,236,0.92)', margin: 0 }}>
+          <p style={{ fontSize: 16, lineHeight: 1.6, color: 'rgba(255,250,236,0.88)', margin: 0 }}>
             {body}
           </p>
           <ul
             style={{
-              marginTop: 26, padding: 0, listStyle: 'none',
-              display: 'flex', flexDirection: 'column', gap: 12,
+              marginTop: 22, padding: 0, listStyle: 'none',
+              display: 'flex', flexDirection: 'column', gap: 11,
             }}
           >
             {bullets.map((b) => (
@@ -407,18 +444,18 @@ function FullBgSection({
                 key={b}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 12,
-                  fontSize: 15.5, color: CREAM,
+                  fontSize: 14.5, color: CREAM,
                 }}
               >
                 <span
                   style={{
-                    width: 24, height: 24, borderRadius: '50%',
+                    width: 22, height: 22, borderRadius: '50%',
                     background: `linear-gradient(135deg,${GOLD_L},${GOLD})`,
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                     color: '#fff', flexShrink: 0,
                   }}
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12"/>
                   </svg>
                 </span>
@@ -470,30 +507,42 @@ function ClosingCTA() {
         background: NAVY,
       }}
     >
-      {/* Video stage — sized at native 16:9 so the entire frame shows without
-          cropping. Navy fills any letterbox space on tall containers. */}
-      <div
-        style={{
-          position: 'relative',
-          width: '100%',
-          aspectRatio: '16 / 9',
-          maxHeight: '70svh',
-          overflow: 'hidden',
-          background: NAVY,
-        }}
-      >
+      {/* Video stage — portrait (9:16) on mobile so the WhatsApp clip fills
+          the screen edge-to-edge, 16:9 on desktop so the cinematic footage
+          shows fully. `cover` keeps the frame full-bleed on both. */}
+      {/* Mobile: 9:16 portrait, no max-height — the whole WhatsApp recording
+          shows without clipping. Desktop: 16:9 with a sensible cap so it
+          doesn't dominate a tall monitor. `cover` on both so there are no
+          letterbox bars; the videos are framed to fit their target ratios. */}
+      <style>{`
+        .rg-cta-video {
+          position: relative;
+          width: 100%;
+          aspect-ratio: 9 / 16;
+          overflow: hidden;
+          background: ${NAVY};
+        }
+        @media (min-width: 768px) {
+          .rg-cta-video {
+            aspect-ratio: 16 / 9;
+            max-height: 70svh;
+          }
+        }
+      `}</style>
+      <div className="rg-cta-video">
         <BackgroundVideo
           src="/landing/section4.mp4"
+          mobileSrc="/landing/mobile/m4-cta.mp4"
           opacity={1}
           overlayStrength={0.25}
-          fit="contain"
+          fit="cover"
         />
       </div>
 
       {/* CTA copy sits BELOW the video so nothing overlaps the footage. */}
       <div
         style={{
-          maxWidth: 820, padding: '64px 24px 90px',
+          maxWidth: 820, padding: '44px 24px 64px',
           textAlign: 'center', color: CREAM,
           marginLeft: 'auto', marginRight: 'auto',
         }}
@@ -501,40 +550,40 @@ function ClosingCTA() {
         <h2
           style={{
             fontFamily: '"Playfair Display", Georgia, serif',
-            fontSize: 'clamp(30px,5vw,54px)',
-            fontWeight: 800, lineHeight: 1.1, margin: 0,
+            fontSize: 'clamp(26px,5vw,52px)',
+            fontWeight: 800, lineHeight: 1.12, margin: 0,
             letterSpacing: '-0.02em',
           }}
         >
-          Begin your devotion journey<br/>
+          Begin your devotion journey{' '}
           <span style={{ color: GOLD_L }}>tonight.</span>
         </h2>
         <p
           style={{
-            marginTop: 22, fontSize: 'clamp(15px,2vw,18px)',
-            color: 'rgba(255,250,236,0.88)', maxWidth: 600,
+            marginTop: 16, fontSize: 'clamp(14px,2vw,17px)',
+            color: 'rgba(255,250,236,0.78)', maxWidth: 520,
             marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.55,
           }}
         >
-          Join thousands of devotees who already trust ReligioGram for their
-          sacred rituals, daily guidance, and spiritual community.
+          Thousands of devotees already trust ReligioGram for their sacred
+          rituals, daily guidance, and spiritual community.
         </p>
         <Link
           href="/auth"
           style={{
-            display: 'inline-block', marginTop: 34,
-            padding: '16px 42px',
+            display: 'inline-block', marginTop: 28,
+            padding: '14px 32px',
             background: `linear-gradient(135deg,${GOLD_L},${GOLD})`,
             color: NAVY,
-            borderRadius: 14, textDecoration: 'none',
-            fontWeight: 800, fontSize: 17,
-            boxShadow: '0 8px 28px rgba(200,146,10,0.45)',
+            borderRadius: 12, textDecoration: 'none',
+            fontWeight: 800, fontSize: 15.5,
+            boxShadow: '0 8px 28px rgba(200,146,10,0.4)',
           }}
         >
           Create your free account →
         </Link>
-        <p style={{ marginTop: 16, fontSize: 12.5, color: 'rgba(255,250,236,0.6)' }}>
-          Free forever · No credit card · Works on phone, tablet, desktop
+        <p style={{ marginTop: 14, fontSize: 12, color: 'rgba(255,250,236,0.55)' }}>
+          Free forever · No credit card
         </p>
       </div>
     </section>
@@ -597,12 +646,6 @@ function Footer() {
           { label: 'Privacy', href: '/privacy' },
           { label: 'Terms',   href: '/terms' },
         ]} />
-
-        <FooterCol title="Legal" links={[
-          { label: 'Privacy policy',   href: '/privacy' },
-          { label: 'Terms of service', href: '/terms' },
-          { label: 'Delete account',   href: '/delete-account' },
-        ]} />
       </div>
 
       <div
@@ -654,12 +697,17 @@ function FooterCol({
 
 function BackgroundVideo({
   src,
+  mobileSrc,
   opacity = 1,
   overlayStrength = 0.4,
   fit = 'cover',
   objectPosition = 'center center',
 }: {
   src: string;
+  /** Optional mobile-specific source. When the viewport is <768px wide we
+   *  prefer this so we can ship vertical phone-shot footage on mobile and
+   *  cinematic 16:9 footage on desktop without compromise. */
+  mobileSrc?: string;
   opacity?: number;
   overlayStrength?: number;
   /** "cover" fills the section, cropping if needed (best for hero with
@@ -671,12 +719,20 @@ function BackgroundVideo({
   objectPosition?: string;
 }) {
   const ref = useRef<HTMLVideoElement | null>(null);
+  // Pick mobile vs desktop source ONCE on mount. Re-checking on resize would
+  // cause the video to restart mid-scroll which is jarring.
+  const [resolvedSrc, setResolvedSrc] = useState(src);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isMobile = window.matchMedia('(max-width: 767px)').matches;
+    setResolvedSrc(isMobile && mobileSrc ? mobileSrc : src);
+  }, [src, mobileSrc]);
   useEffect(() => {
     // Some Android browsers ignore the autoplay attribute on first load until
     // a user interaction. Calling play() after mount maximises the chance the
     // background video starts immediately.
     ref.current?.play().catch(() => {});
-  }, []);
+  }, [resolvedSrc]);
   // Lighter top, darker bottom so text remains readable but the video shows
   // through clearly. overlayStrength controls the bottom darkness (0 = no
   // overlay, 1 = solid).
@@ -686,7 +742,11 @@ function BackgroundVideo({
     <>
       <video
         ref={ref}
-        src={src}
+        // `key` forces React to recreate the <video> when the source flips
+        // mobile↔desktop, so the new file is actually loaded instead of the
+        // browser silently keeping the first one.
+        key={resolvedSrc}
+        src={resolvedSrc}
         autoPlay loop muted playsInline preload="metadata"
         style={{
           position: 'absolute', inset: 0,
