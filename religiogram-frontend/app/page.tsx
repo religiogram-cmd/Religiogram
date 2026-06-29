@@ -155,49 +155,9 @@ function Hero({ authed }: { authed: boolean }) {
         overlayStrength={0.35}
       />
 
-      <div
-        style={{
-          position: 'relative', zIndex: 2,
-          maxWidth: 980, padding: '120px 24px 100px',
-          textAlign: 'center', color: CREAM,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex', gap: 14,
-            justifyContent: 'center', flexWrap: 'wrap',
-          }}
-        >
-          <Link
-            href={authed ? '/home' : '/auth'}
-            style={{
-              padding: '16px 36px',
-              background: `linear-gradient(135deg,${GOLD_L},${GOLD})`,
-              color: NAVY,
-              borderRadius: 14, textDecoration: 'none',
-              fontWeight: 800, fontSize: 16,
-              boxShadow: '0 8px 28px rgba(200,146,10,0.45)',
-            }}
-          >
-            {authed ? 'Open App →' : 'Get Started — Free'}
-          </Link>
-          <a
-            href="#features"
-            style={{
-              padding: '16px 30px',
-              background: `linear-gradient(135deg,${NAVY_2},${NAVY})`,
-              color: CREAM,
-              borderRadius: 14, textDecoration: 'none',
-              fontWeight: 700, fontSize: 16,
-              border: `1px solid ${GOLD}40`,
-              boxShadow: '0 6px 20px rgba(10,22,40,0.4)',
-            }}
-          >
-            Watch demo
-          </a>
-        </div>
-
-      </div>
+      {/* Buttons removed from hero — primary CTA lives in the nav bar
+          ("Sign In" / "Open App") and at the bottom of the page in the
+          ClosingCTA. Letting the hero video breathe without overlay copy. */}
     </section>
   );
 }
