@@ -511,10 +511,10 @@ function ClosingCTA() {
       {/* Video stage — portrait (9:16) on mobile so the WhatsApp clip fills
           the screen edge-to-edge, 16:9 on desktop so the cinematic footage
           shows fully. `cover` keeps the frame full-bleed on both. */}
-      {/* Mobile: 9:16 portrait, no max-height — the whole WhatsApp recording
-          shows without clipping. Desktop: 16:9 with a sensible cap so it
-          doesn't dominate a tall monitor. `cover` on both so there are no
-          letterbox bars; the videos are framed to fit their target ratios. */}
+      {/* Mobile: 9:16 full width — portrait WhatsApp recording shows in full.
+          Desktop: 16:9 capped by MAX-WIDTH (not max-height). This keeps the
+          container exactly 16:9 so the video fits perfectly without any
+          letterbox or crop, regardless of monitor height. */}
       <style>{`
         .rg-cta-video {
           position: relative;
@@ -526,7 +526,8 @@ function ClosingCTA() {
         @media (min-width: 768px) {
           .rg-cta-video {
             aspect-ratio: 16 / 9;
-            max-height: 70svh;
+            max-width: 1200px;
+            margin: 0 auto;
           }
         }
       `}</style>
