@@ -286,14 +286,11 @@ function FullBgSection({
    *  opposite side via object-position so footage and text don't fight. */
   align?: 'left' | 'right';
 }) {
-  // Directional gradient (DESKTOP only): dark on the copy side (so text is
-  // legible), transparent on the opposite side (so the video reads cleanly).
-  const grad =
-    align === 'left'
-      ? 'linear-gradient(90deg, rgba(10,22,40,0.82) 0%, rgba(10,22,40,0.60) 40%, rgba(10,22,40,0.10) 75%, rgba(10,22,40,0.00) 100%)'
-      : 'linear-gradient(270deg, rgba(10,22,40,0.82) 0%, rgba(10,22,40,0.60) 40%, rgba(10,22,40,0.10) 75%, rgba(10,22,40,0.00) 100%)';
-  // Push video footage away from the text side so it remains visible.
-  const videoPos = align === 'left' ? '85% center' : '15% center';
+  // Stacked layout uses the video at its natural framing — no need for a
+  // directional gradient or off-centre object-position any more.
+  const videoPos = 'center center';
+  // `align` retained in props for backward compatibility but unused now.
+  void align;
   return (
     <section className="rg-fbg">
       {/*
@@ -323,40 +320,21 @@ function FullBgSection({
         }
         .rg-fbg-text-inner { max-width: 560px; margin: 0 auto; }
 
-        /* ──── DESKTOP (≥768px) — cinematic overlay ──── */
+        /* ──── DESKTOP (≥768px) — STACKED, same pattern as mobile ────
+           Video on top at 16:9 with a sensible max height + max width so it
+           doesn't dominate huge monitors. Text below in solid navy block.
+           No overlap → no clash with text baked into the video. */
         @media (min-width: 768px) {
-          .rg-fbg {
-            position: relative;
-            min-height: 88svh;
-            display: flex;
-            align-items: center;
-          }
           .rg-fbg-video-wrap {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            aspect-ratio: auto;
-            max-height: none;
-          }
-          .rg-fbg-grad {
-            display: block;
-            position: absolute; inset: 0;
-            background: ${grad};
-            pointer-events: none;
-            z-index: 1;
+            aspect-ratio: 16 / 9;
+            max-width: 1200px;
+            max-height: 70svh;
+            margin: 0 auto;
           }
           .rg-fbg-text {
-            position: relative; z-index: 2;
-            max-width: 1280px;
-            margin: 0 auto;
-            padding: 100px 48px;
-            background: transparent;
-            width: 100%;
-            display: flex;
-            justify-content: ${align === 'left' ? 'flex-start' : 'flex-end'};
+            padding: 64px 48px 80px;
           }
-          .rg-fbg-text-inner { max-width: 560px; margin: 0; }
+          .rg-fbg-text-inner { max-width: 720px; margin: 0 auto; }
         }
       `}</style>
 
