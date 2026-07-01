@@ -97,9 +97,16 @@ function EyeIcon({ open }: { open: boolean }) {
 /* ─── Main AuthScreen ───────────────────────────────────────────────────── */
 interface AuthScreenProps {
   onSuccess?: () => void;
+  /**
+   * When true, AuthScreen renders inline (position: relative) and omits its
+   * built-in navy hero — useful for embedding inside a parent layout that
+   * already provides hero visuals (e.g. desktop split-screen /auth page).
+   * Default false = full-screen fixed-position mobile app shell.
+   */
+  embedded?: boolean;
 }
 
-export default function AuthScreen({ onSuccess }: AuthScreenProps = {}) {
+export default function AuthScreen({ onSuccess, embedded = false }: AuthScreenProps = {}) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('email');
   const [phone, setPhone] = useState('');
@@ -145,15 +152,22 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps = {}) {
 
   return (
     <div style={{
-      position: 'fixed', inset: 0,
+      // Fixed on mobile so it fills the phone viewport like a native app;
+      // relative when embedded (desktop split-screen) so it flows inside
+      // its parent card without escaping.
+      position: embedded ? 'relative' : 'fixed',
+      inset: embedded ? undefined : 0,
+      width: '100%',
+      minHeight: embedded ? '100%' : undefined,
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
       fontFamily: '"Plus Jakarta Sans", sans-serif',
     }}>
-      {/* ── Hero background ── */}
+      {/* ── Hero background — hidden when embedded (parent provides visuals) ── */}
       <div style={{
+        display: embedded ? 'none' : 'flex',
         flex: '0 0 38%',
         background: `linear-gradient(160deg, ${NAVY} 0%, ${NAVY_MID} 40%, #2C5282 70%, #1E4080 100%)`,
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         gap: 14, position: 'relative', overflow: 'hidden',
       }}>
         {/* Decorative circles */}
@@ -181,9 +195,12 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps = {}) {
       <div style={{
         flex: 1, overflowY: 'auto',
         background: '#F6F7FA',
-        borderRadius: '24px 24px 0 0',
-        marginTop: -12,
-        boxShadow: '0 -8px 40px rgba(15,36,82,0.18)',
+        // Rounded top-only + upward shadow only make sense when the hero
+        // sits above (mobile). When embedded, drop them so the form fills
+        // its parent card cleanly.
+        borderRadius: embedded ? 0 : '24px 24px 0 0',
+        marginTop: embedded ? 0 : -12,
+        boxShadow: embedded ? 'none' : '0 -8px 40px rgba(15,36,82,0.18)',
       }}>
         <div style={{ padding: '28px 24px 36px', maxWidth: 420, margin: '0 auto' }}>
 
@@ -425,7 +442,7 @@ export default function AuthScreen({ onSuccess }: AuthScreenProps = {}) {
             Continue with Google
           </a>
 
-          {process.env.NODE_ENV !== 'production' && mounted && <DevPanel onSuccess={onSuccess} />}
+          {/* DevPanel removed — not shown in any environment. */}
 
         </div>
       </div>
