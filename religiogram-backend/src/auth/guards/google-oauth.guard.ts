@@ -44,7 +44,13 @@ export class GoogleOAuthGuard extends AuthGuard('google') {
         httpOnly: true,
         secure: isProd,
         sameSite: 'lax', // 'lax' so cross-site OAuth redirect carries the cookie back
-        path: '/v1/auth/google',
+        // Path was '/v1/auth/google' pre-globalPrefix; after adding
+        // `app.setGlobalPrefix('api')` all OAuth routes live under
+        // '/api/v1/auth/google/*'. Cookies only get sent when the request
+        // path starts with the cookie path, so the browser was dropping
+        // this cookie on the callback → state validation failed. Fix by
+        // matching the new prefix.
+        path: '/api/v1/auth/google',
         maxAge: 5 * 60 * 1000,
       });
       const secret = this.config.get<string>('otp.secret', '');
