@@ -46,15 +46,8 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
       </svg>
     ),
   },
-  {
-    id: 'ai', label: 'AI Chat',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
-        <path d="M8 10h.01M12 10h.01M16 10h.01" strokeWidth="2.5"/>
-      </svg>
-    ),
-  },
+  // "AI Chat" tab removed per user request. Dedicated /rg-ai route hosts
+  // the assistant now.
 ];
 
 export default function AstrologyScreen() {
@@ -105,26 +98,7 @@ export default function AstrologyScreen() {
               }}>✦</span>
             </h1>
           </div>
-          <button
-            onClick={() => {
-              const btn = document.getElementById('astro-ai-trigger') as HTMLButtonElement | null;
-              if (btn) btn.click();
-            }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              height: 36, padding: '0 14px', borderRadius: 999,
-              background: `linear-gradient(135deg, #D4A335 0%, ${GOLD} 60%, #A97520 100%)`,
-              color: '#fff', border: 'none', cursor: 'pointer',
-              fontSize: 12.5, fontWeight: 700,
-              boxShadow: '0 3px 12px rgba(200,147,42,0.40)',
-              fontFamily: '"Plus Jakarta Sans", sans-serif',
-            }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
-            </svg>
-            AI Chat
-          </button>
+          {/* Header AI Chat button removed per user request. */}
         </div>
 
         {/* Tab bar */}

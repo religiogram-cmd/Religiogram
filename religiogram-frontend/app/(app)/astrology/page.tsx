@@ -1,15 +1,14 @@
 'use client';
 
-import dynamic from 'next/dynamic';
 import AstrologyScreen from '@/components/astrology/AstrologyScreen';
 
-const AstroAIChat = dynamic(() => import('@/components/astrology/AstroAIChat'), { ssr: false });
-
+/**
+ * /astrology — hub screen.
+ *
+ * The floating AstroAIChat bubble was removed per user request. The AI Chat
+ * tab (if present) is also stripped inside AstrologyScreen; the primary AI
+ * assistant remains available via the dedicated /rg-ai route.
+ */
 export default function AstrologyPage() {
-  return (
-    <>
-      <AstrologyScreen />
-      <AstroAIChat />
-    </>
-  );
+  return <AstrologyScreen />;
 }
