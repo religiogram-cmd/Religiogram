@@ -105,7 +105,6 @@ export default function ProviderOnboardingEntry() {
               'Offer online video consultations too',
             ]}
             badge="OFFLINE & ONLINE"
-            icon="🕉️"
             gradientFrom="#DC143C"
             gradientTo="#8B0000"
             onClick={() => startWizard('priest')}
@@ -123,7 +122,6 @@ export default function ProviderOnboardingEntry() {
               'Astrology-first tools, same KYC everyone trusts',
             ]}
             badge="CHAT · VOICE · VIDEO"
-            icon="✨"
             gradientFrom="#6A5ACD"
             gradientTo="#483D8B"
             onClick={() => startWizard('astrologer')}
@@ -141,7 +139,6 @@ export default function ProviderOnboardingEntry() {
               'Everything both flows offer, no duplicate onboarding',
             ]}
             badge="RECOMMENDED IF YOU DO BOTH"
-            icon="🕉️✨"
             gradientFrom="#B8860B"
             gradientTo="#0F2452"
             ctaLabel="Continue as Both"
@@ -185,14 +182,13 @@ export default function ProviderOnboardingEntry() {
 /* ─────────────────────────  Sub-components  ───────────────────────── */
 
 function RoleCard({
-  active, title, subtitle, bullets, badge, icon, gradientFrom, gradientTo, ctaLabel, onClick,
+  active, title, subtitle, bullets, badge, gradientFrom, gradientTo, ctaLabel, onClick,
 }: {
   active: boolean;
   title: string;
   subtitle: string;
   bullets: string[];
   badge: string;
-  icon: string;
   gradientFrom: string;
   gradientTo: string;
   ctaLabel?: string;
@@ -219,8 +215,6 @@ function RoleCard({
         overflow: 'hidden',
       }}
     >
-      <div style={{ position: 'absolute', top: 10, right: 12, fontSize: 48, opacity: 0.28 }}>{icon}</div>
-
       <div style={{
         display: 'inline-block',
         padding: '4px 10px',
