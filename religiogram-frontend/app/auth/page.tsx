@@ -44,6 +44,24 @@ export default function AuthPage() {
     // eslint-disable-next-line no-console
     console.info('[AuthPage] mount — build:', PAGE_BUILD_TAG);
 
+    // ── Google OAuth callback: tokens arrive as a URL fragment ──────────
+    // The backend redirects the browser to /auth#accessToken=…&refreshToken=…
+    // after Google sign-in. The fragment stays client-side (never hits the
+    // server), so we parse it here, persist the tokens, and clean the URL.
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const access  = params.get('accessToken');
+      const refresh = params.get('refreshToken');
+      if (access && refresh) {
+        tokenStore.set(access, refresh);
+        // Scrub the tokens from the URL so they don't sit in browser history.
+        window.history.replaceState({}, '', '/auth');
+        const permsDone = localStorage.getItem('rg_permissions_done');
+        router.replace(permsDone ? '/home' : '/permissions');
+        return;
+      }
+    }
+
     if (tokenStore.access) {
       const permsDone =
         typeof window !== 'undefined' &&

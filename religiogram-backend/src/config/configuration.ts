@@ -175,6 +175,13 @@ export default () => ({
     callbackUrl:
       process.env.GOOGLE_CALLBACK_URL ??
       'http://localhost:3000/auth/google/callback',
+    // After successful sign-in the backend redirects the browser to
+    // `${appRedirectScheme}#accessToken=…&refreshToken=…`. Set this env var
+    // to a web URL (e.g. https://www.religiogram.com/auth) for the browser
+    // flow. Leave unset / set to the app scheme (religiogram://auth) for
+    // Play Store PWA / native flows.
+    appRedirectScheme:
+      process.env.GOOGLE_APP_REDIRECT_SCHEME ?? 'religiogram://auth',
     mapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
     placesApiKey: process.env.GOOGLE_PLACES_API_KEY ?? '',
   },
