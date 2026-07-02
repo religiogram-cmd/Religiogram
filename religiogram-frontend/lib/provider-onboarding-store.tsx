@@ -40,6 +40,13 @@ export const DEBOUNCE_MS = 3000;
 
 export interface ProviderOnboardingData {
   [key: string]: unknown;
+  // Step 0 — category chooser (asked at the very start of the wizard).
+  // Drives which downstream steps show priest vs astrologer content.
+  providerCategory?: 'priest' | 'astrologer';
+  // ── Astrologer-only fields ──
+  specialisations?: string[];              // Vedic, KP, Tarot, etc.
+  consultationChannels?: ('chat' | 'voice' | 'video')[];
+  perMinutePaise?: number;
   // Step 1
   fullName?: string;
   dob?: string;
