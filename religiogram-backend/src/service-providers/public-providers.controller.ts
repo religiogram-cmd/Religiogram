@@ -39,6 +39,16 @@ export class PublicProvidersController {
     @Query('search') search?: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit = '20',
+    // ── Astrology / category filters (migration 068) ──
+    // `category` narrows to 'priest' or 'astrologer'. Omit to include both.
+    @Query('category') category?: string,
+    // `specialisation` narrows astrologers to a specific practice
+    // (e.g. "Vedic Astrology", "Tarot Reading"). Uses PG array-contains for
+    // GIN-index acceleration.
+    @Query('specialisation') specialisation?: string,
+    // `channel` narrows to astrologers offering a specific real-time
+    // channel: 'chat' | 'voice' | 'video'.
+    @Query('channel') channel?: string,
   ) {
     const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10)));
 
@@ -59,6 +69,24 @@ export class PublicProvidersController {
         '(LOWER(p.full_name) LIKE :q OR LOWER(p.bio) LIKE :q)',
         { q: `%${search.toLowerCase()}%` },
       );
+    }
+    // Category filter — hits btree idx_providers_category.
+    if (category) {
+      const c = category.toLowerCase();
+      if (c === 'priest' || c === 'astrologer') {
+        qb.andWhere('p.provider_category = :category', { category: c });
+      }
+    }
+    // Specialisation filter — hits GIN idx_providers_specialisations_gin.
+    if (specialisation) {
+      qb.andWhere(':spec = ANY(p.specialisations)', { spec: specialisation });
+    }
+    // Channel filter — hits GIN idx_providers_consultation_channels_gin.
+    if (channel) {
+      const ch = channel.toLowerCase();
+      if (ch === 'chat' || ch === 'voice' || ch === 'video') {
+        qb.andWhere(':ch = ANY(p.consultation_channels)', { ch });
+      }
     }
 
     if (cursor) {
@@ -103,16 +131,24 @@ export class PublicProvidersController {
 
   private serialize(p: ProviderEntity) {
     return {
-      id:              p.id,
-      fullName:        p.fullName,
-      city:            p.city,
-      religion:        p.religion,
-      experienceYears: p.experienceYears,
-      languages:       p.languages ?? [],
-      bio:             p.bio,
-      ratingAvg:       p.ratingAvg ? parseFloat(p.ratingAvg as string) : null,
-      ratingCount:     p.ratingCount,
-      services:        (p.services ?? []).map(s => ({
+      id:                   p.id,
+      fullName:             p.fullName,
+      city:                 p.city,
+      religion:             p.religion,
+      experienceYears:      p.experienceYears,
+      languages:            p.languages ?? [],
+      bio:                  p.bio,
+      ratingAvg:            p.ratingAvg ? parseFloat(p.ratingAvg as string) : null,
+      ratingCount:          p.ratingCount,
+      // Astrology-related fields (migration 068). Priest providers return
+      // 'priest' + empty arrays here, which the marketplace UI treats as
+      // hidden sections.
+      providerCategory:     p.providerCategory,
+      specialisations:      p.specialisations ?? [],
+      consultationChannels: p.consultationChannels ?? [],
+      perMinutePaise:       p.perMinutePaise,
+      serviceMode:          p.serviceMode,
+      services:             (p.services ?? []).map(s => ({
         id:              s.id,
         name:            s.service?.name ?? s.customName ?? 'Custom Service',
         basePricePaise:  s.basePricePaise,

@@ -28,6 +28,30 @@ export enum ProviderStatus {
 }
 
 /**
+ * A provider is either a religious officiant ("priest" — pandit, imam,
+ * granthi, priest, etc.) or an astrologer. This discriminator drives the
+ * onboarding wizard step content, the pricing tier ranges, and the
+ * marketplace listing (Priests tab vs Astrology tab).
+ *
+ * Legacy rows created before this column existed default to `priest`.
+ */
+export enum ProviderCategory {
+  Priest = 'priest',
+  Astrologer = 'astrologer',
+}
+
+/**
+ * Real-time consultation channels an astrologer offers. Priest providers
+ * ignore this field. Values persisted in a text[] column so we can filter
+ * "video available now" on the marketplace with a GIN index.
+ */
+export enum ConsultationChannel {
+  Chat = 'chat',
+  Voice = 'voice',
+  Video = 'video',
+}
+
+/**
  * Provider — the hub row for a service-provider account.
  *
  * Lifecycle:
@@ -83,6 +107,35 @@ export class ProviderEntity {
     default: ProviderStatus.Draft,
   })
   status!: ProviderStatus;
+
+  // ── Category discriminator (migration 048) ───────────────────────────────
+  // Drives which wizard steps + marketplace tab a provider belongs to.
+  @Column({
+    name: 'provider_category',
+    type: 'varchar',
+    enum: ProviderCategory,
+    default: ProviderCategory.Priest,
+  })
+  @Index('idx_providers_category')
+  providerCategory!: ProviderCategory;
+
+  /**
+   * Free-form list of astrology specialisations — e.g. "Vedic Astrology",
+   * "KP Astrology", "Nadi", "Tarot Reading", "Numerology", "Palmistry",
+   * "Vastu Shastra". Empty for priest providers.
+   * Stored as text[] so we can `WHERE 'Vedic Astrology' = ANY(specialisations)`
+   * with a GIN index for fast filter queries on the marketplace.
+   */
+  @Column({ name: 'specialisations', type: 'text', array: true, default: () => "'{}'" })
+  specialisations!: string[];
+
+  /**
+   * Which real-time channels this astrologer offers: chat, voice, and/or
+   * video. Priest providers leave this empty and use `serviceMode` +
+   * physical bookings instead.
+   */
+  @Column({ name: 'consultation_channels', type: 'text', array: true, default: () => "'{}'" })
+  consultationChannels!: ConsultationChannel[];
 
   // ── Priest-flow additions (migration 040) ────────────────────────────────
   @Column({ name: 'service_mode', type: 'varchar', default: 'both' })
