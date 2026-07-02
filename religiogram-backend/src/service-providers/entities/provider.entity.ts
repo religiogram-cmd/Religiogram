@@ -38,6 +38,14 @@ export enum ProviderStatus {
 export enum ProviderCategory {
   Priest = 'priest',
   Astrologer = 'astrologer',
+  /**
+   * `both` means the provider serves as a priest AND an astrologer under a
+   * single profile. Marketplace listings surface the row on BOTH the Priests
+   * tab and the Astrology tab. Downstream onboarding steps show the union of
+   * priest + astrologer fields (services + specialisations, in-person +
+   * per-minute pricing, both channel sets).
+   */
+  Both = 'both',
 }
 
 /**

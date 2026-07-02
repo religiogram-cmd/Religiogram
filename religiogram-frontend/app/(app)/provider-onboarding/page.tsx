@@ -18,7 +18,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useProviderOnboarding } from '@/lib/provider-onboarding-store';
 import { providerOnboardingApi } from '@/lib/provider-onboarding-api';
 
-type Category = 'priest' | 'astrologer';
+type Category = 'priest' | 'astrologer' | 'both';
 
 export default function ProviderOnboardingEntry() {
   const router = useRouter();
@@ -30,7 +30,7 @@ export default function ProviderOnboardingEntry() {
   // the old chooser), adopt it silently and clean the URL.
   useEffect(() => {
     const q = searchParams?.get('category');
-    if ((q === 'priest' || q === 'astrologer') && data.providerCategory !== q) {
+    if ((q === 'priest' || q === 'astrologer' || q === 'both') && data.providerCategory !== q) {
       update({ providerCategory: q as Category });
     }
   }, [searchParams, data.providerCategory, update]);
@@ -128,6 +128,25 @@ export default function ProviderOnboardingEntry() {
             gradientTo="#483D8B"
             onClick={() => startWizard('astrologer')}
           />
+
+          <div className="h-3" />
+
+          <RoleCard
+            active={category === 'both'}
+            title="Both — Priest & Astrologer"
+            subtitle="One profile · Both revenue streams · Same KYC"
+            bullets={[
+              'Ceremonies + astrology consultations — one dashboard',
+              'Accept in-person bookings AND per-minute chat/voice/video',
+              'Everything both flows offer, no duplicate onboarding',
+            ]}
+            badge="RECOMMENDED IF YOU DO BOTH"
+            icon="🕉️✨"
+            gradientFrom="#B8860B"
+            gradientTo="#0F2452"
+            ctaLabel="Continue as Both"
+            onClick={() => startWizard('both')}
+          />
         </div>
 
         {/* Resume banner (only if user has real progress on either flow) */}
@@ -138,7 +157,12 @@ export default function ProviderOnboardingEntry() {
             </p>
             <p className="mt-1 text-sm text-[#0F2452]">
               You&apos;re on Step {step} of 9 —{' '}
-              {category === 'astrologer' ? 'Astrologer' : 'Priest'} application.
+              {category === 'astrologer'
+                ? 'Astrologer'
+                : category === 'both'
+                  ? 'Priest & Astrologer'
+                  : 'Priest'}{' '}
+              application.
             </p>
             <button
               onClick={() => router.push(`/provider-onboarding/step-${step}`)}
@@ -161,7 +185,7 @@ export default function ProviderOnboardingEntry() {
 /* ─────────────────────────  Sub-components  ───────────────────────── */
 
 function RoleCard({
-  active, title, subtitle, bullets, badge, icon, gradientFrom, gradientTo, onClick,
+  active, title, subtitle, bullets, badge, icon, gradientFrom, gradientTo, ctaLabel, onClick,
 }: {
   active: boolean;
   title: string;
@@ -171,6 +195,7 @@ function RoleCard({
   icon: string;
   gradientFrom: string;
   gradientTo: string;
+  ctaLabel?: string;
   onClick: () => void;
 }) {
   return (
@@ -236,7 +261,7 @@ function RoleCard({
         borderRadius: 999,
         fontSize: 13, fontWeight: 700,
       }}>
-        {active ? '✓ Selected — Continue' : `Continue as ${title.split(' ')[0]}`}
+        {active ? '✓ Selected — Continue' : (ctaLabel ?? `Continue as ${title.split(' ')[0]}`)}
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <line x1="5" y1="12" x2="19" y2="12" />
           <polyline points="12 5 19 12 12 19" />

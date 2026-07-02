@@ -71,10 +71,16 @@ export class PublicProvidersController {
       );
     }
     // Category filter — hits btree idx_providers_category.
+    // Providers with category='both' appear on BOTH tabs, so
+    //   ?category=priest      → matches ('priest', 'both')
+    //   ?category=astrologer  → matches ('astrologer', 'both')
+    //   ?category=both        → matches ('both') only (used by admin views)
     if (category) {
       const c = category.toLowerCase();
       if (c === 'priest' || c === 'astrologer') {
-        qb.andWhere('p.provider_category = :category', { category: c });
+        qb.andWhere('p.provider_category IN (:...cats)', { cats: [c, 'both'] });
+      } else if (c === 'both') {
+        qb.andWhere('p.provider_category = :category', { category: 'both' });
       }
     }
     // Specialisation filter — hits GIN idx_providers_specialisations_gin.

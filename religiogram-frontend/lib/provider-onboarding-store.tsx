@@ -42,7 +42,10 @@ export interface ProviderOnboardingData {
   [key: string]: unknown;
   // Step 0 — category chooser (asked at the very start of the wizard).
   // Drives which downstream steps show priest vs astrologer content.
-  providerCategory?: 'priest' | 'astrologer';
+  // 'both' = the provider serves as both a priest AND an astrologer; downstream
+  // steps show the union of both flows (services + specialisations, in-person
+  // + per-minute pricing, etc).
+  providerCategory?: 'priest' | 'astrologer' | 'both';
   // ── Astrologer-only fields ──
   specialisations?: string[];              // Vedic, KP, Tarot, etc.
   consultationChannels?: ('chat' | 'voice' | 'video')[];
