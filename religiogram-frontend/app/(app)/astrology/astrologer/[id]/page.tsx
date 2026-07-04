@@ -15,8 +15,8 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useMemo } from 'react';
-import { getAstrologer, formatRupees, type ConsultationChannel } from '@/lib/astrology-api';
+import { useEffect, useState } from 'react';
+import { getAstrologer, formatRupees, type Astrologer, type ConsultationChannel } from '@/lib/astrology-api';
 
 const NAVY   = '#0F2452';
 const NAVY_2 = '#1B2A5C';
@@ -27,7 +27,34 @@ const TEXT2  = '#4A3010';
 
 export default function AstrologerDetail() {
   const params = useParams<{ id: string }>();
-  const a = useMemo(() => (params?.id ? getAstrologer(params.id) : null), [params]);
+  const [a, setA] = useState<Astrologer | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!params?.id) return;
+    let cancelled = false;
+    setLoading(true);
+    getAstrologer(params.id)
+      .then((row) => { if (!cancelled) setA(row); })
+      .catch(() => { if (!cancelled) setA(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [params?.id]);
+
+  if (loading) {
+    return (
+      <div style={{ padding: 60, textAlign: 'center' }}>
+        <span aria-hidden style={{
+          display: 'inline-block', width: 28, height: 28,
+          borderRadius: '50%',
+          border: '3px solid rgba(15,36,82,0.15)',
+          borderTopColor: GOLD,
+          animation: 'spin 0.8s linear infinite',
+        }} />
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+    );
+  }
 
   if (!a) {
     return (

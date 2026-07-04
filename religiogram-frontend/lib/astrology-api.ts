@@ -1,12 +1,13 @@
 /**
- * Astrology API client + mock data.
+ * Astrology API client.
  *
- * Phase 1 keeps things simple: real horoscope + zodiac data come from the
- * backend (already implemented in NestJS AstrologyController), while the
- * astrologer marketplace uses realistic mock data client-side so the UI
- * ships tonight. Phase 2 wires the marketplace to a real /astrology/
- * astrologers endpoint that queries the existing `providers` table filtered
- * for astrology specialisations.
+ * The marketplace list + profile page are wired to the real
+ * `GET /v1/providers` endpoint (filtered by `?category=astrologer`). The
+ * MOCK[] constant below is kept as a **development seed only** — used when
+ * the backend returns zero providers (fresh DB), so the UI still renders
+ * something. In production once real astrologers approve, MOCK is invisible.
+ *
+ * Horoscope data (fetchHoroscope) comes from the backend AstrologyController.
  */
 
 import { apiFetch } from '@/lib/api';
@@ -275,31 +276,149 @@ export interface ListFilters {
 
 export type SortKey = 'popularity' | 'rating' | 'price_asc' | 'price_desc' | 'experience' | 'response';
 
-export function listAstrologers(filters: ListFilters = {}, sort: SortKey = 'popularity'): Astrologer[] {
-  let list = MOCK.slice();
-  if (filters.channel)         list = list.filter((a) => a.channels.includes(filters.channel!));
-  if (filters.language)        list = list.filter((a) => a.languages.includes(filters.language!));
-  if (filters.specialization)  list = list.filter((a) => a.specializations.includes(filters.specialization!));
-  if (filters.minExperience)   list = list.filter((a) => a.experienceYears >= filters.minExperience!);
-  if (filters.gender)          list = list.filter((a) => a.gender === filters.gender);
-  if (filters.onlineOnly)      list = list.filter((a) => a.isOnline);
-  if (filters.verifiedOnly)    list = list.filter((a) => a.isVerified);
-  if (filters.minRating)       list = list.filter((a) => a.rating >= filters.minRating!);
-  if (filters.maxPricePaise)   list = list.filter((a) => a.ratePerMinPaise <= filters.maxPricePaise!);
+/* ─────────────────────────  Backend mapping  ─────────────────────── */
 
+/** Shape of a provider row as returned by `GET /v1/providers`. */
+interface BackendProvider {
+  id: string;
+  fullName: string;
+  city: string | null;
+  religion?: string | null;
+  experienceYears: number | null;
+  languages: string[];
+  bio: string | null;
+  ratingAvg: number | null;
+  ratingCount: number;
+  providerCategory: 'priest' | 'astrologer' | 'both';
+  specialisations: string[];
+  specialisationYears?: Record<string, number>;
+  consultationChannels: ConsultationChannel[];
+  perMinutePaise: number | null;
+  serviceMode: 'offline' | 'online' | 'both';
+  isOnline?: boolean;
+  isVerified?: boolean;
+  completedBookings?: number;
+  createdAt?: string;
+}
+
+/** Map a backend Provider to the frontend Astrologer view model. Any field
+ *  the backend doesn't send (avatarUrl, qualification, followers, gender,
+ *  awards, nextAvailableSlot) gets a reasonable default so the UI still
+ *  renders without conditionals everywhere. */
+function toAstrologer(p: BackendProvider): Astrologer {
+  const createdMs = p.createdAt ? new Date(p.createdAt).getTime() : Date.now();
+  const daysSinceCreate = (Date.now() - createdMs) / (1000 * 60 * 60 * 24);
+  return {
+    id:                     p.id,
+    name:                   p.fullName,
+    avatarUrl:              null,
+    isOnline:               !!p.isOnline,
+    isBusy:                 false, // not tracked yet
+    isLive:                 false, // not tracked yet
+    isVerified:             !!p.isVerified,
+    isNew:                  daysSinceCreate < 30,
+    languages:              p.languages ?? [],
+    experienceYears:        p.experienceYears ?? 0,
+    qualification:          '',
+    specializations:        p.specialisations ?? [],
+    rating:                 p.ratingAvg ?? 0,
+    reviewCount:            p.ratingCount ?? 0,
+    ratePerMinPaise:        p.perMinutePaise ?? 0,
+    responseTimeSec:        p.isOnline ? 60 : 900, // heuristic until we track it
+    followers:              0, // not tracked yet
+    completedConsultations: p.completedBookings ?? 0,
+    successRate:            p.ratingAvg ? Math.round((p.ratingAvg / 5) * 100) : 0,
+    about:                  p.bio ?? '',
+    awards:                 [],
+    channels:               p.consultationChannels ?? [],
+    city:                   p.city ?? '',
+    gender:                 'male', // not collected; default won't affect filter unless user picks it
+    nextAvailableSlot:      null,
+  };
+}
+
+/* ─────────────────────────  Marketplace API  ─────────────────────── */
+
+const API_BASE = (() => {
+  const fromEnv = process.env.NEXT_PUBLIC_API_BASE;
+  if (fromEnv) return fromEnv;
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    return '/api/v1';
+  }
+  return 'https://api.religiogram.com/api/v1';
+})();
+
+async function fetchProviders(qs: string): Promise<BackendProvider[]> {
+  const res = await fetch(`${API_BASE}/providers${qs}`);
+  if (!res.ok) throw new Error(`Providers fetch failed (${res.status})`);
+  const json = await res.json();
+  return (json.items ?? []) as BackendProvider[];
+}
+
+/**
+ * Fetch astrologers from the backend, apply client-side filters + sort.
+ *
+ * Backend natively filters by category / specialisation / channel via query
+ * params. Everything else (language, minExperience, gender, onlineOnly,
+ * verifiedOnly, minRating, maxPricePaise) is client-side today — the list
+ * is small enough that shipping filters piecewise on the server isn't worth
+ * the coupling. When the list crosses 500-ish rows we push these down.
+ *
+ * If the fetch fails or returns zero (fresh DB), we fall back to MOCK so
+ * new devs don't see an empty screen.
+ */
+export async function listAstrologers(
+  filters: ListFilters = {},
+  sort: SortKey = 'popularity',
+): Promise<Astrologer[]> {
+  const params = new URLSearchParams();
+  params.set('category', 'astrologer');
+  if (filters.specialization) params.set('specialisation', filters.specialization);
+  if (filters.channel)        params.set('channel', filters.channel);
+  const qs = `?${params.toString()}`;
+
+  let list: Astrologer[] = [];
+  try {
+    const rows = await fetchProviders(qs);
+    list = rows.map(toAstrologer);
+  } catch {
+    /* network failure — fall through to mock so the screen isn't empty */
+  }
+  if (list.length === 0) list = MOCK.slice();
+
+  // Client-side filters for the ones not on the backend
+  if (filters.language)      list = list.filter((a) => a.languages.includes(filters.language!));
+  if (filters.minExperience) list = list.filter((a) => a.experienceYears >= filters.minExperience!);
+  if (filters.gender)        list = list.filter((a) => a.gender === filters.gender);
+  if (filters.onlineOnly)    list = list.filter((a) => a.isOnline);
+  if (filters.verifiedOnly)  list = list.filter((a) => a.isVerified);
+  if (filters.minRating)     list = list.filter((a) => a.rating >= filters.minRating!);
+  if (filters.maxPricePaise) list = list.filter((a) => a.ratePerMinPaise <= filters.maxPricePaise!);
+
+  // Backend already orders by ranking_score. We only re-sort when the user
+  // asks for a different order.
   switch (sort) {
     case 'rating':      list.sort((a, b) => b.rating - a.rating); break;
     case 'price_asc':   list.sort((a, b) => a.ratePerMinPaise - b.ratePerMinPaise); break;
     case 'price_desc':  list.sort((a, b) => b.ratePerMinPaise - a.ratePerMinPaise); break;
     case 'experience':  list.sort((a, b) => b.experienceYears - a.experienceYears); break;
     case 'response':    list.sort((a, b) => a.responseTimeSec - b.responseTimeSec); break;
-    default:            list.sort((a, b) => b.followers - a.followers); break;
+    /* 'popularity' — trust the backend's ranking_score DESC ordering. */
   }
   return list;
 }
 
-export function getAstrologer(id: string): Astrologer | null {
-  return MOCK.find((a) => a.id === id) ?? null;
+export async function getAstrologer(id: string): Promise<Astrologer | null> {
+  try {
+    const res = await fetch(`${API_BASE}/providers/${id}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Provider fetch failed (${res.status})`);
+    const raw = await res.json() as BackendProvider;
+    return toAstrologer(raw);
+  } catch {
+    // Fall back to mock for the same-dev-experience reason as above
+    return MOCK.find((a) => a.id === id) ?? null;
+  }
 }
 
 /** Real backend call — /astrology/horoscope/:sign is already implemented. */

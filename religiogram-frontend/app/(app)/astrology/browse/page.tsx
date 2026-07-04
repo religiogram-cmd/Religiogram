@@ -12,7 +12,7 @@
  */
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   listAstrologers,
@@ -60,10 +60,30 @@ export default function BrowsePage() {
     }
   }, [initialCat, specialization]);
 
-  const results = listAstrologers(
-    { channel, onlineOnly, verifiedOnly, specialization },
-    sort,
-  );
+  /* Fetch on filter/sort change. Backend now serves the marketplace, so
+   * this is an async call — we render a spinner on the first load and
+   * an inline pill during subsequent refetches so filter clicks feel
+   * responsive. Every state change that affects the query fires a new
+   * fetch; the API layer falls back to mock on failure. */
+  const [results, setResults] = useState<Astrologer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refetching, setRefetching] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const isFirst = results.length === 0;
+    if (isFirst) setLoading(true); else setRefetching(true);
+    listAstrologers({ channel, onlineOnly, verifiedOnly, specialization }, sort)
+      .then((rows) => { if (!cancelled) setResults(rows); })
+      .catch(() => { /* client already fell back to mock */ })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+        setRefetching(false);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel, onlineOnly, verifiedOnly, specialization, sort]);
 
   return (
     <div style={{ background: CREAM, minHeight: '100svh', paddingBottom: 80 }}>
@@ -134,13 +154,38 @@ export default function BrowsePage() {
       </header>
 
       {/* ── Result count ── */}
-      <div style={{ padding: '14px 20px 6px', fontSize: 12.5, color: TEXT2 }}>
-        {results.length} astrologer{results.length !== 1 && 's'} available
+      <div style={{ padding: '14px 20px 6px', fontSize: 12.5, color: TEXT2, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span>{results.length} astrologer{results.length !== 1 && 's'} available</span>
+        {refetching && (
+          <span aria-hidden style={{
+            display: 'inline-block', width: 12, height: 12,
+            borderRadius: '50%',
+            border: '2px solid rgba(15,36,82,0.15)',
+            borderTopColor: GOLD,
+            animation: 'spin 0.8s linear infinite',
+          }} />
+        )}
       </div>
+
+      {/* Loading state (first fetch only) */}
+      {loading && results.length === 0 && (
+        <div style={{ padding: 40, textAlign: 'center' }}>
+          <span aria-hidden style={{
+            display: 'inline-block', width: 28, height: 28,
+            borderRadius: '50%',
+            border: '3px solid rgba(15,36,82,0.15)',
+            borderTopColor: GOLD,
+            animation: 'spin 0.8s linear infinite',
+          }} />
+        </div>
+      )}
+
+      {/* Spinner keyframes — inline so we don't need a global stylesheet. */}
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
       {/* ── List ── */}
       <div style={{ padding: '4px 16px 20px' }}>
-        {results.length === 0 ? (
+        {!loading && results.length === 0 ? (
           <div style={{
             padding: 40, textAlign: 'center', color: TEXT2, fontSize: 14,
           }}>
