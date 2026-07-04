@@ -48,6 +48,9 @@ export interface ProviderOnboardingData {
   providerCategory?: 'priest' | 'astrologer' | 'both';
   // ── Astrologer-only fields ──
   specialisations?: string[];              // Vedic, KP, Tarot, etc.
+  /** Per-spec years of experience map (Phase 2). Keys must exist in
+   *  `specialisations`; runtime enforces this on autosave and submit. */
+  specialisationYears?: Record<string, number>;
   consultationChannels?: ('chat' | 'voice' | 'video')[];
   perMinutePaise?: number;
   // Step 1

@@ -145,6 +145,20 @@ export class ProviderEntity {
   @Column({ name: 'consultation_channels', type: 'text', array: true, default: () => "'{}'" })
   consultationChannels!: ConsultationChannel[];
 
+  /**
+   * Per-specialisation years of experience (migration 069).
+   *
+   * A JSONB map from specialisation label → integer years. Example:
+   *   { "Vedic Astrology": 20, "Tarot Reading": 5 }
+   *
+   * Providers list a specialisation once in `specialisations` and their
+   * years-of-experience in this column keyed by the same string. A missing
+   * key means "not specified" — the marketplace UI just shows the name
+   * without a years badge.
+   */
+  @Column({ name: 'specialisation_years', type: 'jsonb', default: () => "'{}'::jsonb" })
+  specialisationYears!: Record<string, number>;
+
   // ── Priest-flow additions (migration 040) ────────────────────────────────
   @Column({ name: 'service_mode', type: 'varchar', default: 'both' })
   serviceMode!: 'offline' | 'online' | 'both';

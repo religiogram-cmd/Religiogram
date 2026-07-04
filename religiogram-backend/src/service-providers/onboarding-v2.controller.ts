@@ -21,6 +21,7 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   Length,
@@ -135,6 +136,19 @@ class PatchDraftDto {
   @IsArray()
   @IsEnum(ConsultationChannel, { each: true })
   consultationChannels?: ConsultationChannel[];
+
+  /**
+   * Per-specialisation years of experience (migration 069).
+   * Shape: { [specialisationLabel: string]: number }
+   *
+   * Class-validator's IsObject only checks it's a plain object; the runtime
+   * merge in the patch handler filters out non-numeric values and clamps
+   * years to a sane 0–80 range. Keys that don't appear in `specialisations`
+   * are still stored (they're cheap) — cleanup happens at submit time.
+   */
+  @IsOptional()
+  @IsObject()
+  specialisationYears?: Record<string, number>;
 }
 
 class PresignKycDto {
@@ -377,6 +391,19 @@ export class ProviderOnboardingV2Controller {
     if (dto.providerCategory !== undefined)     patch['providerCategory']     = dto.providerCategory;
     if (dto.specialisations !== undefined)      patch['specialisations']      = dto.specialisations;
     if (dto.consultationChannels !== undefined) patch['consultationChannels'] = dto.consultationChannels;
+    if (dto.specialisationYears !== undefined) {
+      /* Sanitise: only keep string→number entries with years in 0..80. This
+       * both prevents client-side bugs from poisoning the JSONB blob and
+       * matches the frontend band range. */
+      const clean: Record<string, number> = {};
+      for (const [k, v] of Object.entries(dto.specialisationYears)) {
+        if (typeof k !== 'string' || k.length === 0 || k.length > 80) continue;
+        const n = typeof v === 'number' ? v : Number(v);
+        if (!Number.isFinite(n) || n < 0 || n > 80) continue;
+        clean[k] = Math.trunc(n);
+      }
+      patch['specialisationYears'] = clean;
+    }
 
     draft.data = { ...draft.data, ...patch };
     await this.drafts.save(draft);
@@ -831,6 +858,23 @@ export class ProviderOnboardingV2Controller {
       (sync as any).consultationChannels = rawChans.filter(
         (c: unknown) => typeof c === 'string' && allowed.has(c),
       );
+    }
+    // Per-specialisation years — copy across, but only keep entries whose
+    // key appears in the final `specialisations` list so stale entries
+    // (e.g. from a spec the user unpicked) don't linger.
+    const rawYears = data['specialisationYears'];
+    const finalSpecs = (sync as any).specialisations as string[] | undefined
+      ?? (Array.isArray(rawSpecs) ? rawSpecs : []);
+    if (rawYears && typeof rawYears === 'object' && !Array.isArray(rawYears)) {
+      const clean: Record<string, number> = {};
+      const finalSet = new Set(finalSpecs);
+      for (const [k, v] of Object.entries(rawYears as Record<string, unknown>)) {
+        if (!finalSet.has(k)) continue;
+        const n = typeof v === 'number' ? v : Number(v);
+        if (!Number.isFinite(n) || n < 0 || n > 80) continue;
+        clean[k] = Math.trunc(n);
+      }
+      (sync as any).specialisationYears = clean;
     }
     await this.providers.update({ id: provider.id }, sync);
 

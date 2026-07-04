@@ -135,10 +135,31 @@ function fuzzyMatch(hay: string, needle: string): boolean {
 
 /* ─────────── Component ─────────── */
 
+/* Experience bands. Store `low` (the min of the band) as the years value on
+ * the provider row — small integer, easy to sort/filter later. */
+const YEARS_BANDS: { label: string; low: number }[] = [
+  { label: '1–3 yrs',  low: 1  },
+  { label: '4–9 yrs',  low: 4  },
+  { label: '10–19 yrs', low: 10 },
+  { label: '20+ yrs',  low: 20 },
+];
+
+/** Snap any integer to the band-low that represents its range. */
+function bandLowFromYears(y: number | undefined): number | null {
+  if (typeof y !== 'number' || !Number.isFinite(y) || y < 1) return null;
+  if (y >= 20) return 20;
+  if (y >= 10) return 10;
+  if (y >= 4)  return 4;
+  return 1;
+}
+
 export default function Step_Specialisations({ flow }: { flow: FlowConfig }) {
   const router = useRouter();
   const { data, update, flush, advance } = useProviderOnboarding();
   const [picks, setPicks] = useState<string[]>(data.specialisations ?? []);
+  const [years, setYears] = useState<Record<string, number>>(
+    data.specialisationYears ?? {},
+  );
   const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState<string | null>(null);
@@ -155,17 +176,29 @@ export default function Step_Specialisations({ flow }: { flow: FlowConfig }) {
     return () => { cancelled = true; };
   }, [router]);
 
+  /* Every change to picks or years flows back into the store. We prune the
+   * years map of any keys that aren't in the current picks list — otherwise
+   * unpicking a spec would leave a stale years entry that the backend would
+   * later filter out at submit, but locally it'd look wrong. */
   useEffect(() => {
-    update({ specialisations: picks });
+    const pickedSet = new Set(picks);
+    const prunedYears: Record<string, number> = {};
+    for (const [k, v] of Object.entries(years)) {
+      if (pickedSet.has(k)) prunedYears[k] = v;
+    }
+    update({ specialisations: picks, specialisationYears: prunedYears });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [picks]);
+  }, [picks, years]);
 
   const toggle = (s: string) =>
     setPicks((cur) =>
       cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s],
     );
 
-  const clearAll = () => setPicks([]);
+  const setBand = (s: string, low: number) =>
+    setYears((cur) => ({ ...cur, [s]: low }));
+
+  const clearAll = () => { setPicks([]); setYears({}); };
 
   /* Filter each category by query — a category with zero visible items is
    * hidden entirely so the user isn't left with empty section headers. */
@@ -187,7 +220,13 @@ export default function Step_Specialisations({ flow }: { flow: FlowConfig }) {
   const isCollapsed = (key: string) =>
     query.trim() ? false : !!collapsed[key];
 
-  const canContinue = picks.length >= 1;
+  /* Require: at least one pick AND every pick has a years band selected.
+   * Without a years pick the badge on the marketplace would just show the
+   * name — feels half-done. Users see "Pick your experience below" hint on
+   * any pick that's still missing a band. */
+  const allHaveYears = picks.every((p) => bandLowFromYears(years[p]) !== null);
+  const canContinue = picks.length >= 1 && allHaveYears;
+  const missingYearsCount = picks.filter((p) => bandLowFromYears(years[p]) === null).length;
 
   const onContinue = async () => {
     setErr(null);
@@ -209,7 +248,13 @@ export default function Step_Specialisations({ flow }: { flow: FlowConfig }) {
       banner={flow.banner}
       canContinue={canContinue}
       onContinue={onContinue}
-      nextLabel={canContinue ? `Save & Continue (${picks.length})` : 'Pick at least one'}
+      nextLabel={
+        picks.length === 0
+          ? 'Pick at least one'
+          : missingYearsCount > 0
+            ? `Add experience (${missingYearsCount} left)`
+            : `Save & Continue (${picks.length})`
+      }
     >
       <div className="space-y-4">
         <p className="text-sm text-gray-700/85">
@@ -245,12 +290,12 @@ export default function Step_Specialisations({ flow }: { flow: FlowConfig }) {
           )}
         </div>
 
-        {/* Selected summary */}
+        {/* Selected summary — each pick expands to a years band picker */}
         {picks.length > 0 && (
           <div className="rounded-2xl bg-[#0F2452]/[0.04] border border-[#0F2452]/15 p-3">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-bold tracking-wide uppercase text-[#0F2452]/70">
-                Selected · {picks.length}
+                Your practices · {picks.length}
               </p>
               <button
                 type="button"
@@ -260,19 +305,56 @@ export default function Step_Specialisations({ flow }: { flow: FlowConfig }) {
                 Clear all
               </button>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              {picks.map((p) => (
-                <button
-                  type="button"
-                  key={p}
-                  onClick={() => toggle(p)}
-                  className="pl-3 pr-2 py-1.5 rounded-full text-xs font-medium bg-[#0F2452] text-[#F7EFE1] flex items-center gap-1 hover:bg-[#0F2452]/90"
-                >
-                  {p}
-                  <span aria-hidden className="w-4 h-4 rounded-full bg-white/25 flex items-center justify-center text-[10px]">✕</span>
-                </button>
-              ))}
-            </div>
+            <ul className="space-y-2.5">
+              {picks.map((p) => {
+                const currentLow = bandLowFromYears(years[p]);
+                return (
+                  <li key={p} className="rounded-xl bg-white/70 border border-[#0F2452]/10 p-3">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-[#0F2452] flex items-center gap-1.5">
+                          <span aria-hidden className="text-green-700">✓</span>
+                          <span className="truncate">{p}</span>
+                        </p>
+                        <p className="text-[11px] text-gray-700/65 mt-0.5">
+                          {currentLow === null
+                            ? 'Pick your experience below'
+                            : 'Your experience in this practice'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => toggle(p)}
+                        aria-label={`Remove ${p}`}
+                        className="w-7 h-7 rounded-full text-gray-500 hover:bg-[#0F2452]/5 flex items-center justify-center text-sm flex-shrink-0"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {YEARS_BANDS.map((b) => {
+                        const on = currentLow === b.low;
+                        return (
+                          <button
+                            type="button"
+                            key={b.low}
+                            onClick={() => setBand(p, b.low)}
+                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition
+                              ${
+                                on
+                                  ? 'bg-[#0F2452] text-[#F7EFE1] border-[#0F2452]'
+                                  : 'bg-white text-gray-700 border-[#0F2452]/20 hover:bg-[#0F2452]/5'
+                              }`}
+                          >
+                            {b.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
 

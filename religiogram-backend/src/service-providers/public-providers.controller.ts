@@ -151,6 +151,9 @@ export class PublicProvidersController {
       // hidden sections.
       providerCategory:     p.providerCategory,
       specialisations:      p.specialisations ?? [],
+      // Per-spec years map (migration 069). Empty object = no years recorded.
+      // Marketplace UI shows "Vedic Astrology · 12 yrs" style badges.
+      specialisationYears:  p.specialisationYears ?? {},
       consultationChannels: p.consultationChannels ?? [],
       perMinutePaise:       p.perMinutePaise,
       serviceMode:          p.serviceMode,

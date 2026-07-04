@@ -171,6 +171,8 @@ const ALLOWED_PATCH_KEYS = new Set([
   'providerCategory',
   'specialisations',
   'consultationChannels',
+  // Per-spec years map (Phase 2 / migration 069)
+  'specialisationYears',
 ]);
 function whitelist(body: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
