@@ -2,6 +2,7 @@
 import { config as loadEnv } from 'dotenv';
 import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import * as path from 'path';
 
 const logger = new Logger('DataSource');
 
@@ -44,20 +45,41 @@ if (!process.env.DATABASE_DIRECT_URL && process.env.DATABASE_VIA_PROXY === 'true
   );
 }
 
+/**
+ * Path resolution — CRITICAL for prod deploys.
+ *
+ * The CLI can be invoked two ways:
+ *   • Local dev: `npm run migration:run` → typeorm-ts-node-commonjs reads
+ *     this .ts file directly. __dirname = <repo>/src/config. Entities and
+ *     migrations exist as .ts.
+ *   • Prod (Railway): `npx typeorm migration:run -d dist/src/config/datasource.js`
+ *     reads the compiled .js file. __dirname = /app/dist/src/config. Entities
+ *     and migrations exist as .js.
+ *
+ * Anchor globs to __dirname (not cwd!) and accept both extensions so the
+ * same file works in both worlds — no separate prod datasource file.
+ *
+ * Extra caution: for SSL in prod (Railway Postgres or managed DB), we need
+ * `rejectUnauthorized: false` unless a CA cert is provided. The startup
+ * app uses the same rule via typeorm.factory.ts.
+ */
+const migrationsSsl: boolean | { rejectUnauthorized: boolean; ca?: string } =
+  process.env.DATABASE_SSL === 'true'
+    ? process.env.DATABASE_SSL_CA
+      ? {
+          rejectUnauthorized: true,
+          ca: Buffer.from(process.env.DATABASE_SSL_CA, 'base64').toString('utf-8'),
+        }
+      : { rejectUnauthorized: false }
+    : false;
+
 export default new DataSource({
   type: 'postgres',
   url,
-  entities: ['src/**/*.entity.ts'],
-  migrations: ['src/migrations/*.ts'],
+  entities:   [path.join(__dirname, '../**/*.entity.{js,ts}')],
+  migrations: [path.join(__dirname, '../migrations/*.{js,ts}')],
   migrationsTransactionMode: 'each',
-  ssl: process.env.DATABASE_SSL === 'true'
-    ? {
-        rejectUnauthorized: true,
-        ca: process.env.DATABASE_SSL_CA
-          ? Buffer.from(process.env.DATABASE_SSL_CA, 'base64').toString('utf-8')
-          : undefined,
-      }
-    : false,
+  ssl: migrationsSsl,
   logging: ['error', 'warn', 'migration'],
 });
 

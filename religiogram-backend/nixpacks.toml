@@ -7,5 +7,22 @@ cmds = ["npm install --ignore-scripts"]
 [phases.build]
 cmds = ["npm run build"]
 
+# ── Start command ─────────────────────────────────────────────────────────
+# Runs pending migrations first, then boots the API.
+#
+# Why `&&` (fail-fast)?
+#   If a migration fails we DON'T want the app to boot against a broken
+#   schema — the shell short-circuits and Railway marks the deploy as
+#   failed. That's the correct signal.
+#
+# Why `dist/src/config/datasource.js` (compiled)?
+#   The Railway container has no `src/`. We compile everything to
+#   `dist/src/` during `npm run build`. `src/config/datasource.ts` uses
+#   __dirname-relative globs so the same file works in both dev and prod.
+#
+# Why `dist/src/main.js`?
+#   Nest emits main under dist/src/, not dist/. The previous
+#   `node dist/main.js` was wrong — Railway must have been overriding it
+#   in the dashboard. This makes the file the source of truth.
 [start]
-cmd = "node dist/main.js"
+cmd = "npx typeorm migration:run -d dist/src/config/datasource.js && node dist/src/main.js"
