@@ -39,6 +39,7 @@ import { EncryptionService } from '../common/encryption/encryption.service';
 import { AdminActionLog } from './entities/admin-action-log.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
+import { RankingService } from '../service-providers/ranking.service';
 
 /**
  * AdminProviderVerificationController
@@ -73,6 +74,7 @@ export class AdminProviderVerificationController {
     private readonly notifs: NotificationsService,
     private readonly config: ConfigService,
     private readonly encryption: EncryptionService,
+    private readonly ranking: RankingService,
   ) {
     const r2Endpoint = this.config.get<string>('storage.r2Endpoint');
     const accessKeyId = this.config.get<string>('storage.accessKeyId', '');
@@ -303,6 +305,13 @@ export class AdminProviderVerificationController {
       NotificationType.SYSTEM,
       'Application approved!',
       'Congratulations! Your provider application has been approved. You are now live on ReligioGram.',
+    );
+
+    // Compute the initial ranking score now that they're approved. Otherwise
+    // they'd sit at 0 until the nightly cron and never surface in
+    // marketplace lists. Non-blocking — errors logged inside RankingService.
+    this.ranking.bump(providerId).catch((e) =>
+      this.logger.warn(`ranking bump after approve failed: ${(e as Error).message}`),
     );
 
     return { providerState: ProviderStatus.Approved };

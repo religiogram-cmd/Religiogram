@@ -13,6 +13,7 @@ import { IdempotencyMiddleware } from '../common/middleware/idempotency.middlewa
 import { WalletModule } from '../wallet/wallet.module';
 import { EmailModule } from '../email/email.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ServiceProvidersModule } from '../service-providers/service-providers.module';
 
 @Module({
   imports: [
@@ -24,6 +25,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
     forwardRef(() => WalletModule),
     forwardRef(() => PayoutModule),
     NotificationsModule,
+    // Needs RankingService + Provider repo to increment completed_bookings_count
+    // and refresh the provider's ranking_score on booking completion.
+    ServiceProvidersModule,
   ],
   controllers: [BookingsController],
   providers: [BookingsService],

@@ -22,6 +22,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { encodeCursor, decodeCursor } from '../common/pagination/cursor';
 import { CatalogService } from '../catalog/catalog.service';
+import { RankingService } from '../service-providers/ranking.service';
 
 @Injectable()
 export class BookingsService {
@@ -40,7 +41,30 @@ export class BookingsService {
     private readonly catalogService: CatalogService,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly payoutService: PayoutService,
+    private readonly ranking: RankingService,
   ) {}
+
+  /**
+   * Bump the provider's ranking + increment their completed bookings count
+   * after a booking transitions to COMPLETED. Best-effort — any error is
+   * logged so a failed ranking refresh doesn't break the booking flow.
+   */
+  private async refreshProviderRanking(providerId: string): Promise<void> {
+    try {
+      await this.dataSource.query(
+        `UPDATE providers
+           SET completed_bookings_count = completed_bookings_count + 1,
+               last_activity_at = NOW()
+         WHERE id::text = $1`,
+        [providerId],
+      );
+      this.ranking.bump(providerId).catch((e) =>
+        this.logger.warn(`ranking bump after booking complete failed: ${(e as Error).message}`),
+      );
+    } catch (err) {
+      this.logger.warn(`refreshProviderRanking failed: ${(err as Error).message}`);
+    }
+  }
 
   /**
    * Server-side price preview for a prospective booking.
@@ -340,6 +364,11 @@ export class BookingsService {
         { bookingId: id },
       ).catch(() => {});
 
+      // Ranking refresh — non-blocking. Bumps completed_bookings_count and
+      // recomputes ranking_score so the provider's marketplace ranking
+      // reflects the new completed session immediately.
+      this.refreshProviderRanking(booking.providerId).catch(() => {});
+
       return this.bookingRepo.findOne({ where: { id } }) as Promise<Booking>;
     }
 
@@ -516,6 +545,9 @@ export class BookingsService {
       `Your booking for ${booking!.serviceName} has been completed.`,
       { bookingId },
     ).catch(() => {});
+
+    // Ranking refresh — bumps completed_bookings_count + recomputes score.
+    this.refreshProviderRanking(booking!.providerId).catch(() => {});
 
     return booking!;
   }

@@ -37,6 +37,7 @@ import { Booking } from "../bookings/entities/booking.entity";
 import { BookingsModule } from "../bookings/bookings.module";
 import { WalletModule } from '../wallet/wallet.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ServiceProvidersModule } from '../service-providers/service-providers.module';
 
 @Module({
   imports: [
@@ -47,6 +48,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     NotificationsModule,
     DisputeModule,
     BookingsModule,
+    // Needs RankingService to bump a provider's ranking_score on approve.
+    ServiceProvidersModule,
     TypeOrmModule.forFeature([
       Temple,
       Admin,

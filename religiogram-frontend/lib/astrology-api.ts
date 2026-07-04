@@ -29,6 +29,9 @@ export interface Astrologer {
   experienceYears: number;
   qualification: string;
   specializations: string[];
+  /** Optional per-spec years map — populated when the provider row has
+   *  `specialisation_years` (Phase 2). Keyed by the spec label. */
+  specializationYears?: Record<string, number>;
   rating: number;                 // 0-5
   reviewCount: number;
   ratePerMinPaise: number;        // ₹ = paise / 100
@@ -321,6 +324,7 @@ function toAstrologer(p: BackendProvider): Astrologer {
     experienceYears:        p.experienceYears ?? 0,
     qualification:          '',
     specializations:        p.specialisations ?? [],
+    specializationYears:    p.specialisationYears ?? {},
     rating:                 p.ratingAvg ?? 0,
     reviewCount:            p.ratingCount ?? 0,
     ratePerMinPaise:        p.perMinutePaise ?? 0,

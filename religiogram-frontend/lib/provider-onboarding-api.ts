@@ -424,8 +424,10 @@ export const providerOnboardingApi = {
 
 /** Toggle the provider's online/offline status visible to users. */
 export async function setProviderOnline(isOnline: boolean): Promise<{ isOnline: boolean }> {
-  // Real backend: PATCH /v1/providers/me/online with { isOnline: boolean }.
-  return apiFetch<{ isOnline: boolean }>('/providers/me/online', {
+  /* Backend route: `PATCH /v1/provider/online` (ProvidersController is
+   * mounted at `provider`, not `providers`). Previous versions of this
+   * file used `/providers/me/online` which 404s. */
+  return apiFetch<{ isOnline: boolean }>('/provider/online', {
     method: 'PATCH',
     body: JSON.stringify({ isOnline }),
   });

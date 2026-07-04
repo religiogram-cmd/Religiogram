@@ -283,11 +283,24 @@ function BrowseCard({ a }: { a: Astrologer }) {
           </div>
 
           <div style={{ fontSize: 12, color: TEXT2, marginTop: 3 }}>
-            {a.specializations.slice(0, 3).join(' · ')}
+            {a.specializations.slice(0, 3).map((s, i) => {
+              const y = a.specializationYears?.[s];
+              const prefix = i > 0 ? ' · ' : '';
+              return (
+                <span key={s}>
+                  {prefix}
+                  <span>{s}</span>
+                  {y ? <span style={{ color: GOLD, fontWeight: 700 }}> · {y}y</span> : null}
+                </span>
+              );
+            })}
+            {a.specializations.length > 3 && (
+              <span style={{ color: TEXT2 }}> · +{a.specializations.length - 3} more</span>
+            )}
           </div>
 
           <div style={{ fontSize: 11.5, color: TEXT2, marginTop: 4 }}>
-            {a.experienceYears} yrs · {a.languages.join(', ')}
+            {a.experienceYears} yrs total · {a.languages.join(', ')}
           </div>
 
           {/* Rating row */}
@@ -316,7 +329,9 @@ function BrowseCard({ a }: { a: Astrologer }) {
             color: a.isOnline ? '#10B981' : TEXT2,
             marginTop: 2, fontWeight: 700,
           }}>
-            {a.isOnline ? (a.isBusy ? 'Busy' : 'Online') : `Next: ${a.nextAvailableSlot}`}
+            {a.isOnline
+              ? (a.isBusy ? 'Busy' : 'Online now')
+              : (a.nextAvailableSlot ? `Next: ${a.nextAvailableSlot}` : 'Offline')}
           </div>
         </div>
 

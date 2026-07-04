@@ -51,7 +51,8 @@ export default function ProviderDashboard() {
     try {
       const base = process.env.NEXT_PUBLIC_API_BASE ?? '';
       const token = tokenStore.access ?? '';
-      await fetch(`${base}/service-providers/me/online`, {
+      // Backend route: PATCH /v1/provider/online (mounted at `provider`).
+      await fetch(`${base}/provider/online`, {
         method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ isOnline: !isOnline }),
       });

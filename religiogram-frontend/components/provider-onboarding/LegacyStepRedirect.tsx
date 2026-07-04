@@ -29,8 +29,20 @@ export default function LegacyStepRedirect({ step }: { step: number }) {
     if (saveStatus === 'idle') return;
 
     const cat = data.providerCategory;
-    if (cat === 'astrologer' || cat === 'priest' || cat === 'both') {
+    if (cat === 'astrologer' || cat === 'priest') {
       router.replace(`/provider-onboarding/${cat}/step-${step}`);
+    } else if (cat === 'both') {
+      /* Both-flow renumbering: the legacy priest tree had
+       *   1 basic, 2 about, 3 faith, 4 services, 5 pricing, 6 slots,
+       *   7 KYC, 8 identity, 9 payout
+       * whereas the both-flow tree at /both/step-N is
+       *   1..6 priest-side (same as above),
+       *   7 specialisations, 8 channels, 9 per-min rate,
+       *  10 KYC, 11 identity, 12 payout.
+       * So legacy steps 7/8/9 (KYC/identity/payout) map forward by +3 in
+       * the both-flow. Steps 1..6 map 1:1. */
+      const mapped = step >= 7 ? step + 3 : step;
+      router.replace(`/provider-onboarding/both/step-${mapped}`);
     } else {
       router.replace('/provider-onboarding');
     }

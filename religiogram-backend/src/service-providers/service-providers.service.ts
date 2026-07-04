@@ -520,9 +520,12 @@ export class ProviderOnboardingService {
 
   async setOnlineStatus(userId: string, isOnline: boolean): Promise<{ isOnline: boolean }> {
     const provider = await this.mustGetProvider(userId);
+    /* Also bump last_activity_at — toggling online is a meaningful "I'm
+     * here" signal that should refresh the ranking's recent-activity
+     * decay window. Migration 071 added both columns. */
     await this.ds
       .getRepository(ProviderEntity)
-      .update({ id: provider.id }, { isOnline } as any);
+      .update({ id: provider.id }, { isOnline, lastActivityAt: new Date() } as any);
     return { isOnline };
   }
 

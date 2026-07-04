@@ -10,6 +10,7 @@ import { Repository, DataSource } from 'typeorm';
 import { Review, ReviewableType } from './entities/review.entity';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { ListReviewsDto } from './dto/list-reviews.dto';
+import { RankingService } from '../service-providers/ranking.service';
 
 @Injectable()
 export class ReviewsService {
@@ -20,6 +21,7 @@ export class ReviewsService {
     private readonly reviewRepo: Repository<Review>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly ranking: RankingService,
   ) {}
 
   /**
@@ -188,6 +190,14 @@ export class ReviewsService {
         // ReviewableType.PLACE — places table rating columns not yet added.
         this.logger.debug(
           `updateRating: skipping place type (no rating columns yet) for id=${reviewableId}`,
+        );
+      }
+      // Bump the provider's marketplace ranking so a fresh rating shows up
+      // immediately instead of waiting for the nightly cron. Non-fatal: any
+      // error is logged inside RankingService.bump.
+      if (reviewableType === ReviewableType.PROVIDER) {
+        this.ranking.bump(reviewableId).catch((e) =>
+          this.logger.warn(`ranking bump after rating update failed: ${(e as Error).message}`),
         );
       }
     } catch (err) {
