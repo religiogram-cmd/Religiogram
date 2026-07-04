@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProviderOnboarding } from '@/lib/provider-onboarding-store';
 
@@ -65,9 +65,19 @@ export default function WizardShell({
   const totalSteps = 9;
   const pct = Math.round((currentStep / totalSteps) * 100);
 
+  /* Local in-flight flag so the Next button can show a spinner and disable
+   * itself while the save + route-transition happen. Without this the user
+   * sees a completely inert button for 300–900ms and thinks the app hung. */
+  const [isSaving, setIsSaving] = useState(false);
+
   const handleNext = async () => {
+    if (isSaving) return; // guard against double-clicks
+    setIsSaving(true);
     try {
       await onContinue();
+      // We keep isSaving=true through the router.push so the spinner covers
+      // the tiny gap before the next step's page mounts — otherwise the
+      // button briefly re-enables and looks glitchy.
       if (currentStep < totalSteps) {
         router.push(`/provider-onboarding/step-${currentStep + 1}`);
       } else {
@@ -78,6 +88,7 @@ export default function WizardShell({
       // to the step-local toast / inline error without breaking the shell.
       // The step component is responsible for rendering the message.
       console.error('[wizard] continue failed', err);
+      setIsSaving(false); // only reset on failure — success unmounts us
     }
   };
 
@@ -145,13 +156,22 @@ export default function WizardShell({
             <button
               type="button"
               onClick={handleNext}
-              disabled={!canContinue}
+              disabled={!canContinue || isSaving}
+              aria-busy={isSaving}
               className="flex-1 px-5 py-3 rounded-xl font-semibold text-[#F7EFE1]
                          bg-[#0F2452] disabled:bg-[#0F2452]/40
                          disabled:cursor-not-allowed
-                         hover:bg-[#0F2452] active:scale-[0.98] transition"
+                         hover:bg-[#0F2452] active:scale-[0.98] transition
+                         flex items-center justify-center gap-2"
             >
-              {nextLabel}
+              {isSaving && (
+                <span
+                  aria-hidden
+                  className="inline-block w-4 h-4 rounded-full border-2
+                             border-[#F7EFE1]/40 border-t-[#F7EFE1] animate-spin"
+                />
+              )}
+              <span>{isSaving ? 'Saving…' : nextLabel}</span>
             </button>
           )}
         </div>
@@ -166,12 +186,28 @@ function SaveStatusBadge({
   status: 'idle' | 'saving' | 'synced' | 'offline';
 }) {
   if (status === 'saving')
-    return <span className="text-xs text-gray-700/60">Saving…</span>;
+    return (
+      <span className="text-xs text-[#0F2452]/80 font-medium flex items-center gap-1.5">
+        <span
+          aria-hidden
+          className="inline-block w-3 h-3 rounded-full border-2
+                     border-[#0F2452]/20 border-t-[#C8932A] animate-spin"
+        />
+        Saving…
+      </span>
+    );
   if (status === 'synced')
-    return <span className="text-xs text-green-800/80">Saved</span>;
+    return (
+      <span className="text-xs text-green-800/90 font-medium flex items-center gap-1">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+        Saved
+      </span>
+    );
   if (status === 'offline')
     return (
-      <span className="text-xs text-orange-800/90">
+      <span className="text-xs text-orange-800/90 font-medium">
         Offline — will retry
       </span>
     );
