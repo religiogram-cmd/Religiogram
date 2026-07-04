@@ -20,6 +20,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import WizardShell from '@/components/provider-onboarding/WizardShell';
+import SkipVerificationButton from '@/components/provider-onboarding/SkipVerificationButton';
 import { useProviderOnboarding } from '@/lib/provider-onboarding-store';
 import { providerOnboardingApi } from '@/lib/provider-onboarding-api';
 import type { FlowConfig } from './FlowConfig';
@@ -313,6 +314,8 @@ export default function Step_Payout({ flow, gateCheck }: Props) {
           By submitting, you confirm the details above are correct and accept
           our Provider Terms.
         </p>
+
+        <SkipVerificationButton from="payout" />
       </div>
     </WizardShell>
   );

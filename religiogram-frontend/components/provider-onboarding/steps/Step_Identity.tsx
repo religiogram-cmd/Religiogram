@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import WizardShell from '@/components/provider-onboarding/WizardShell';
+import SkipVerificationButton from '@/components/provider-onboarding/SkipVerificationButton';
 import { useProviderOnboarding } from '@/lib/provider-onboarding-store';
 import { providerOnboardingApi } from '@/lib/provider-onboarding-api';
 import type { FlowConfig } from './FlowConfig';
@@ -240,6 +241,8 @@ export default function Step_Identity({ flow, nextStepPath, gateCheck }: Props) 
             setSelfie(initialUpload());
           }}
         />
+
+        <SkipVerificationButton from="identity" />
       </div>
     </WizardShell>
   );
