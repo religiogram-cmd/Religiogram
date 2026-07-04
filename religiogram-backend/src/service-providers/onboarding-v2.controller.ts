@@ -34,6 +34,8 @@ import {
   ProviderEntity,
   ProviderReligion,
   ProviderStatus,
+  ProviderCategory,
+  ConsultationChannel,
 } from './entities/provider.entity';
 import { OnboardingDraftEntity } from './entities/onboarding-draft.entity';
 import {
@@ -111,6 +113,28 @@ class PatchDraftDto {
   @Min(0)
   @Max(50)
   radius?: number;
+
+  // ── Astrology-flow fields (migration 068) ─────────────────────────────
+  // Priest applicants never send these; astrologer and 'both' applicants do.
+  // We accept them here so the autosave PATCH doesn't fail with a 400 due to
+  // `forbidNonWhitelisted: true` in the global ValidationPipe. The fields
+  // are merged into draft.data JSON and flushed onto the Provider row at
+  // /submit time.
+
+  @IsOptional()
+  @IsEnum(ProviderCategory)
+  providerCategory?: ProviderCategory;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @Length(1, 80, { each: true })
+  specialisations?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsEnum(ConsultationChannel, { each: true })
+  consultationChannels?: ConsultationChannel[];
 }
 
 class PresignKycDto {
@@ -246,18 +270,37 @@ export class ProviderOnboardingV2Controller {
 
   /**
    * Validate per-minute rate against experience band.
-   * 0-3 yrs  : 1000–2000 paise
-   * 4-9 yrs  : 1000–5000 paise
-   * 10+ yrs  : 1000–10000 paise
+   *
+   * Bands (in rupees/minute, converted from paise = ₹ × 100):
+   *   0–3 yrs   :  ₹10 –  ₹20    ( 1_000 –  2_000 paise)
+   *   4–9 yrs   :  ₹10 –  ₹50    ( 1_000 –  5_000 paise)
+   *   10–14 yrs :  ₹20 – ₹100    ( 2_000 – 10_000 paise)
+   *   15–19 yrs :  ₹30 – ₹150    ( 3_000 – 15_000 paise)
+   *   20+  yrs  :  ₹50 – ₹300    ( 5_000 – 30_000 paise)
+   *
+   * These bands must be kept in sync with the frontend guidance in
+   * `Step_PerMinuteRate.suggestedBandRupees()`. The frontend allows values
+   * outside the band with a soft warning; the backend enforces the band
+   * strictly to prevent accidental price submission that would confuse
+   * marketplace pricing.
+   *
+   * The outer DTO bound (500–100_000 paise) is enforced by @Min/@Max on
+   * `perMinutePaise` and covers cases where experience isn't yet set.
    */
   private validatePerMinuteRate(perMinutePaise: number, experienceYears: number): void {
-    const min = 1000;
-    let max = 2000;
-    if (experienceYears >= 10) max = 10_000;
-    else if (experienceYears >= 4) max = 5_000;
+    let min: number;
+    let max: number;
+    let label: string;
+    if (experienceYears >= 20)      { min =  5_000; max = 30_000; label = '20+ years'; }
+    else if (experienceYears >= 15) { min =  3_000; max = 15_000; label = '15–19 years'; }
+    else if (experienceYears >= 10) { min =  2_000; max = 10_000; label = '10–14 years'; }
+    else if (experienceYears >= 4)  { min =  1_000; max =  5_000; label = '4–9 years';   }
+    else                            { min =  1_000; max =  2_000; label = '0–3 years';   }
     if (perMinutePaise < min || perMinutePaise > max) {
+      const minR = Math.round(min / 100);
+      const maxR = Math.round(max / 100);
       throw new BadRequestException(
-        `per_minute_paise must be ${min}–${max} paise for ${experienceYears} years experience`,
+        `Per-minute rate must be ₹${minR}–₹${maxR} for ${label} of experience.`,
       );
     }
   }
@@ -329,6 +372,11 @@ export class ProviderOnboardingV2Controller {
     if (dto.city !== undefined)          patch['city']           = dto.city;
     if (dto.perMinutePaise !== undefined) patch['perMinutePaise'] = dto.perMinutePaise;
     if (dto.radius !== undefined)        patch['radius']         = dto.radius;
+    // Astrology-flow fields — mirror into draft.data so the Submit handler
+    // can flush them onto the Provider row.
+    if (dto.providerCategory !== undefined)     patch['providerCategory']     = dto.providerCategory;
+    if (dto.specialisations !== undefined)      patch['specialisations']      = dto.specialisations;
+    if (dto.consultationChannels !== undefined) patch['consultationChannels'] = dto.consultationChannels;
 
     draft.data = { ...draft.data, ...patch };
     await this.drafts.save(draft);
@@ -751,6 +799,38 @@ export class ProviderOnboardingV2Controller {
     }
     if (!provider.city && typeof data['city'] === 'string') {
       (sync as any).city = data['city'];
+    }
+    // ── Astrology-flow fields ─────────────────────────────────────────────
+    // Flush category + specialisations + consultation channels from the
+    // draft JSON onto their own columns so the marketplace filter (uses
+    // `provider_category`, `specialisations`, `consultation_channels`)
+    // sees the right values the moment admin approves. Without this an
+    // approved astrologer would show up as a generic priest.
+    const rawCategory = data['providerCategory'];
+    if (
+      typeof rawCategory === 'string' &&
+      (rawCategory === ProviderCategory.Priest ||
+       rawCategory === ProviderCategory.Astrologer ||
+       rawCategory === ProviderCategory.Both)
+    ) {
+      (sync as any).providerCategory = rawCategory;
+    }
+    const rawSpecs = data['specialisations'];
+    if (Array.isArray(rawSpecs)) {
+      (sync as any).specialisations = rawSpecs.filter(
+        (s: unknown) => typeof s === 'string' && s.trim().length > 0,
+      );
+    }
+    const rawChans = data['consultationChannels'];
+    if (Array.isArray(rawChans)) {
+      const allowed = new Set<string>([
+        ConsultationChannel.Chat,
+        ConsultationChannel.Voice,
+        ConsultationChannel.Video,
+      ]);
+      (sync as any).consultationChannels = rawChans.filter(
+        (c: unknown) => typeof c === 'string' && allowed.has(c),
+      );
     }
     await this.providers.update({ id: provider.id }, sync);
 

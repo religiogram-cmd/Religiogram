@@ -58,11 +58,19 @@ export default function Step_PerMinuteRate({ flow }: { flow: FlowConfig }) {
 
   useEffect(() => {
     const n = Number(rate);
-    if (Number.isFinite(n) && n >= MIN_RUPEES && n <= MAX_RUPEES) {
+    /* Only push to the store when the value is inside the experience band —
+     * out-of-band values will 400 on the backend's strict per-minute check
+     * and flip the save badge to "Offline — will retry", which looks scary.
+     * Store state stays at the last valid rate until the user corrects it. */
+    if (
+      Number.isFinite(n) &&
+      n >= MIN_RUPEES && n <= MAX_RUPEES &&
+      n >= band.min && n <= band.max
+    ) {
       update({ perMinutePaise: rupeesToPaise(n) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rate]);
+  }, [rate, band.min, band.max]);
 
   const numericRate = Number(rate);
   const rateValid =
@@ -73,7 +81,11 @@ export default function Step_PerMinuteRate({ flow }: { flow: FlowConfig }) {
   const belowBand = rateValid && numericRate < band.min;
   const aboveBand = rateValid && numericRate > band.max;
 
-  const canContinue = rateValid;
+  /* Backend `validatePerMinuteRate` enforces the same band strictly (matches
+   * the audit fix that sync'd bands 0-3/4-9/10-14/15-19/20+). If we let
+   * users continue with an out-of-band value we get a 400 on save and a
+   * confusing "something went wrong" — better to block Continue here. */
+  const canContinue = rateValid && !belowBand && !aboveBand;
 
   const onContinue = async () => {
     setErr(null);
@@ -160,15 +172,16 @@ export default function Step_PerMinuteRate({ flow }: { flow: FlowConfig }) {
           </p>
         )}
         {belowBand && (
-          <p className="text-xs text-amber-800/90 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            That&apos;s below the typical band for your experience — you can
-            still continue, just make sure it&apos;s intentional.
+          <p className="text-xs text-amber-900 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2">
+            That&apos;s <b>below</b> the band for {band.label} — set at least
+            ₹{band.min}/min to continue.
           </p>
         )}
         {aboveBand && (
-          <p className="text-xs text-amber-800/90 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            That&apos;s above the typical band for your experience — devotees
-            may be slower to try you at first. You can adjust later.
+          <p className="text-xs text-amber-900 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2">
+            That&apos;s <b>above</b> the band for {band.label} — set at most
+            ₹{band.max}/min to continue. You can raise your rate later once
+            you have reviews.
           </p>
         )}
 
