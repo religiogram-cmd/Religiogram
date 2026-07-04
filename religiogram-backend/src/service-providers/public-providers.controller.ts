@@ -101,8 +101,12 @@ export class PublicProvidersController {
         qb.andWhere('(p.createdAt < :afterDate OR (p.createdAt = :afterDate AND p.id < :afterId))', { afterDate: d, afterId: i });
       } catch { /* invalid cursor — start from beginning */ }
     }
+    /* Order by the denormalised marketplace ranking score (Phase 4). Falls
+     * back to rating_avg and created_at for tie-breaks — old rows with a
+     * default score of 0 still get some ordering signal. */
     const items = await qb
-      .orderBy('p.rating_avg', 'DESC', 'NULLS LAST')
+      .orderBy('p.ranking_score', 'DESC', 'NULLS LAST')
+      .addOrderBy('p.rating_avg', 'DESC', 'NULLS LAST')
       .addOrderBy('p.createdAt', 'DESC')
       .addOrderBy('p.id', 'DESC')
       .take(limitNum + 1)
@@ -157,6 +161,11 @@ export class PublicProvidersController {
       consultationChannels: p.consultationChannels ?? [],
       perMinutePaise:       p.perMinutePaise,
       serviceMode:          p.serviceMode,
+      // Ranking signals (migration 071) — surface for UI badges (green dot
+      // for online, verified checkmark, etc.).
+      isOnline:             p.isOnline,
+      isVerified:           p.isVerified,
+      completedBookings:    p.completedBookingsCount,
       services:             (p.services ?? []).map(s => ({
         id:              s.id,
         name:            s.service?.name ?? s.customName ?? 'Custom Service',

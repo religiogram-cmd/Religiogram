@@ -219,6 +219,40 @@ export class ProviderEntity {
   @Column({ name: 'rating_count', type: 'int', default: 0 })
   ratingCount!: number;
 
+  // ── Ranking signals (migration 071) ──────────────────────────────────
+  /**
+   * Denormalised marketplace ranking score. Computed by RankingService
+   * from multiple factors (rating, review count, completed bookings,
+   * profile completeness, online status, recent activity, per-spec
+   * experience). Sorted DESC on the public providers list.
+   */
+  @Column({ name: 'ranking_score', type: 'numeric', precision: 6, scale: 2, default: 0 })
+  rankingScore!: string;
+
+  /** Real-time online flag — flipped via PATCH /providers/me/online. */
+  @Column({ name: 'is_online', type: 'boolean', default: false })
+  isOnline!: boolean;
+
+  /** Time of the last meaningful action (login, booking, profile edit).
+   *  Feeds the recent-activity ranking factor with exponential decay. */
+  @Column({ name: 'last_activity_at', type: 'timestamptz', nullable: true })
+  lastActivityAt!: Date | null;
+
+  /** Denormalised count of bookings.status = 'completed' for this
+   *  provider. Bumped by BookingsService when a session completes. */
+  @Column({ name: 'completed_bookings_count', type: 'int', default: 0 })
+  completedBookingsCount!: number;
+
+  /** Placeholder — 0..1 fraction of user messages responded to within N
+   *  minutes. Not populated in v1 (no data source), reserved for later. */
+  @Column({ name: 'response_rate', type: 'numeric', precision: 4, scale: 3, nullable: true })
+  responseRate!: string | null;
+
+  /** Placeholder — 0..1 fraction of customers who booked more than once.
+   *  Not populated in v1 (no data source), reserved for later. */
+  @Column({ name: 'repeat_customer_pct', type: 'numeric', precision: 4, scale: 3, nullable: true })
+  repeatCustomerPct!: string | null;
+
   @OneToMany(() => ProviderServiceEntity, (ps: any) => ps.provider)
   services?: ProviderServiceEntity[];
 

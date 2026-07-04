@@ -83,6 +83,31 @@ export const specialisationsApi = {
     apiFetch<{ categories: SpecCategory[] }>('/specialisations', { auth: false }),
 };
 
+export interface RankingRow {
+  id: string;
+  fullName: string;
+  city: string | null;
+  providerCategory: 'priest' | 'astrologer' | 'both';
+  rankingScore: number;
+  ratingAvg: number | null;
+  ratingCount: number;
+  completedBookingsCount: number;
+  isOnline: boolean;
+  isVerified: boolean;
+  experienceYears: number | null;
+  lastActivityAt: string | null;
+}
+
+export const adminRankingApi = {
+  top: (limit = 50) =>
+    apiFetch<{ items: RankingRow[] }>(`/admin/ranking/top?limit=${limit}`),
+  recomputeAll: () =>
+    apiFetch<{ updated: number; ms: number }>(`/admin/ranking/recompute`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+};
+
 export const adminSpecialisationsApi = {
   /** Admin list — includes inactive rows. */
   listAll: (category?: string) => {

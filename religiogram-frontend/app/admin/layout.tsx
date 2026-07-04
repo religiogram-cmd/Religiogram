@@ -115,6 +115,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const isApplications    = pathname?.startsWith('/admin/applications');
   const isSpecialisations = pathname?.startsWith('/admin/specialisations');
+  const isRanking         = pathname?.startsWith('/admin/ranking');
 
   return (
     <div
@@ -159,6 +160,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               ].join(' ')}
             >
               Specialisations
+            </Link>
+            <Link
+              href="/admin/ranking"
+              className={[
+                'px-3 py-1.5 rounded-md',
+                isRanking
+                  ? 'bg-slate-800 text-white'
+                  : 'text-slate-200 hover:bg-slate-800',
+              ].join(' ')}
+            >
+              Ranking
             </Link>
             <button
               type="button"
