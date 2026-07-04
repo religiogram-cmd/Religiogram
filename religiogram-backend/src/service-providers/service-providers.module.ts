@@ -9,6 +9,7 @@ import { AvailabilityEntity } from './entities/availability.entity';
 import { KycVideoEntity } from './entities/kyc-video.entity';
 import { OnboardingDraftEntity } from './entities/onboarding-draft.entity';
 import { ProviderBankAccount } from './entities/provider-bank-account.entity';
+import { SpecialisationEntity } from './entities/specialisation.entity';
 import { CatalogService } from '../catalog/entities/catalog-service.entity';
 import { ServiceCategory } from '../catalog/entities/service-category.entity';
 
@@ -17,6 +18,10 @@ import { ServicesCatalogueController } from './services.controller';
 import { PublicProvidersController } from './public-providers.controller';
 import { DiscoveryController } from './discovery.controller';
 import { ProviderOnboardingV2Controller } from './onboarding-v2.controller';
+import {
+  PublicSpecialisationsController,
+  AdminSpecialisationsController,
+} from './specialisations.controller';
 import { ProviderOnboardingService } from './service-providers.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UploadsModule } from '../uploads/uploads.module';
@@ -31,6 +36,7 @@ import { UploadsModule } from '../uploads/uploads.module';
       KycVideoEntity,
       OnboardingDraftEntity,
       ProviderBankAccount,
+      SpecialisationEntity,
       CatalogService,
       ServiceCategory,
       Booking,
@@ -44,6 +50,8 @@ import { UploadsModule } from '../uploads/uploads.module';
     PublicProvidersController,
     DiscoveryController,
     ProviderOnboardingV2Controller,
+    PublicSpecialisationsController,
+    AdminSpecialisationsController,
   ],
   providers: [ProviderOnboardingService],
   exports: [ProviderOnboardingService, TypeOrmModule],

@@ -113,7 +113,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     router.replace('/auth');
   };
 
-  const isApplications = pathname?.startsWith('/admin/applications');
+  const isApplications    = pathname?.startsWith('/admin/applications');
+  const isSpecialisations = pathname?.startsWith('/admin/specialisations');
 
   return (
     <div
@@ -147,6 +148,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               ].join(' ')}
             >
               Applications
+            </Link>
+            <Link
+              href="/admin/specialisations"
+              className={[
+                'px-3 py-1.5 rounded-md',
+                isSpecialisations
+                  ? 'bg-slate-800 text-white'
+                  : 'text-slate-200 hover:bg-slate-800',
+              ].join(' ')}
+            >
+              Specialisations
             </Link>
             <button
               type="button"

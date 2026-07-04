@@ -24,9 +24,30 @@ import { useRouter } from 'next/navigation';
 import WizardShell from '@/components/provider-onboarding/WizardShell';
 import { useProviderOnboarding } from '@/lib/provider-onboarding-store';
 import { providerOnboardingApi } from '@/lib/provider-onboarding-api';
+import { specialisationsApi } from '@/lib/specialisations-api';
 import type { FlowConfig } from './FlowConfig';
 
-/* ─────────── Master list ─────────── */
+/* ─────────── Master list ───────────
+ *
+ * As of Phase 3 the picker fetches the catalogue from
+ * `GET /v1/specialisations` and only falls back to the constants below if
+ * the network fails. Admin CRUD changes now show up here without a
+ * frontend deploy.
+ *
+ * The constants remain the source of truth for icons, blurbs, and the
+ * category display label — the backend only sends `slug`+`name`+`category`
+ * (the enum key), so we do the presentation mapping client-side.
+ */
+
+/** Display metadata for each backend category slug. Update when adding a
+ *  new category server-side. Unknown categories render with a default. */
+const CATEGORY_META: Record<string, { label: string; icon: string; blurb: string }> = {
+  astrology:   { label: 'Astrology Systems',    icon: '✦', blurb: 'Core astrology traditions and schools' },
+  divination:  { label: 'Divination & Reading', icon: '◈', blurb: 'Card, symbol, and pattern-based reading' },
+  healing:     { label: 'Healing',              icon: '❁', blurb: 'Energy-based healing modalities' },
+  home_energy: { label: 'Home & Energy',        icon: '⌂', blurb: 'Space, direction, and energy arrangement' },
+  spiritual:   { label: 'Spiritual Guidance',   icon: '☾', blurb: 'Personal spiritual practice and counsel' },
+};
 
 type Category = {
   key: string;
@@ -36,7 +57,7 @@ type Category = {
   items: string[];
 };
 
-const CATEGORIES: Category[] = [
+const FALLBACK_CATEGORIES: Category[] = [
   {
     key: 'astrology',
     label: 'Astrology Systems',
@@ -120,9 +141,6 @@ const CATEGORIES: Category[] = [
   },
 ];
 
-/* All items flat, for search matching. */
-const ALL_ITEMS = CATEGORIES.flatMap((c) => c.items);
-
 function fuzzyMatch(hay: string, needle: string): boolean {
   if (!needle) return true;
   const h = hay.toLowerCase();
@@ -164,6 +182,38 @@ export default function Step_Specialisations({ flow }: { flow: FlowConfig }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [err, setErr] = useState<string | null>(null);
 
+  /* Fetch the catalogue from the API on mount. If it fails we keep using
+   * FALLBACK_CATEGORIES so onboarding is never blocked by a catalogue
+   * outage. `catalogue` holds the categories in the shape the component
+   * already renders. */
+  const [catalogue, setCatalogue] = useState<Category[]>(FALLBACK_CATEGORIES);
+  const [catalogueLoading, setCatalogueLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    specialisationsApi.list()
+      .then((resp) => {
+        if (cancelled) return;
+        const mapped: Category[] = resp.categories.map((c) => {
+          const meta = CATEGORY_META[c.category] ?? {
+            label: c.category.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase()),
+            icon: '•',
+            blurb: '',
+          };
+          return {
+            key:   c.category,
+            label: meta.label,
+            icon:  meta.icon,
+            blurb: meta.blurb,
+            items: c.items.map((i) => i.name),
+          };
+        });
+        if (mapped.length > 0) setCatalogue(mapped);
+      })
+      .catch(() => { /* keep FALLBACK — no user-visible error */ })
+      .finally(() => { if (!cancelled) setCatalogueLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     providerOnboardingApi.getDraft().then((d) => {
@@ -203,12 +253,12 @@ export default function Step_Specialisations({ flow }: { flow: FlowConfig }) {
   /* Filter each category by query — a category with zero visible items is
    * hidden entirely so the user isn't left with empty section headers. */
   const filteredCategories = useMemo(() => {
-    if (!query.trim()) return CATEGORIES;
-    return CATEGORIES.map((cat) => ({
+    if (!query.trim()) return catalogue;
+    return catalogue.map((cat) => ({
       ...cat,
       items: cat.items.filter((i) => fuzzyMatch(i, query)),
     })).filter((cat) => cat.items.length > 0);
-  }, [query]);
+  }, [query, catalogue]);
 
   const totalVisible = useMemo(
     () => filteredCategories.reduce((n, c) => n + c.items.length, 0),
