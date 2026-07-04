@@ -1,0 +1,32 @@
+'use client';
+
+import Step_Payout from '@/components/provider-onboarding/steps/Step_Payout';
+import {
+  ASTROLOGER_STEP_LABELS,
+  ASTROLOGER_TOTAL_STEPS,
+  ASTROLOGER_ROUTE_BASE,
+} from '@/components/provider-onboarding/steps/flows';
+
+export default function Page() {
+  return (
+    <Step_Payout
+      flow={{
+        currentStep: 9,
+        totalSteps: ASTROLOGER_TOTAL_STEPS,
+        stepLabels: ASTROLOGER_STEP_LABELS,
+        routeBase: ASTROLOGER_ROUTE_BASE,
+        advanceTo: 9,
+      }}
+      gateCheck={(data) => {
+        if (!data.specialisations?.length) return `${ASTROLOGER_ROUTE_BASE}/step-3`;
+        if (!data.consultationChannels?.length) return `${ASTROLOGER_ROUTE_BASE}/step-4`;
+        if (!data.perMinutePaise) return `${ASTROLOGER_ROUTE_BASE}/step-5`;
+        if (!data.slots?.length) return `${ASTROLOGER_ROUTE_BASE}/step-6`;
+        if (!data.panR2ObjectKey || !data.selfieR2ObjectKey) {
+          return `${ASTROLOGER_ROUTE_BASE}/step-8`;
+        }
+        return null;
+      }}
+    />
+  );
+}

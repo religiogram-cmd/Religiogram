@@ -154,12 +154,23 @@ async function patch(body: Record<string, unknown>) {
   );
 }
 
-/** Subset of PatchDraftDto. Used to strip unknown keys before PATCHing. */
+/** Subset of PatchDraftDto. Used to strip unknown keys before PATCHing.
+ *  NOTE: the backend's PatchDraftDto uses class-validator with `whitelist: true`,
+ *  so any keys the backend doesn't yet accept (e.g. `providerCategory`,
+ *  `specialisations`, `consultationChannels`) are silently dropped on the wire.
+ *  We still send them so a future backend revision picks them up automatically;
+ *  the wizard's own store persists them locally via localStorage and the final
+ *  `submit` handler reads them out of `draft.data` JSON directly. */
 const ALLOWED_PATCH_KEYS = new Set([
   'fullName', 'dob', 'phone',
   'religion', 'serviceMode',
   'experienceYears', 'bio', 'languages', 'city',
   'perMinutePaise', 'radius',
+  // Category chooser + astrologer-only fields — added when the wizard split
+  // into priest / astrologer / both sub-flows.
+  'providerCategory',
+  'specialisations',
+  'consultationChannels',
 ]);
 function whitelist(body: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};

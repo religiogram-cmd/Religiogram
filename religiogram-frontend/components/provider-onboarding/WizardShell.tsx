@@ -8,14 +8,20 @@ import { useProviderOnboarding } from '@/lib/provider-onboarding-store';
  * WizardShell — layout frame shared by every onboarding step.
  *
  * Responsibilities:
- *   - Show a persistent progress bar (Step X of 7)
+ *   - Show a persistent progress bar ("Step X of N")
  *   - Render a sticky footer with Back / Save & Next buttons
  *   - Surface sync status ("Saving…" / "Saved" / "Offline — will retry")
  *   - Block forward navigation with a per-step `canContinue` gate
  *
- * The step component owns validation; it calls `onContinue()` (which calls
- * the step's POST endpoint) and only returns without throwing when the
- * data is valid. The shell then advances.
+ * Sub-flow awareness:
+ *   The wizard is split into three parallel route trees rooted at
+ *   `/provider-onboarding/{priest,astrologer,both}/step-N`. Each flow can have
+ *   a different total step count (Priest: 9, Astrologer: 9, Both: 12) and its
+ *   own labels. To keep the shell decoupled from routing, the caller passes
+ *   `totalSteps`, `stepLabels`, and `routeBase` (e.g. "/provider-onboarding/
+ *   astrologer"). Legacy callers that omit these props fall back to the
+ *   original 9-step priest labels and root path, so the pre-split routes keep
+ *   working during the transition.
  *
  * Design target: a first-time service provider — likely older, possibly
  * less tech-confident, on a modest phone. Large tap targets, plain text,
@@ -49,6 +55,18 @@ interface WizardShellProps {
    *  (e.g. Step 7 has an internal "Submit for review" button that only
    *  appears after the user has recorded + reviewed the video). */
   hideNext?: boolean;
+  /** Override the number of steps in this flow. Defaults to 9 (the legacy
+   *  priest count). Both-flow passes 12. */
+  totalSteps?: number;
+  /** Override the labels shown in the header. Defaults to STEP_LABELS. */
+  stepLabels?: Record<number, string>;
+  /** Base path for Back / Next navigation, e.g. "/provider-onboarding/priest".
+   *  Defaults to "/provider-onboarding" for legacy routes. */
+  routeBase?: string;
+  /** Optional banner rendered between the header and the step content. Used
+   *  by the Both-flow to signal the seam between priest and astrologer
+   *  content (see BothFlowBanner). */
+  banner?: ReactNode;
 }
 
 export default function WizardShell({
@@ -59,10 +77,13 @@ export default function WizardShell({
   children,
   hideBack,
   hideNext,
+  totalSteps = 9,
+  stepLabels = STEP_LABELS,
+  routeBase = '/provider-onboarding',
+  banner,
 }: WizardShellProps) {
   const router = useRouter();
   const { saveStatus } = useProviderOnboarding();
-  const totalSteps = 9;
   const pct = Math.round((currentStep / totalSteps) * 100);
 
   /* Local in-flight flag so the Next button can show a spinner and disable
@@ -79,7 +100,7 @@ export default function WizardShell({
       // the tiny gap before the next step's page mounts — otherwise the
       // button briefly re-enables and looks glitchy.
       if (currentStep < totalSteps) {
-        router.push(`/provider-onboarding/step-${currentStep + 1}`);
+        router.push(`${routeBase}/step-${currentStep + 1}`);
       } else {
         router.push('/provider-onboarding/submitted');
       }
@@ -94,7 +115,7 @@ export default function WizardShell({
 
   const handleBack = () => {
     if (currentStep > 1) {
-      router.push(`/provider-onboarding/step-${currentStep - 1}`);
+      router.push(`${routeBase}/step-${currentStep - 1}`);
     } else {
       router.back();
     }
@@ -113,7 +134,7 @@ export default function WizardShell({
               Step {currentStep} of {totalSteps}
             </p>
             <h1 className="text-xl font-semibold mt-0.5">
-              {STEP_LABELS[currentStep] ?? '…'}
+              {stepLabels[currentStep] ?? '…'}
             </h1>
           </div>
           <SaveStatusBadge status={saveStatus} />
@@ -132,6 +153,9 @@ export default function WizardShell({
           />
         </div>
       </header>
+
+      {/* ── Optional flow banner (used by Both flow between priest/astro seam) ── */}
+      {banner}
 
       {/* ── Step content ─────────────────────────────────────── */}
       <main className="flex-1 px-5 py-6">

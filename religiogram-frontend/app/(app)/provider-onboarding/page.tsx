@@ -67,10 +67,18 @@ export default function ProviderOnboardingEntry() {
 
   const category = data.providerCategory as Category | undefined;
   const isReturning = step > 1 && !!category;
+  // Both flow has 12 steps, priest / astrologer have 9. Used only for the
+  // "Step X of N" copy on the resume banner.
+  const resumeTotal = category === 'both' ? 12 : 9;
 
   const startWizard = (cat: Category) => {
     if (cat !== data.providerCategory) update({ providerCategory: cat });
-    router.push(`/provider-onboarding/step-${Math.max(1, step)}`);
+    // Route into the per-category sub-flow. If the user was already in the
+    // middle of THIS category we resume at their furthest step; if they're
+    // switching category, start over at step 1 (their old progress is
+    // preserved in the store but won't line up 1:1 across flows).
+    const resumeStep = cat === data.providerCategory ? Math.max(1, step) : 1;
+    router.push(`/provider-onboarding/${cat}/step-${resumeStep}`);
   };
 
   return (
@@ -85,8 +93,8 @@ export default function ProviderOnboardingEntry() {
         </h1>
         <p className="mt-3 text-sm text-gray-700/85 leading-relaxed">
           Priest or astrologer — pick the role that fits how you serve, and
-          we&apos;ll walk you through the same 9-step onboarding. Same KYC,
-          same trusted process.
+          we&apos;ll walk you through a short onboarding (9 steps for one
+          role, 12 if you serve as both). Same KYC, same trusted process.
         </p>
 
         {/* Category chooser (Step 0) */}
@@ -153,7 +161,7 @@ export default function ProviderOnboardingEntry() {
               Continue where you left off
             </p>
             <p className="mt-1 text-sm text-[#0F2452]">
-              You&apos;re on Step {step} of 9 —{' '}
+              You&apos;re on Step {step} of {resumeTotal} —{' '}
               {category === 'astrologer'
                 ? 'Astrologer'
                 : category === 'both'
@@ -162,7 +170,7 @@ export default function ProviderOnboardingEntry() {
               application.
             </p>
             <button
-              onClick={() => router.push(`/provider-onboarding/step-${step}`)}
+              onClick={() => router.push(`/provider-onboarding/${category}/step-${step}`)}
               className="mt-3 px-5 py-3 rounded-xl font-semibold text-[#F7EFE1] bg-[#0F2452]
                          hover:bg-[#0F2452] active:scale-[0.98] transition"
             >
