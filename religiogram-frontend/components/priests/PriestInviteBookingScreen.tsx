@@ -539,39 +539,63 @@ export default function PriestInviteBookingScreen() {
 
         {step === 'select' && (
           <div>
-            {/* ── Golden card panel — Local / Global tabs + priest cards ── */}
+            {/* ── Golden card panel — Local / Global tabs + priest cards ──
+             * Layout matches the reference mockup exactly:
+             *   - Ornate top/bottom borders on the panel
+             *   - Centered "Available <role>s" title with diamond divider
+             *   - Local/Global pill toggle (Local highlighted navy when active)
+             *   - Each priest displayed with a small location tag ABOVE the
+             *     card (📍 Local / 🌐 Global), then a horizontal card with
+             *     photo left + info right, gold gradient background with a
+             *     thin decorative border along top and bottom.
+             */}
             <div style={{
               borderRadius: 20,
-              padding: 16,
-              background: `linear-gradient(180deg,#F3D084 0%,#E1B461 50%,#C99436 100%)`,
-              border: '1.5px solid rgba(107,50,16,0.35)',
-              boxShadow: '0 12px 30px rgba(107,50,16,0.20), inset 0 1px 0 rgba(255,255,255,0.5)',
+              padding: '18px 14px 20px',
+              background: `linear-gradient(180deg,#F4C67B 0%,#E1B461 50%,#C99436 100%)`,
+              border: '2px solid #7A4A10',
+              boxShadow:
+                '0 12px 30px rgba(107,50,16,0.25),' +
+                'inset 0 1px 0 rgba(255,255,255,0.6),' +
+                'inset 0 0 0 1px rgba(122,74,16,0.35)',
             }}>
               <div style={{
                 textAlign: 'center',
-                fontSize: 16, fontWeight: 800, color: '#3D1F00',
+                fontSize: 18, fontWeight: 800, color: '#2D1500',
                 fontFamily: '"Playfair Display",Georgia,serif',
+                letterSpacing: '0.01em',
                 marginBottom: 4,
               }}>Available {cfg.role}s</div>
-              <div style={{ textAlign: 'center', fontSize: 13, color: 'rgba(61,31,0,0.55)', marginBottom: 12 }}>◆ ─── ◆</div>
+              <div style={{
+                textAlign: 'center', marginBottom: 14,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                gap: 6,
+              }}>
+                <span style={{ color: '#7A4A10', fontSize: 10 }}>◆</span>
+                <span style={{ height: 1, width: 46, background: '#7A4A10', opacity: 0.55 }} />
+                <span style={{ color: '#7A4A10', fontSize: 10 }}>◆</span>
+              </div>
 
               {/* Local / Global toggle */}
               <div style={{
                 display: 'flex',
-                background: 'rgba(61,31,0,0.10)',
+                background: 'rgba(45,21,0,0.15)',
                 borderRadius: 999,
-                padding: 3,
-                marginBottom: 14,
-                border: '1px solid rgba(107,50,16,0.15)',
+                padding: 4,
+                marginBottom: 16,
+                border: '1px solid rgba(122,74,16,0.30)',
+                boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.10)',
               }}>
                 <button
                   type="button"
                   onClick={() => setPriestTab('local')}
                   style={{
-                    flex: 1, padding: '9px 0', borderRadius: 999, border: 'none',
+                    flex: 1, padding: '10px 0', borderRadius: 999, border: 'none',
                     background: priestTab === 'local' ? '#0A1628' : 'transparent',
-                    color: priestTab === 'local' ? '#F3D084' : '#3D1F00',
-                    fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                    color: priestTab === 'local' ? '#F4C67B' : '#2D1500',
+                    fontSize: 14, fontWeight: 800, cursor: 'pointer',
+                    boxShadow: priestTab === 'local' ? '0 3px 8px rgba(0,0,0,0.25)' : 'none',
+                    fontFamily: '"Playfair Display",Georgia,serif',
                     transition: 'background 0.15s',
                   }}
                 >Local</button>
@@ -579,10 +603,12 @@ export default function PriestInviteBookingScreen() {
                   type="button"
                   onClick={() => setPriestTab('global')}
                   style={{
-                    flex: 1, padding: '9px 0', borderRadius: 999, border: 'none',
+                    flex: 1, padding: '10px 0', borderRadius: 999, border: 'none',
                     background: priestTab === 'global' ? '#0A1628' : 'transparent',
-                    color: priestTab === 'global' ? '#F3D084' : '#3D1F00',
-                    fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                    color: priestTab === 'global' ? '#F4C67B' : '#2D1500',
+                    fontSize: 14, fontWeight: 800, cursor: 'pointer',
+                    boxShadow: priestTab === 'global' ? '0 3px 8px rgba(0,0,0,0.25)' : 'none',
+                    fontFamily: '"Playfair Display",Georgia,serif',
                     transition: 'background 0.15s',
                   }}
                 >Global</button>
@@ -594,8 +620,8 @@ export default function PriestInviteBookingScreen() {
                   <span aria-hidden style={{
                     display: 'inline-block', width: 28, height: 28,
                     borderRadius: '50%',
-                    border: '3px solid rgba(61,31,0,0.20)',
-                    borderTopColor: '#3D1F00',
+                    border: '3px solid rgba(45,21,0,0.20)',
+                    borderTopColor: '#2D1500',
                     animation: 'spin 0.8s linear infinite',
                   }} />
                   <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -604,7 +630,7 @@ export default function PriestInviteBookingScreen() {
               {!priestsLoading && filteredPriests.length === 0 && (
                 <div style={{
                   padding: '32px 20px', textAlign: 'center',
-                  fontSize: 13, color: '#3D1F00', lineHeight: 1.5,
+                  fontSize: 13, color: '#2D1500', lineHeight: 1.5, fontWeight: 600,
                 }}>
                   {priestTab === 'local' && !userCity
                     ? 'Set your city in Profile to see local priests.'
@@ -614,102 +640,125 @@ export default function PriestInviteBookingScreen() {
                 </div>
               )}
 
-              {/* Priest cards */}
+              {/* Priest cards — location tag OUTSIDE each card, card below */}
               {!priestsLoading && filteredPriests.length > 0 && (
-                <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {filteredPriests.map((p) => {
-                    const isLocal  = userCity && p.city.toLowerCase() === userCity;
+                    const isLocal  = !!(userCity && p.city.toLowerCase() === userCity);
                     const selected = selectedPriest?.id === p.id;
                     return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setSelectedPriest(p)}
-                        style={{
-                          display: 'block', width: '100%', textAlign: 'left',
-                          padding: 12, borderRadius: 14,
-                          background: selected
-                            ? `linear-gradient(180deg,#FFE7B8 0%,#F3D084 100%)`
-                            : `linear-gradient(180deg,#FCE3AC 0%,#E8C378 100%)`,
-                          border: `1.5px solid ${selected ? '#0A1628' : 'rgba(107,50,16,0.25)'}`,
-                          boxShadow: selected
-                            ? '0 8px 20px rgba(10,22,40,0.25), inset 0 1px 0 rgba(255,255,255,0.5)'
-                            : 'inset 0 1px 0 rgba(255,255,255,0.4)',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {/* Location tag */}
+                      <div key={p.id}>
+                        {/* Location tag ABOVE the card, matches reference mockup */}
                         <div style={{
-                          fontSize: 10.5, fontWeight: 700, color: '#3D1F00',
-                          display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8,
+                          fontSize: 12, fontWeight: 800, color: '#2D1500',
+                          display: 'flex', alignItems: 'center', gap: 5,
+                          marginBottom: 6, paddingLeft: 4,
                         }}>
-                          {isLocal ? '📍' : '🌐'} <span>{isLocal ? 'Local' : 'Global'}</span>
+                          <span style={{ fontSize: 13 }}>{isLocal ? '📍' : '🌐'}</span>
+                          <span>{isLocal ? 'Local' : 'Global'}</span>
                         </div>
 
-                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                          {/* Avatar */}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPriest(p)}
+                          style={{
+                            display: 'block', width: '100%', textAlign: 'left',
+                            padding: 0, borderRadius: 12,
+                            background: selected
+                              ? `linear-gradient(180deg,#FFEBBE 0%,#F5CE87 100%)`
+                              : `linear-gradient(180deg,#F9DFA4 0%,#E5BE79 100%)`,
+                            border: `1.5px solid ${selected ? '#0A1628' : '#8B5A16'}`,
+                            boxShadow: selected
+                              ? '0 8px 20px rgba(10,22,40,0.25), inset 0 1px 0 rgba(255,255,255,0.55)'
+                              : '0 3px 8px rgba(107,50,16,0.15), inset 0 1px 0 rgba(255,255,255,0.5)',
+                            cursor: 'pointer',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {/* Ornate top border */}
                           <div style={{
-                            width: 54, height: 54, borderRadius: 10,
-                            overflow: 'hidden', flexShrink: 0,
-                            background: 'linear-gradient(135deg,#C8920A,#6B3210)',
-                            border: '2px solid #3D1F00',
-                          }}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={p.photo}
-                              alt={p.name}
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                            />
-                          </div>
+                            height: 3,
+                            background: 'linear-gradient(90deg,transparent 0%,#8B5A16 20%,#8B5A16 80%,transparent 100%)',
+                            opacity: 0.55,
+                          }} />
 
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            {/* Name */}
+                          <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '12px 12px' }}>
+                            {/* Avatar */}
                             <div style={{
-                              fontFamily: '"Playfair Display",Georgia,serif',
-                              fontSize: 15, fontWeight: 700, color: '#1A0800',
-                              lineHeight: 1.2,
+                              width: 58, height: 58, borderRadius: 8,
+                              overflow: 'hidden', flexShrink: 0,
+                              background: 'linear-gradient(135deg,#C8920A,#6B3210)',
+                              border: '2px solid #2D1500',
+                              boxShadow: '0 2px 6px rgba(45,21,0,0.35)',
                             }}>
-                              {p.name}
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={p.photo}
+                                alt={p.name}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                              />
                             </div>
 
-                            {/* Rating + verified */}
-                            <div style={{
-                              display: 'flex', alignItems: 'center', gap: 10,
-                              fontSize: 12, marginTop: 3,
-                            }}>
-                              <span style={{ color: '#8B4A00', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 2 }}>
-                                <span style={{ color: '#C8920A' }}>★</span>
-                                {p.rating.toFixed(1)}
-                              </span>
-                              {p.isVerified && (
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              {/* Name */}
+                              <div style={{
+                                fontFamily: '"Playfair Display",Georgia,serif',
+                                fontSize: 16, fontWeight: 800, color: '#1A0800',
+                                lineHeight: 1.2,
+                              }}>
+                                {p.name}
+                              </div>
+
+                              {/* Rating + verified */}
+                              <div style={{
+                                display: 'flex', alignItems: 'center', gap: 12,
+                                fontSize: 13, marginTop: 4,
+                              }}>
                                 <span style={{
+                                  color: '#5A2A00', fontWeight: 800,
                                   display: 'flex', alignItems: 'center', gap: 3,
-                                  color: '#0A1628', fontWeight: 700,
                                 }}>
-                                  <span style={{
-                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                    width: 14, height: 14, borderRadius: '50%',
-                                    background: '#16a34a', color: '#fff',
-                                    fontSize: 9,
-                                  }}>✓</span>
-                                  Verified
+                                  <span style={{ color: '#E0A020', fontSize: 14 }}>★</span>
+                                  {p.rating.toFixed(1)}
                                 </span>
-                              )}
-                            </div>
+                                {p.isVerified && (
+                                  <span style={{
+                                    display: 'flex', alignItems: 'center', gap: 4,
+                                    color: '#0F5132', fontWeight: 700, fontSize: 12,
+                                  }}>
+                                    <span style={{
+                                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                      width: 15, height: 15, borderRadius: '50%',
+                                      background: '#16a34a', color: '#fff',
+                                      fontSize: 10, fontWeight: 900,
+                                    }}>✓</span>
+                                    Verified
+                                  </span>
+                                )}
+                              </div>
 
-                            {/* Specialisations */}
-                            <div style={{
-                              fontSize: 11, color: '#3D1F00', marginTop: 4,
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            }}>
-                              {p.specialisations.length > 0
-                                ? p.specialisations.slice(0, 3).join(', ')
-                                : `${p.yearsExp}+ yrs · ${p.languages.slice(0,2).join(', ')}`}
+                              {/* Specialisations */}
+                              <div style={{
+                                fontSize: 12, color: '#3D1F00', marginTop: 5,
+                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                fontWeight: 500,
+                              }}>
+                                {p.specialisations.length > 0
+                                  ? p.specialisations.slice(0, 3).join(', ')
+                                  : `${p.yearsExp}+ yrs · ${p.languages.slice(0,2).join(', ')}`}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </button>
+
+                          {/* Ornate bottom border — mirrors the top */}
+                          <div style={{
+                            height: 3,
+                            background: 'linear-gradient(90deg,transparent 0%,#8B5A16 20%,#8B5A16 80%,transparent 100%)',
+                            opacity: 0.55,
+                          }} />
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
