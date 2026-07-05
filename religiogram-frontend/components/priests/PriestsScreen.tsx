@@ -3,6 +3,7 @@ import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useReligion } from '@/lib/useReligion';
+import ReligionPicker from '@/components/discovery/ReligionPicker';
 
 const GOLD   = '#C8920A';
 const GOLD2  = '#E8A020';
@@ -272,52 +273,66 @@ function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () =>
   );
 }
 
-/* ── Inner ───────────────────────────────────────────────────── */
+/* ── Inner ─────────────────────────────────────────────────────
+ *
+ * Priests section is gated by the shared `useReligion()` preference:
+ *
+ *   1. If we haven't loaded the preference yet → spinner
+ *   2. If the user has never picked a religion → show the shared
+ *      `ReligionPicker` (same one Holy Places uses). Compulsory — the
+ *      picker's Continue button is disabled until a choice is made and
+ *      the confirmation modal mentions Profile → Settings for changes.
+ *   3. Once a religion IS set:
+ *        - If ?faith=X is on the URL → show that faith's detail page
+ *          (lets users switch faith temporarily via deep-links without
+ *           overwriting their preference)
+ *        - Otherwise → redirect to /priests?faith=<preferred>
+ *
+ * Because the preference is stored under a single shared key
+ * (rg_user_religion) picking in either Priests OR Holy Places auto-applies
+ * to the other. Changing later happens via Profile → Settings → My Faith.
+ */
 function PriestsInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const { confirmReligion } = useReligion();
-  const [showModal, setShowModal] = useState(false);
+  const { religion, confirmReligion, loaded } = useReligion();
 
   const faithParam = params.get('faith');
 
+  /* If the URL has no ?faith= but the user has a stored preference,
+   * bounce to their preferred faith so the detail page renders directly. */
   useEffect(() => {
-    try {
-      const asked = localStorage.getItem('rg_priests_religion_asked');
-      if (!asked) {
-        setShowModal(true);
-      }
-    } catch { /* SSR guard */ }
-  }, []);
-
-  const handleModalSelect = (r: string) => {
-    confirmReligion(r as any);
-    try { localStorage.setItem('rg_priests_religion_asked', '1'); } catch {}
-    setShowModal(false);
-    router.push(`/priests?faith=${r}`);
-  };
-
-  const handleModalSkip = () => {
-    try { localStorage.setItem('rg_priests_religion_asked', '1'); } catch {}
-    setShowModal(false);
-  };
+    if (loaded && religion && religion !== 'all' && !faithParam && FAITHS[religion]) {
+      router.replace(`/priests?faith=${religion}`);
+    }
+  }, [loaded, religion, faithParam, router]);
 
   const handleFaithSelect = (f: string) => {
     router.push(`/priests?faith=${f}`);
   };
 
+  /* Loading state (first paint, before useReligion has resolved). */
+  if (!loaded) {
+    return (
+      <div style={{ minHeight: '100svh', background: PARCH, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 32, height: 32, border: '2.5px solid rgba(200,146,10,0.2)', borderTopColor: GOLD, borderRadius: '50%', animation: 'rgspin 0.7s linear infinite' }} />
+        <style>{`@keyframes rgspin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+    );
+  }
+
+  /* Compulsory religion picker for first-time visitors. */
+  if (religion === null) {
+    return <ReligionPicker onConfirm={confirmReligion} />;
+  }
+
+  /* Deep-link to a specific faith takes priority over the stored preference. */
   if (faithParam && FAITHS[faithParam]) {
     return <FaithDetailPage faithKey={faithParam} onBack={() => router.push('/priests')} />;
   }
 
-  return (
-    <>
-      <LandingPage onFaith={handleFaithSelect} />
-      {showModal && (
-        <ReligionPickerModal onSelect={handleModalSelect} onSkip={handleModalSkip} />
-      )}
-    </>
-  );
+  /* 'all' or no matching faith → landing that lists all faiths. */
+  return <LandingPage onFaith={handleFaithSelect} />;
 }
 
 /* ── Export ──────────────────────────────────────────────────── */
