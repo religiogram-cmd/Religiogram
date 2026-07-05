@@ -46,6 +46,9 @@ export class AdminAnalyticsController {
       completedBookings,
       cancelledBookings,
       openDisputes,
+      totalDisputes,
+      resolvedDisputes,
+      totalFraudSignals,
       unresolvedFraudSignals,
       totalUsers,
       seekerUsers,
@@ -68,6 +71,21 @@ export class AdminAnalyticsController {
       this.bookingRepo.count({ where: { status: BookingStatus.COMPLETED } }),
       this.bookingRepo.count({ where: { status: BookingStatus.CANCELLED } }),
       this.disputeRepo.count({ where: { status: DisputeStatus.RAISED } }),
+      this.disputeRepo.count(),
+      // "Resolved" from the admin's perspective = any terminal outcome.
+      // We UNION the three resolved states in a single COUNT with a raw
+      // where-in so the schema stays flexible if new states are added.
+      this.disputeRepo
+        .createQueryBuilder('d')
+        .where('d.status IN (:...st)', {
+          st: [
+            DisputeStatus.RESOLVED_FOR_USER,
+            DisputeStatus.RESOLVED_FOR_PROVIDER,
+            DisputeStatus.CLOSED,
+          ],
+        })
+        .getCount(),
+      this.fraudRepo.count(),
       this.fraudRepo.count({ where: { isResolved: false } }),
       this.userRepo.count(),
       this.userRepo.count({ where: { role: 'seeker' } }),
@@ -87,8 +105,15 @@ export class AdminAnalyticsController {
     return {
       providers: { total: totalProviders, pending: pendingProviders, approved: approvedProviders },
       bookings:  { total: totalBookings, completed: completedBookings, cancelled: cancelledBookings },
-      disputes:  { open: openDisputes },
-      fraud:     { unresolved: unresolvedFraudSignals },
+      disputes:  {
+        total:    totalDisputes,
+        open:     openDisputes,
+        resolved: resolvedDisputes,
+      },
+      fraud:     {
+        total:      totalFraudSignals,
+        unresolved: unresolvedFraudSignals,
+      },
       users: {
         total:     totalUsers,
         seekers:   seekerUsers,

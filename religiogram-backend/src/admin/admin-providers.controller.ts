@@ -143,9 +143,54 @@ export class AdminProvidersController {
     private readonly ranking: RankingService,
   ) {}
 
+  /**
+   * Serialize a provider row for the admin console. Normalises the raw
+   * `ProviderStatus` enum so the frontend can use a simpler union:
+   *   - `pending_review` → `pending` (admin UI groups draft under the
+   *     Pending Review filter for simplicity — very few rows sit in
+   *     `draft` post-submission)
+   *   - `draft`          → `pending`
+   *   - `banned` bit lives in `rejectionReason` prefix (BANNED:) — we
+   *     surface it as a distinct `banned` status here so the badge can
+   *     colour differently from a plain Suspended.
+   */
+  private serialize(p: ProviderEntity) {
+    let status: string = p.status;
+    if (status === ProviderStatus.PendingReview || status === ProviderStatus.Draft) {
+      status = 'pending';
+    } else if (
+      status === ProviderStatus.Suspended &&
+      typeof p.rejectionReason === 'string' &&
+      p.rejectionReason.startsWith('BANNED:')
+    ) {
+      status = 'banned';
+    }
+    return {
+      id:               p.id,
+      fullName:         p.fullName ?? null,
+      city:             p.city ?? null,
+      religion:         p.religion ?? null,
+      providerCategory: p.providerCategory,
+      status,
+      ratingAvg:        p.ratingAvg ? parseFloat(p.ratingAvg as string) : null,
+      ratingCount:      p.ratingCount,
+      perMinutePaise:   p.perMinutePaise,
+      createdAt:        p.createdAt?.toISOString?.() ?? p.createdAt,
+      // Full-detail fields (used by the edit modal — safe to always send)
+      bio:              p.bio ?? null,
+      experienceYears:  p.experienceYears,
+      languages:        p.languages ?? [],
+      serviceMode:      p.serviceMode,
+      specialisations:  p.specialisations ?? [],
+      specialisationYears:  p.specialisationYears ?? {},
+      consultationChannels: p.consultationChannels ?? [],
+    };
+  }
+
   @Get()
   async list(
-    @Query('status') status?: ProviderStatus,
+    @Query('status') status?: string,
+    @Query('category') category?: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit = 20,
   ) {
@@ -155,7 +200,32 @@ export class AdminProvidersController {
       .orderBy('p.createdAt', 'DESC')
       .addOrderBy('p.id', 'DESC')
       .take(safeLimit + 1);
-    if (status) qb.andWhere('p.status = :status', { status });
+
+    // Accept the frontend's UI-friendly `pending` alias in addition to the
+    // raw enum values. `banned` isn't a real enum state — it maps to
+    // Suspended + rejectionReason LIKE 'BANNED:%'.
+    if (status) {
+      if (status === 'pending') {
+        qb.andWhere('p.status IN (:...pendingStatuses)', {
+          pendingStatuses: [ProviderStatus.PendingReview, ProviderStatus.Draft],
+        });
+      } else if (status === 'banned') {
+        qb.andWhere('p.status = :suspended', { suspended: ProviderStatus.Suspended })
+          .andWhere("p.rejectionReason LIKE 'BANNED:%'");
+      } else if (status === 'suspended') {
+        // Explicitly EXCLUDE banned rows from the plain Suspended filter.
+        qb.andWhere('p.status = :suspended', { suspended: ProviderStatus.Suspended })
+          .andWhere("(p.rejectionReason IS NULL OR p.rejectionReason NOT LIKE 'BANNED:%')");
+      } else {
+        qb.andWhere('p.status = :status', { status });
+      }
+    }
+
+    // Category filter (was silently ignored before this fix).
+    if (category && (category === 'priest' || category === 'astrologer' || category === 'both')) {
+      qb.andWhere('p.providerCategory = :category', { category });
+    }
+
     if (cursor) {
       const { d, i } = decodeCursor(cursor);
       qb.andWhere('(p.createdAt < :d OR (p.createdAt = :d AND p.id < :i))', { d, i });
@@ -165,14 +235,16 @@ export class AdminProvidersController {
     if (hasMore) rows.pop();
     const last = rows[rows.length - 1];
     return {
-      data: rows,
+      items: rows.map((p) => this.serialize(p)),
       nextCursor: hasMore && last ? encodeCursor(last.createdAt, String(last.id)) : null,
+      hasMore,
     };
   }
 
   @Get(':id')
   async getOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.providerRepo.findOneOrFail({ where: { id } });
+    const p = await this.providerRepo.findOneOrFail({ where: { id } });
+    return this.serialize(p);
   }
 
   @Patch(':id/moderate')
@@ -191,9 +263,17 @@ export class AdminProvidersController {
       ban:      ProviderStatus.Suspended,  // Ban re-uses Suspended; mark via rejectionReason
     };
 
+    /* Distinguish ban vs plain suspend by prefixing rejectionReason with
+     * `BANNED:`. The list serializer maps this back to a `banned` status
+     * so the admin UI can render a distinct badge. */
+    const reason = dto.reason ?? '';
+    const rejectionReason = dto.action === 'ban'
+      ? `BANNED:${reason}`
+      : (dto.action === 'suspend' || dto.action === 'reject') ? reason : null;
+
     const update: Partial<ProviderEntity> = {
       status: statusMap[dto.action],
-      rejectionReason: dto.reason ?? null,
+      rejectionReason,
       approvedAt: dto.action === 'approve' ? new Date() : undefined,
     };
 
@@ -277,6 +357,7 @@ export class AdminProvidersController {
       this.logger.warn(`ranking bump after provider.edit failed: ${(e as Error).message}`),
     );
 
-    return this.providerRepo.findOne({ where: { id } });
+    const fresh = await this.providerRepo.findOne({ where: { id } });
+    return fresh ? this.serialize(fresh) : null;
   }
 }
