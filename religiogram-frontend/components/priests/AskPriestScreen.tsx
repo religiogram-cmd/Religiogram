@@ -35,6 +35,7 @@ interface ConsultPriest {
   introMinutesFree: number;    // first N minutes free
   online: boolean; busy: boolean;
   photo: string;
+  isVerified: boolean;
 }
 
 // No hardcoded priest pool. The list below is driven entirely by the real
@@ -86,20 +87,22 @@ export default function AskPriestScreen() {
     let cancelled = false;
     setLoadingPriests(true);
     const tok = tokenStore.access;
-    // Real backend route is GET /v1/providers/by-religion/:religion (NOT
-    // /v1/priests — that was a v0 path that never landed).
-    //   path :religion ∈ hindu | islam | sikh | christian  (NOT "muslim")
-    //   query: city?, lang?, availableNow?, cursor?, limit?
-    //   per-priest fields: id, fullName, religion, city, experienceYears,
-    //     languages[], ratingAvg, ratingCount, bio, perMinutePaise,
-    //     perMinuteTier, serviceMode, servicesCount
+    /* Unified providers endpoint: `GET /v1/providers?category=priest&religion=X`.
+     * Same source of truth the priest picker (`/priests/invite` step 1) and
+     * the astrology marketplace use. `category=priest` guarantees we don't
+     * surface astrologers who happen to share a religion. Backend returns
+     * `{ items, nextCursor, hasMore }` with the ranking_score DESC ordering
+     * applied server-side. */
     const faithParam: string = faith === 'muslim' ? 'islam' : faith;
-    const qs = new URLSearchParams({ limit: '50' });
-    if (filter === 'online') qs.set('availableNow', 'true');
+    const qs = new URLSearchParams({
+      category: 'priest',
+      religion: faithParam,
+      limit:    '50',
+    });
     const headers: Record<string,string> = {};
     if (tok) headers['Authorization'] = 'Bearer ' + tok;
 
-    fetch(`${API_BASE}/providers/by-religion/${faithParam}?${qs.toString()}`, { headers })
+    fetch(`${API_BASE}/providers?${qs.toString()}`, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         if (cancelled) return;
@@ -116,19 +119,27 @@ export default function AskPriestScreen() {
             ? langField.map(String)
             : (typeof langField === 'string' ? langField.split(/[·,]/).map(s => s.trim()).filter(Boolean) : []);
           const ratePerMinPaise = Number(p['perMinutePaise'] ?? p['pricePerMinPaise'] ?? p['ratePerMinPaise'] ?? 0);
+          /* Prefer the specialisations[] array (populated by Phase 3
+           * onboarding — Puja, Havan, Vastu, etc.) over the free-form bio.
+           * Matches the priest picker card's rendering. */
+          const specsArray = Array.isArray(p['specialisations']) ? (p['specialisations'] as unknown[]).map(String) : [];
+          const specialty = specsArray.length > 0
+            ? specsArray.slice(0, 3).join(' · ')
+            : String(p['bio'] ?? p['specialty'] ?? '');
           return {
             id:         String(p['id'] ?? p['providerId'] ?? ''),
             name:       String(p['fullName'] ?? p['name'] ?? p['displayName'] ?? 'Unknown'),
-            specialty:  String(p['bio'] ?? p['specialty'] ?? ''),
+            specialty,
             yearsExp:   Number(p['experienceYears'] ?? p['yearsExp'] ?? 0),
             languages:  langs,
             rating:     Number(p['ratingAvg'] ?? p['rating'] ?? 0),
             reviews:    Number(p['ratingCount'] ?? p['reviewCount'] ?? p['reviews'] ?? 0),
             ratePerMin: ratePerMinPaise > 0 ? Math.round(ratePerMinPaise / 100) : Number(p['ratePerMin'] ?? 0),
             introMinutesFree: Number(p['introMinutesFree'] ?? 5),
-            online:     Boolean(p['availableNow'] ?? p['onlineNow'] ?? p['online'] ?? false),
+            online:     Boolean(p['isOnline'] ?? p['availableNow'] ?? p['onlineNow'] ?? p['online'] ?? false),
             busy:       Boolean(p['busy'] ?? false),
             photo:      String(p['avatarUrl'] ?? p['photoUrl'] ?? p['photo'] ?? `/priests/${faith}-ask.jpg`),
+            isVerified: Boolean(p['isVerified'] ?? true), // approved providers are verified by definition
           };
         });
         setPriestList(mapped);
@@ -285,8 +296,22 @@ export default function AskPriestScreen() {
                   }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 13, fontWeight: 800, color: TEXT, lineHeight: 1.2 }}>{p.name}</span>
+                    {p.isVerified && (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 3,
+                        color: '#0F5132', fontWeight: 700, fontSize: 10.5,
+                      }}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 12, height: 12, borderRadius: '50%',
+                          background: GREEN, color: '#fff',
+                          fontSize: 8, fontWeight: 900,
+                        }}>✓</span>
+                        Verified
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: 10.5, color: TEXT3, lineHeight: 1.35 }}>{p.specialty}</div>
                   <div style={{ fontSize: 10, color: TEXT3, marginTop: 2 }}>{p.yearsExp}+ yrs · {p.languages.join(' · ')}</div>
@@ -299,26 +324,43 @@ export default function AskPriestScreen() {
                 </div>
               </div>
 
-              {/* Mode buttons */}
+              {/* Mode buttons — route to the shared pre-session screen
+               * (`/consult/[providerId]`) that priests and astrologers now
+               * both use. That screen handles wallet balance checks, the
+               * "Start Session" confirmation, and the actual
+               * POST /v1/consultation/start call. This keeps the pattern
+               * identical to the astrology consult flow, so wallet +
+               * chat/voice/video + per-minute billing behave the same
+               * for every provider category. */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
                 {(['chat','call','video'] as Mode[]).map(mode => {
                   const disabled = isStarting || p.busy || !p.online;
-                  return (
-                    <button key={mode}
-                      onClick={() => startConsult(p, mode)}
-                      disabled={disabled}
-                      style={{
-                        background: disabled ? 'rgba(15,36,82,0.18)' : NAVY_2,
-                        color: '#fff',
-                        fontSize: 11, fontWeight: 800,
-                        padding: '8px 0', borderRadius: 8,
-                        border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                      }}>
+                  const channel = mode === 'call' ? 'voice' : mode;
+                  const preSessionMode = mode === 'chat' ? 'chat' : 'call';
+                  const href = `/consult/${p.id}?mode=${preSessionMode}&channel=${channel}`;
+                  const commonStyle: React.CSSProperties = {
+                    background: disabled ? 'rgba(15,36,82,0.18)' : NAVY_2,
+                    color: '#fff',
+                    fontSize: 11, fontWeight: 800,
+                    padding: '8px 0', borderRadius: 8,
+                    border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                    textDecoration: 'none',
+                  };
+                  const label = (
+                    <>
                       {mode === 'chat' && <>💬 Chat</>}
                       {mode === 'call' && <>📞 Call</>}
                       {mode === 'video' && <>📹 Video</>}
-                    </button>
+                    </>
+                  );
+                  if (disabled) {
+                    return (
+                      <button key={mode} disabled style={commonStyle}>{label}</button>
+                    );
+                  }
+                  return (
+                    <a key={mode} href={href} style={commonStyle}>{label}</a>
                   );
                 })}
               </div>
