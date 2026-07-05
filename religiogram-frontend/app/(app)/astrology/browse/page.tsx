@@ -35,6 +35,46 @@ const GOLD_L = '#E0A92F';
 const CREAM  = '#FFFAEC';
 const TEXT2  = '#4A3010';
 
+/* Topic quick-chips — AstroTalk-style pinned above the main filter row.
+ * Each key must match an option in FiltersSheet TOPIC_OPTS so the sheet's
+ * count-badge/selection state stays in sync when a chip is tapped. Icons
+ * are inline SVGs so we don't need extra assets. */
+const TOPIC_CHIPS: Array<{ key: string; label: string; icon: React.ReactNode; color: string }> = [
+  { key: '',        label: 'All',       color: '#F5B301', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" /></svg>
+  )},
+  { key: 'Love',    label: 'Love',      color: '#EF4444', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+  )},
+  { key: 'Education',label:'Education', color: '#7C3AED', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+  )},
+  { key: 'Career',  label: 'Career',    color: '#0EA5E9', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+  )},
+  { key: 'Marriage',label: 'Marriage',  color: '#EC4899', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="9" cy="14" r="6"/><circle cx="15" cy="14" r="6"/></svg>
+  )},
+  { key: 'Health',  label: 'Health',    color: '#F97316', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V4h8v3"/><path d="M12 11v6M9 14h6"/></svg>
+  )},
+  { key: 'Finance', label: 'Wealth',    color: '#8B5CF6', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="18" cy="12" r="1.4"/></svg>
+  )},
+  { key: 'Legal',   label: 'Legal',     color: '#0F172A', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18"/><path d="M5 8h14M4 8l3 8h4l-3-8M20 8l-3 8h-4l3-8"/></svg>
+  )},
+  { key: 'Business',label: 'Business',  color: '#10B981', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+  )},
+  { key: 'Family',  label: 'Family',    color: '#F59E0B', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="7" cy="8" r="3"/><circle cx="17" cy="8" r="3"/><path d="M2 21c0-3 2.5-5 5-5s5 2 5 5M12 21c0-3 2.5-5 5-5s5 2 5 5"/></svg>
+  )},
+  { key: 'Children',label: 'Children',  color: '#3B82F6', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="3"/><path d="M6 21c0-3 3-5 6-5s6 2 6 5"/></svg>
+  )},
+];
+
 export default function BrowsePage() {
   const params = useSearchParams();
   const initialSpec = params?.get('specialization') ?? undefined;
@@ -57,6 +97,25 @@ export default function BrowsePage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetFilters, setSheetFilters] = useState<SheetFilters>(EMPTY_FILTERS);
   const activeFilterCount = useMemo(() => countActiveFilters(sheetFilters), [sheetFilters]);
+
+  /* ─── Topic quick-chip + search (AstroTalk-style) ──────────────────
+   * A single-select topic chip pinned above the filter row. Sets exactly
+   * one entry into `sheetFilters.topics` on click, clears it when "All"
+   * is picked. Search does client-side name matching over `results`. */
+  const [topic, setTopic] = useState<string>(''); // '' = All
+  const [nameQuery, setNameQuery] = useState('');
+  const setTopicChip = (t: string) => {
+    setTopic(t);
+    setSheetFilters((f) => ({ ...f, topics: t ? [t] : [] }));
+  };
+
+  /* Name search is a client-side substring match — cheap and instant.
+   * Runs on top of the API result set every render. */
+  const applyNameSearch = (rows: Astrologer[]): Astrologer[] => {
+    const q = nameQuery.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((a) => a.name.toLowerCase().includes(q));
+  };
 
   // If we arrived with a category query (love / marriage / etc.), map it to
   // a relevant specialisation so the list narrows appropriately.
@@ -135,6 +194,10 @@ export default function BrowsePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quickFilter, specialization, sort, sheetFilters]);
 
+  /* Apply the name-search filter every render. Cheap substring match on
+   * ~50 rows max — no need to memoise. */
+  const visibleResults = applyNameSearch(results);
+
   return (
     <div style={{ background: CREAM, minHeight: '100svh', paddingBottom: 80 }}>
       {/* ── Header ── */}
@@ -158,8 +221,85 @@ export default function BrowsePage() {
           </h1>
         </div>
 
+        {/* Search + Topic chip row (AstroTalk-style pinned scroller).
+         * Search does client-side name matching over the fetched list.
+         * Topic chips single-select — tapping one narrows to that topic;
+         * "All" clears the topic filter. */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          marginTop: 12, overflowX: 'auto', paddingBottom: 2,
+        }}>
+          {/* Search input */}
+          <div style={{
+            display: 'flex', alignItems: 'center',
+            background: '#FFFFFF', border: `1px solid ${nameQuery ? GOLD : 'rgba(15,36,82,0.15)'}`,
+            borderRadius: 999, padding: '2px 4px 2px 4px',
+            flexShrink: 0, minWidth: 210,
+          }}>
+            <span style={{
+              width: 30, height: 30, borderRadius: 999,
+              background: GOLD_L, color: NAVY,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+            </span>
+            <input
+              type="text"
+              value={nameQuery}
+              onChange={(e) => setNameQuery(e.target.value)}
+              placeholder="Search name…"
+              style={{
+                border: 'none', outline: 'none', background: 'transparent',
+                padding: '8px 10px', fontSize: 13, color: NAVY,
+                flex: 1, minWidth: 0,
+              }}
+            />
+            {nameQuery && (
+              <button
+                type="button"
+                onClick={() => setNameQuery('')}
+                aria-label="Clear search"
+                style={{
+                  background: 'transparent', border: 'none', color: '#94a3b8',
+                  fontSize: 16, cursor: 'pointer', padding: '0 8px',
+                }}
+              >×</button>
+            )}
+          </div>
+
+          {/* Vertical divider */}
+          <div style={{ width: 1, height: 24, background: 'rgba(15,36,82,0.15)', flexShrink: 0 }} />
+
+          {/* Topic chips */}
+          {TOPIC_CHIPS.map((t) => {
+            const active = topic === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTopicChip(t.key)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '8px 14px', borderRadius: 999,
+                  background: active ? `${GOLD_L}30` : '#FFFFFF',
+                  border: `1.5px solid ${active ? GOLD : 'rgba(15,36,82,0.12)'}`,
+                  color: NAVY, fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                }}
+              >
+                <span aria-hidden style={{ color: t.color, fontSize: 14, display: 'inline-flex' }}>{t.icon}</span>
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Quick filter row: All / Online Now / Top Rated / Filters(sheet) */}
-        <div style={{ display: 'flex', gap: 8, marginTop: 12, overflowX: 'auto', paddingBottom: 2 }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
           <Chip active={quickFilter === 'all'}    onClick={() => setQuickFilter('all')}>All</Chip>
           <Chip active={quickFilter === 'online'} onClick={() => setQuickFilter('online')}>● Online Now</Chip>
           <Chip active={quickFilter === 'top'}    onClick={() => setQuickFilter('top')}>★ Top Rated</Chip>
@@ -206,7 +346,7 @@ export default function BrowsePage() {
 
       {/* ── Result count ── */}
       <div style={{ padding: '14px 20px 6px', fontSize: 12.5, color: TEXT2, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span>{results.length} astrologer{results.length !== 1 && 's'} available</span>
+        <span>{visibleResults.length} astrologer{visibleResults.length !== 1 && 's'} available</span>
         {refetching && (
           <span aria-hidden style={{
             display: 'inline-block', width: 12, height: 12,
@@ -219,7 +359,7 @@ export default function BrowsePage() {
       </div>
 
       {/* Loading state (first fetch only) */}
-      {loading && results.length === 0 && (
+      {loading && visibleResults.length === 0 && (
         <div style={{ padding: 40, textAlign: 'center' }}>
           <span aria-hidden style={{
             display: 'inline-block', width: 28, height: 28,
@@ -236,14 +376,16 @@ export default function BrowsePage() {
 
       {/* ── List ── */}
       <div style={{ padding: '4px 16px 20px' }}>
-        {!loading && results.length === 0 ? (
+        {!loading && visibleResults.length === 0 ? (
           <div style={{
             padding: 40, textAlign: 'center', color: TEXT2, fontSize: 14,
           }}>
-            No astrologers match your filters. Try widening them.
+            {nameQuery
+              ? `No astrologers match "${nameQuery}". Try a different name.`
+              : 'No astrologers match your filters. Try widening them.'}
           </div>
         ) : (
-          results.map((a) => <BrowseCard key={a.id} a={a} />)
+          visibleResults.map((a) => <BrowseCard key={a.id} a={a} />)
         )}
       </div>
 

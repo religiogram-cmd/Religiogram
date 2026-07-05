@@ -156,14 +156,36 @@ const VERIFICATION_OPTS: Array<{ key: string; label: string }> = [
 
 /* ─────────────────────────  Component  ───────────────────────── */
 
+/** Keys of sections that can be hidden per flow. Priest flows hide
+ *  `systems` (astrology systems) + `topics` (astro consult topics) since
+ *  they aren't meaningful for pandit consultations. */
+export type FilterSectionKey =
+  | 'availability' | 'channels' | 'price' | 'experience' | 'rating'
+  | 'languages'    | 'gender'   | 'systems' | 'topics'   | 'verification';
+
 interface Props {
   open: boolean;
   value: SheetFilters;
   onClose: () => void;
   onApply: (next: SheetFilters) => void;
+  /** Optional list of sections to hide. Used by Ask-a-Pandit to strip
+   *  astrology-only sections while reusing the same sheet UI. */
+  hideSections?: FilterSectionKey[];
+  /** Copy override for the "Verified <Astrologers|Pandits|...> Only" chip
+   *  label. Defaults to "Verified Astrologers Only" when not supplied. */
+  verifiedOnlyLabel?: string;
+  /** Sheet title. Defaults to "Filters". */
+  title?: string;
 }
 
-export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
+export default function FiltersSheet({
+  open, value, onClose, onApply,
+  hideSections = [],
+  verifiedOnlyLabel,
+  title = 'Filters',
+}: Props) {
+  const hidden = new Set(hideSections);
+  const isHidden = (k: FilterSectionKey) => hidden.has(k);
   /* Draft state — mutated locally until Apply. Seeds from either the parent's
    * committed value or sessionStorage on mount, whichever exists. */
   const [draft, setDraft] = useState<SheetFilters>(value);
@@ -268,7 +290,7 @@ export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
             fontSize: 18, fontWeight: 700, color: NAVY,
             margin: 0, letterSpacing: '-0.01em',
           }}>
-            Filters
+            {title}
           </h2>
           <button
             type="button"
@@ -290,6 +312,7 @@ export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
           padding: '16px 18px 20px',
         }}>
           {/* 1. Availability */}
+          {!isHidden('availability') && <>
           <Section title="Availability">
             <ChipRow>
               {AVAILABILITY_OPTS.map((o) => (
@@ -303,8 +326,10 @@ export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
               ))}
             </ChipRow>
           </Section>
+          </>}
 
           {/* 2. Consultation Type */}
+          {!isHidden('channels') && <>
           <Section title="Consultation Type">
             <ChipRow>
               {CHANNEL_OPTS.map((o) => (
@@ -318,8 +343,10 @@ export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
               ))}
             </ChipRow>
           </Section>
+          </>}
 
           {/* 3. Consultation Price */}
+          {!isHidden('price') && <>
           <Section title="Consultation Price (per min)">
             <PriceRange
               min={draft.minPricePaise}
@@ -341,8 +368,10 @@ export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
               })}
             </ChipRow>
           </Section>
+          </>}
 
           {/* 4. Experience */}
+          {!isHidden('experience') && <>
           <Section title="Experience">
             <ChipRow>
               {EXPERIENCE_OPTS.map((o) => (
@@ -356,8 +385,10 @@ export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
               ))}
             </ChipRow>
           </Section>
+          </>}
 
           {/* 5. Rating (single-select) */}
+          {!isHidden('rating') && <>
           <Section title="Rating">
             <ChipRow>
               {RATING_OPTS.map((o) => {
@@ -374,8 +405,10 @@ export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
               })}
             </ChipRow>
           </Section>
+          </>}
 
           {/* 6. Language */}
+          {!isHidden('languages') && <>
           <Section title="Language">
             <ChipRow>
               {LANGUAGE_OPTS.map((l) => (
@@ -389,8 +422,10 @@ export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
               ))}
             </ChipRow>
           </Section>
+          </>}
 
           {/* 7. Gender (single-select) */}
+          {!isHidden('gender') && <>
           <Section title="Gender">
             <ChipRow>
               {GENDER_OPTS.map((o) => {
@@ -407,8 +442,10 @@ export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
               })}
             </ChipRow>
           </Section>
+          </>}
 
           {/* 8. Astrology Systems */}
+          {!isHidden('systems') && <>
           <Section title="Astrology Systems">
             <ChipRow>
               {SYSTEM_OPTS.map((s) => (
@@ -422,8 +459,10 @@ export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
               ))}
             </ChipRow>
           </Section>
+          </>}
 
           {/* 9. Consultation Topics */}
+          {!isHidden('topics') && <>
           <Section title="Consultation Topics">
             <ChipRow>
               {TOPIC_OPTS.map((t) => (
@@ -437,8 +476,10 @@ export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
               ))}
             </ChipRow>
           </Section>
+          </>}
 
           {/* 10. Verification */}
+          {!isHidden('verification') && (
           <Section title="Verification">
             <ChipRow>
               {VERIFICATION_OPTS.map((o) => (
@@ -447,11 +488,12 @@ export default function FiltersSheet({ open, value, onClose, onApply }: Props) {
                   active={draft.verificationBadges.includes(o.key)}
                   onClick={() => set('verificationBadges', toggleIn(draft.verificationBadges, o.key))}
                 >
-                  {o.label}
+                  {o.key === 'verified' && verifiedOnlyLabel ? verifiedOnlyLabel : o.label}
                 </SheetChip>
               ))}
             </ChipRow>
           </Section>
+          )}
 
           {/* bottom spacer so last section clears the sticky footer */}
           <div style={{ height: 12 }} />

@@ -1,8 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { tokenStore } from '@/lib/api';
+import FiltersSheet, {
+  EMPTY_FILTERS,
+  countActiveFilters,
+  type SheetFilters,
+} from '@/components/astrology/FiltersSheet';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1';
 
@@ -51,6 +56,9 @@ export default function AskPriestScreen() {
   const cfg = FAITH_CONFIG[faith];
 
   const [filter, setFilter] = useState<'all' | 'online' | 'top'>('all');
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetFilters, setSheetFilters] = useState<SheetFilters>(EMPTY_FILTERS);
+  const activeFilterCount = useMemo(() => countActiveFilters(sheetFilters), [sheetFilters]);
   const [startingId, setStartingId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [priestList, setPriestList] = useState<ConsultPriest[] | null>(null);
@@ -150,14 +158,69 @@ export default function AskPriestScreen() {
     return () => { cancelled = true; };
   }, [faith, filter]);
 
-  // Drive the list directly off the API. An empty list renders the
-  // "no priests available" state below — no fake fallback.
+  /* Drive the list off the API + apply the two filter layers on the
+   * client: (a) the quick pill (All/Online/Top) and (b) the bottom-sheet
+   * `sheetFilters`. Same client-side approach the astrology browse uses. */
   const allPriests = priestList ?? [];
-  const priests = (() => {
-    if (filter === 'online') return allPriests.filter(p => p.online && !p.busy);
-    if (filter === 'top')    return [...allPriests].sort((a, b) => b.rating - a.rating);
-    return allPriests;
-  })();
+  const priests = useMemo(() => {
+    let list = [...allPriests];
+
+    // Quick pill
+    if (filter === 'online') list = list.filter(p => p.online && !p.busy);
+    if (filter === 'top')    list.sort((a, b) => b.rating - a.rating);
+
+    // Sheet: languages (multi)
+    if (sheetFilters.languages.length > 0) {
+      const want = new Set(sheetFilters.languages.map(l => l.toLowerCase()));
+      list = list.filter(p => p.languages.some(l => want.has(l.toLowerCase())));
+    }
+    // Sheet: rating (single min)
+    if (typeof sheetFilters.minRating === 'number') {
+      const m = sheetFilters.minRating;
+      list = list.filter(p => p.rating >= m);
+    }
+    // Sheet: price band
+    if (sheetFilters.minPricePaise !== EMPTY_FILTERS.minPricePaise ||
+        sheetFilters.maxPricePaise !== EMPTY_FILTERS.maxPricePaise) {
+      const minR = Math.floor(sheetFilters.minPricePaise / 100);
+      const maxR = Math.ceil(sheetFilters.maxPricePaise / 100);
+      list = list.filter(p => p.ratePerMin >= minR && p.ratePerMin <= maxR);
+    }
+    // Sheet: experience bands (multi)
+    if (sheetFilters.experienceBands.length > 0) {
+      const bandMatch = (yrs: number, band: string): boolean => {
+        switch (band) {
+          case '0-3':   return yrs >= 0  && yrs <= 3;
+          case '3-5':   return yrs > 3   && yrs <= 5;
+          case '5-10':  return yrs > 5   && yrs <= 10;
+          case '10-15': return yrs > 10  && yrs <= 15;
+          case '15-20': return yrs > 15  && yrs <= 20;
+          case '20+':   return yrs > 20;
+          default:      return false;
+        }
+      };
+      list = list.filter(p => sheetFilters.experienceBands.some(b => bandMatch(p.yearsExp, b)));
+    }
+    // Sheet: availability keys (online/chat/voice/video/offline)
+    if (sheetFilters.availability.length > 0) {
+      const av = new Set(sheetFilters.availability);
+      list = list.filter(p => {
+        if (av.has('online')  && !(p.online && !p.busy)) return false;
+        if (av.has('offline') && p.online)               return false;
+        // chat/voice/video would need a channels[] on ConsultPriest;
+        // priests currently expose only rate, not channel list — treated
+        // as a pass-through no-op today. TODO: extend backend mapping.
+        return true;
+      });
+    }
+    // Sheet: verification badges — currently a single `isVerified` bit;
+    // kyc/certified aliases treated same until backend splits them.
+    if (sheetFilters.verificationBadges.length > 0) {
+      list = list.filter(p => p.isVerified);
+    }
+    // Sheet: gender — priest ConsultPriest doesn't track gender today; no-op.
+    return list;
+  }, [allPriests, filter, sheetFilters]);
 
   /**
    * Start a per-minute consultation session.
@@ -239,9 +302,9 @@ export default function AskPriestScreen() {
         )}
       </div>
 
-      {/* ── FILTER PILLS ───────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 6, padding: '14px 14px 0' }}>
-        {([{ k: 'all', l: 'All' }, { k: 'online', l: 'Online now' }, { k: 'top', l: 'Top rated' }] as const).map(t => {
+      {/* ── FILTER ROW — All / Online / Top / Filters ─────────────── */}
+      <div style={{ display: 'flex', gap: 6, padding: '14px 14px 0', overflowX: 'auto' }}>
+        {([{ k: 'all', l: 'All' }, { k: 'online', l: '● Online now' }, { k: 'top', l: '★ Top rated' }] as const).map(t => {
           const active = filter === t.k;
           return (
             <button key={t.k} onClick={() => setFilter(t.k)} style={{
@@ -254,7 +317,50 @@ export default function AskPriestScreen() {
             }}>{t.l}</button>
           );
         })}
+        {/* Filters bottom-sheet trigger. Same component the astrology
+         * marketplace uses; astrology-only sections are hidden so priest
+         * seekers see only relevant filters. */}
+        <button
+          type="button"
+          onClick={() => setSheetOpen(true)}
+          style={{
+            background: activeFilterCount > 0 ? NAVY_2 : '#fff',
+            color: activeFilterCount > 0 ? '#fff' : TEXT2,
+            border: `1px solid ${activeFilterCount > 0 ? NAVY_2 : 'rgba(200,146,10,0.30)'}`,
+            fontSize: 11.5, fontWeight: 700,
+            padding: '7px 14px', borderRadius: 18,
+            cursor: 'pointer', whiteSpace: 'nowrap',
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}
+          aria-label="Open filters"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+          </svg>
+          Filters
+          {activeFilterCount > 0 && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              minWidth: 18, height: 18, borderRadius: 999,
+              background: activeFilterCount > 0 ? '#fff' : NAVY_2,
+              color: activeFilterCount > 0 ? NAVY_2 : '#fff',
+              fontSize: 10, fontWeight: 800,
+              padding: '0 5px',
+            }}>{activeFilterCount}</span>
+          )}
+        </button>
       </div>
+
+      <FiltersSheet
+        open={sheetOpen}
+        value={sheetFilters}
+        onClose={() => setSheetOpen(false)}
+        onApply={(next) => { setSheetFilters(next); setSheetOpen(false); }}
+        /* Priest flow hides astrology-only sections. */
+        hideSections={['systems', 'topics']}
+        title={`Filters — ${cfg.role}s`}
+        verifiedOnlyLabel={`Verified ${cfg.role}s Only`}
+      />
 
       {/* ── ERROR ─────────────────────────────────────────────── */}
       {errorMsg && (
