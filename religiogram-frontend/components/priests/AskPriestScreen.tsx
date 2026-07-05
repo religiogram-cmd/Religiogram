@@ -25,6 +25,39 @@ const PRICE   = '#7A1F1F';
 type Faith = 'hindu' | 'muslim' | 'sikh' | 'christian';
 type Mode  = 'chat' | 'call' | 'video';
 
+/* Priest-flavored topic chips. Same visual language as the astrology
+ * browse but the option set is narrowed to topics that make sense for a
+ * priest / religious consultation. */
+const TOPIC_CHIPS: Array<{ key: string; label: string; color: string; icon: React.ReactNode }> = [
+  { key: '',         label: 'All',      color: '#F5B301', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" /></svg>
+  )},
+  { key: 'Marriage', label: 'Marriage', color: '#EC4899', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="9" cy="14" r="6"/><circle cx="15" cy="14" r="6"/></svg>
+  )},
+  { key: 'Family',   label: 'Family',   color: '#F59E0B', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="7" cy="8" r="3"/><circle cx="17" cy="8" r="3"/><path d="M2 21c0-3 2.5-5 5-5s5 2 5 5M12 21c0-3 2.5-5 5-5s5 2 5 5"/></svg>
+  )},
+  { key: 'Health',   label: 'Health',   color: '#F97316', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="7" width="18" height="14" rx="2"/><path d="M8 7V4h8v3"/><path d="M12 11v6M9 14h6"/></svg>
+  )},
+  { key: 'Love',     label: 'Love',     color: '#EF4444', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+  )},
+  { key: 'Finance',  label: 'Wealth',   color: '#8B5CF6', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="18" cy="12" r="1.4"/></svg>
+  )},
+  { key: 'Career',   label: 'Career',   color: '#0EA5E9', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+  )},
+  { key: 'Children', label: 'Children', color: '#3B82F6', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="3"/><path d="M6 21c0-3 3-5 6-5s6 2 6 5"/></svg>
+  )},
+  { key: 'Spiritual Guidance', label: 'Spiritual', color: '#7C3AED', icon: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M2 12h20"/></svg>
+  )},
+];
+
 const FAITH_CONFIG: Record<Faith, { label: string; role: string; hero: string }> = {
   hindu:     { label: 'Hindu',     role: 'Pandit',  hero: '/priests/hindu-ask.jpg'     },
   muslim:    { label: 'Muslim',    role: 'Imam',    hero: '/priests/muslim-ask.jpg'    },
@@ -59,6 +92,16 @@ export default function AskPriestScreen() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetFilters, setSheetFilters] = useState<SheetFilters>(EMPTY_FILTERS);
   const activeFilterCount = useMemo(() => countActiveFilters(sheetFilters), [sheetFilters]);
+
+  /* Topic quick-chip + search (AstroTalk-style pinned row).
+   * Single-select topic — sets/clears a single entry into sheetFilters.topics.
+   * Search is client-side substring over the priest name. */
+  const [topic, setTopic] = useState<string>('');
+  const [nameQuery, setNameQuery] = useState('');
+  const setTopicChip = (t: string) => {
+    setTopic(t);
+    setSheetFilters((f) => ({ ...f, topics: t ? [t] : [] }));
+  };
   const [startingId, setStartingId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [priestList, setPriestList] = useState<ConsultPriest[] | null>(null);
@@ -219,8 +262,14 @@ export default function AskPriestScreen() {
       list = list.filter(p => p.isVerified);
     }
     // Sheet: gender — priest ConsultPriest doesn't track gender today; no-op.
+
+    // Name search (client-side substring).
+    const q = nameQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter(p => p.name.toLowerCase().includes(q));
+    }
     return list;
-  }, [allPriests, filter, sheetFilters]);
+  }, [allPriests, filter, sheetFilters, nameQuery]);
 
   /**
    * Start a per-minute consultation session.
@@ -300,6 +349,78 @@ export default function AskPriestScreen() {
             <button onClick={() => router.push('/wallet')} style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: 11, fontWeight: 700, textDecoration: 'underline', cursor: 'pointer', padding: 0 }}>Add money</button>
           </div>
         )}
+      </div>
+
+      {/* ── Search + Topic chip row (AstroTalk-style) ──────────────── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '14px 14px 0', overflowX: 'auto',
+      }}>
+        <div style={{
+          display: 'flex', alignItems: 'center',
+          background: '#FFFFFF', border: `1px solid ${nameQuery ? GOLD : 'rgba(200,146,10,0.30)'}`,
+          borderRadius: 999, padding: '2px 4px', flexShrink: 0, minWidth: 200,
+        }}>
+          <span style={{
+            width: 28, height: 28, borderRadius: 999,
+            background: GOLD_L, color: NAVY_2,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+          </span>
+          <input
+            type="text"
+            value={nameQuery}
+            onChange={(e) => setNameQuery(e.target.value)}
+            placeholder={`Search ${cfg.role.toLowerCase()} name…`}
+            style={{
+              border: 'none', outline: 'none', background: 'transparent',
+              padding: '6px 8px', fontSize: 12.5, color: NAVY_2,
+              flex: 1, minWidth: 0,
+            }}
+          />
+          {nameQuery && (
+            <button
+              type="button"
+              onClick={() => setNameQuery('')}
+              aria-label="Clear search"
+              style={{
+                background: 'transparent', border: 'none', color: '#94a3b8',
+                fontSize: 15, cursor: 'pointer', padding: '0 8px',
+              }}
+            >×</button>
+          )}
+        </div>
+
+        {/* Vertical divider */}
+        <div style={{ width: 1, height: 22, background: 'rgba(200,146,10,0.35)', flexShrink: 0 }} />
+
+        {/* Topic chips */}
+        {TOPIC_CHIPS.map((t) => {
+          const active = topic === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTopicChip(t.key)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '7px 12px', borderRadius: 999,
+                background: active ? `${GOLD_L}30` : '#FFFFFF',
+                border: `1.5px solid ${active ? GOLD : 'rgba(200,146,10,0.25)'}`,
+                color: NAVY_2, fontSize: 12, fontWeight: 700,
+                cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+              }}
+            >
+              <span aria-hidden style={{ color: t.color, display: 'inline-flex' }}>{t.icon}</span>
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── FILTER ROW — All / Online / Top / Filters ─────────────── */}
