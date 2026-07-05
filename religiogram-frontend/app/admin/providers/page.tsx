@@ -40,7 +40,9 @@ const STATUS_LABEL: Record<ProviderStatus, string> = {
   banned:    'Banned',
 };
 
-const CHANNELS: ConsultationChannel[] = ['chat', 'audio', 'video'];
+/* Backend enum: chat | voice | video. The wire value for phone-style calls
+ * is 'voice' — matches the astrologer onboarding + marketplace filter. */
+const CHANNELS: ConsultationChannel[] = ['chat', 'voice', 'video'];
 
 export default function AdminProvidersPage() {
   const [rows, setRows] = useState<AdminProviderRow[]>([]);
