@@ -113,7 +113,23 @@ const INIT_FORM: BookingForm = {
 const PHONE_RE = /^[6-9]\d{9}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type Step = 'ceremony' | 'when' | 'where' | 'contact' | 'review' | 'priests' | 'confirm' | 'success';
+/**
+ * Flow (after the pick-priest-first restructure):
+ *
+ *   select   → pick a specific priest from Local/Global list  (NEW first step)
+ *   ceremony → which ceremony
+ *   when     → date + time
+ *   where    → venue + address + city
+ *   contact  → your details
+ *   review   → check everything
+ *   confirm  → pay & finalise (priest is already known, no mid-flow picker)
+ *   success  → booking confirmed
+ *
+ * The legacy 'priests' step (mid-flow priest picker after review) is kept
+ * in the union for backward compat with deep-links but is no longer part
+ * of the normal STEPS[] progression.
+ */
+type Step = 'select' | 'ceremony' | 'when' | 'where' | 'contact' | 'review' | 'priests' | 'confirm' | 'success';
 
 // Faith-specific priest pool. Replace with backend response from /priests/match when wired.
 interface PriestRecord {
@@ -133,10 +149,11 @@ export default function PriestInviteBookingScreen() {
 
   // Optional ceremony pre-fill from the deep-link
   // (e.g. /priests/invite?faith=christian&ceremony=Christian+Wedding).
-  // If supplied we skip the ceremony picker and start the user at the
-  // date / time step.
+  // Even with a prefilled ceremony we still start at 'select' — the user
+  // must always pick a specific priest first. Once they have, if a
+  // ceremony was prefilled we skip the ceremony picker.
   const prefillCeremony = (params?.get('ceremony') ?? '').trim();
-  const initialStep: Step = prefillCeremony ? 'when' : 'ceremony';
+  const initialStep: Step = 'select';
 
   const [step, setStep] = useState<Step>(initialStep);
   const [form, setForm] = useState<BookingForm>(
@@ -149,36 +166,74 @@ export default function PriestInviteBookingScreen() {
   const [selectedPriest, setSelectedPriest] = useState<PriestRecord | null>(null);
   const [paymentId, setPaymentId] = useState('');
 
-  // Live priest list fetched from the real backend after the draft is saved.
-  const [matchedPriests, setMatchedPriests] = useState<PriestRecord[]>([]);
-  const [matchedLoading, setMatchedLoading] = useState(false);
+  // Live priest list fetched from the real backend.
+  // As of the pick-priest-first restructure we fetch once when the user
+  // reaches the 'select' step (the new landing) and REUSE the same list
+  // for the legacy mid-flow 'priests' picker if it's ever hit via a
+  // deep-link. Enriched with specialisations + city so the Local/Global
+  // card layout can render exactly the mockup design.
+  interface PriestListItem extends PriestRecord {
+    city: string;
+    specialisations: string[];
+    isVerified: boolean;
+  }
+  const [allPriests, setAllPriests] = useState<PriestListItem[]>([]);
+  const [priestsLoading, setPriestsLoading] = useState(false);
+  const matchedPriests = allPriests; // legacy alias for the old render block
+
   useEffect(() => {
-    if (step !== 'priests') return;
+    if (step !== 'select' && step !== 'priests') return;
+    if (allPriests.length > 0) return; // already loaded, don't refetch on tab switch
     const tok = tokenStore.access ?? '';
-    setMatchedLoading(true);
+    setPriestsLoading(true);
     const religionParam = faith === 'muslim' ? 'islam' : faith;
     const headers: Record<string, string> = {};
     if (tok) headers['Authorization'] = 'Bearer ' + tok;
-    fetch(`${API_BASE}/providers/by-religion/${religionParam}?limit=30&availableNow=true`, { headers })
+    /* Public directory endpoint — filters by religion + category='priest' so
+     * we only surface priest-flow providers (not astrologers). */
+    fetch(`${API_BASE}/providers?category=priest&religion=${religionParam}&limit=50`, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         const raw: any[] = Array.isArray(j) ? j : (j?.items ?? j?.data ?? []);
-        setMatchedPriests(raw.map((p: any): PriestRecord => ({
-          id:         String(p.id ?? p.providerId ?? ''),
-          name:       String(p.fullName ?? p.name ?? 'Provider'),
-          yearsExp:   Number(p.experienceYears ?? 0),
-          languages:  Array.isArray(p.languages) ? p.languages.map(String) : [],
-          rating:     Number(p.ratingAvg ?? p.rating ?? 0),
-          reviews:    Number(p.ratingCount ?? p.reviewCount ?? 0),
-          fee:        Math.round(Number(p.perMinutePaise ?? p.basePricePaise ?? 0) / 100),
-          available:  Boolean(p.availableNow ?? p.online ?? true),
-          distanceKm: Number(p.distanceKm ?? 0),
-          photo:      String(p.avatarUrl ?? p.photoUrl ?? `/priests/${faith}-ask.jpg`),
+        setAllPriests(raw.map((p: any): PriestListItem => ({
+          id:              String(p.id ?? p.providerId ?? ''),
+          name:            String(p.fullName ?? p.name ?? 'Provider'),
+          yearsExp:        Number(p.experienceYears ?? 0),
+          languages:       Array.isArray(p.languages) ? p.languages.map(String) : [],
+          rating:          Number(p.ratingAvg ?? p.rating ?? 0),
+          reviews:         Number(p.ratingCount ?? p.reviewCount ?? 0),
+          fee:             Math.round(Number(p.perMinutePaise ?? p.basePricePaise ?? 0) / 100),
+          available:       Boolean(p.availableNow ?? p.isOnline ?? true),
+          distanceKm:      Number(p.distanceKm ?? 0),
+          photo:           String(p.avatarUrl ?? p.photoUrl ?? `/priests/${faith}-ask.jpg`),
+          city:            String(p.city ?? ''),
+          specialisations: Array.isArray(p.specialisations) ? p.specialisations.map(String) : [],
+          isVerified:      Boolean(p.isVerified ?? true), // approved providers are, by definition, verified
         })));
       })
-      .catch(() => setMatchedPriests([]))
-      .finally(() => setMatchedLoading(false));
+      .catch(() => setAllPriests([]))
+      .finally(() => setPriestsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, faith]);
+
+  /* Local/Global tabs. Local = same city as the user's stored city (from
+   * localStorage, populated during profile setup / provider onboarding).
+   * If we don't know the user's city, Local shows an empty state and the
+   * Global tab is auto-selected. */
+  const [priestTab, setPriestTab] = useState<'local' | 'global'>('global');
+  const userCity = typeof window !== 'undefined'
+    ? (window.localStorage.getItem('rg_user_city') ?? '').trim().toLowerCase()
+    : '';
+  useEffect(() => {
+    // Auto-flip to Local if we know the user's city and there's at least
+    // one local priest — that's the more useful default.
+    if (userCity && allPriests.some(p => p.city.toLowerCase() === userCity)) {
+      setPriestTab('local');
+    }
+  }, [userCity, allPriests]);
+  const filteredPriests = priestTab === 'local' && userCity
+    ? allPriests.filter(p => p.city.toLowerCase() === userCity)
+    : allPriests;
 
   // Load Razorpay Checkout SDK on mount (idempotent — won't re-add if already loaded).
   useEffect(() => {
@@ -208,11 +263,18 @@ export default function PriestInviteBookingScreen() {
   }, [form.ceremony, form.customCeremony]);
 
   /**
-   * "Find Priests" — saves the booking REQUEST (draft) and surfaces matching priests.
-   * No priest has been notified yet; this is just a search/save step.
-   * The local draft lets the user resume if they bail before selecting a priest.
+   * Save the booking REQUEST (draft) server-side + locally, then advance
+   * to whatever step the caller requests.
+   *
+   * In the new pick-priest-first flow this is called by the review step's
+   * "Continue with <priest>" button and advances to `confirm`. In the old
+   * flow (still supported for deep-links) it advanced to the mid-flow
+   * `priests` picker. Callers pass `nextStep` explicitly to make intent
+   * unambiguous.
+   *
+   * No priest is notified until the confirm step's payment succeeds.
    */
-  async function saveAndFindPriests() {
+  async function saveAndFindPriests(nextStep: Step = 'priests') {
     setSubmitting(true);
     setErrorMsg('');
     try {
@@ -256,10 +318,10 @@ export default function PriestInviteBookingScreen() {
       try {
         sessionStorage.setItem('rg_invite_draft', JSON.stringify({ reqId, payload }));
       } catch { /* ignore */ }
-      setStep('priests');
+      setStep(nextStep);
     } catch {
       setRequestId(mkLocalRef('REQ'));
-      setStep('priests');
+      setStep(nextStep);
     } finally {
       setSubmitting(false);
     }
@@ -415,8 +477,9 @@ export default function PriestInviteBookingScreen() {
     return prefix + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
   }
 
-  // Progress dots — 5 form steps PLUS the priest selection
-  const STEPS: Step[] = ['ceremony','when','where','contact','review','priests'];
+  // Progress dots — priest pick FIRST, then 5 form steps.
+  // The old mid-flow 'priests' step is no longer part of the flow.
+  const STEPS: Step[] = ['select','ceremony','when','where','contact','review'];
   const stepIdx = STEPS.indexOf(step);
   const TOTAL = STEPS.length;
   const showProgress = step !== 'success' && step !== 'confirm';
@@ -434,7 +497,10 @@ export default function PriestInviteBookingScreen() {
       }}>
         <button onClick={() => {
             if (step === 'success') { router.push('/priests'); return; }
-            if (step === 'confirm') { setStep('priests'); return; }
+            /* confirm → review (was 'priests' in the old flow; the mid-flow
+             * priest picker no longer exists so we go back to the review
+             * screen where the user last edited details). */
+            if (step === 'confirm') { setStep('review'); return; }
             if (stepIdx > 0) { setStep(STEPS[stepIdx-1]); return; }
             router.back();
           }}
@@ -470,6 +536,195 @@ export default function PriestInviteBookingScreen() {
 
       {/* ── STEP CONTENT ───────────────────────────────────────── */}
       <div style={{ padding: '0 14px' }}>
+
+        {step === 'select' && (
+          <div>
+            {/* ── Golden card panel — Local / Global tabs + priest cards ── */}
+            <div style={{
+              borderRadius: 20,
+              padding: 16,
+              background: `linear-gradient(180deg,#F3D084 0%,#E1B461 50%,#C99436 100%)`,
+              border: '1.5px solid rgba(107,50,16,0.35)',
+              boxShadow: '0 12px 30px rgba(107,50,16,0.20), inset 0 1px 0 rgba(255,255,255,0.5)',
+            }}>
+              <div style={{
+                textAlign: 'center',
+                fontSize: 16, fontWeight: 800, color: '#3D1F00',
+                fontFamily: '"Playfair Display",Georgia,serif',
+                marginBottom: 4,
+              }}>Available {cfg.role}s</div>
+              <div style={{ textAlign: 'center', fontSize: 13, color: 'rgba(61,31,0,0.55)', marginBottom: 12 }}>◆ ─── ◆</div>
+
+              {/* Local / Global toggle */}
+              <div style={{
+                display: 'flex',
+                background: 'rgba(61,31,0,0.10)',
+                borderRadius: 999,
+                padding: 3,
+                marginBottom: 14,
+                border: '1px solid rgba(107,50,16,0.15)',
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setPriestTab('local')}
+                  style={{
+                    flex: 1, padding: '9px 0', borderRadius: 999, border: 'none',
+                    background: priestTab === 'local' ? '#0A1628' : 'transparent',
+                    color: priestTab === 'local' ? '#F3D084' : '#3D1F00',
+                    fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                    transition: 'background 0.15s',
+                  }}
+                >Local</button>
+                <button
+                  type="button"
+                  onClick={() => setPriestTab('global')}
+                  style={{
+                    flex: 1, padding: '9px 0', borderRadius: 999, border: 'none',
+                    background: priestTab === 'global' ? '#0A1628' : 'transparent',
+                    color: priestTab === 'global' ? '#F3D084' : '#3D1F00',
+                    fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                    transition: 'background 0.15s',
+                  }}
+                >Global</button>
+              </div>
+
+              {/* Loading + empty states */}
+              {priestsLoading && (
+                <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                  <span aria-hidden style={{
+                    display: 'inline-block', width: 28, height: 28,
+                    borderRadius: '50%',
+                    border: '3px solid rgba(61,31,0,0.20)',
+                    borderTopColor: '#3D1F00',
+                    animation: 'spin 0.8s linear infinite',
+                  }} />
+                  <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+                </div>
+              )}
+              {!priestsLoading && filteredPriests.length === 0 && (
+                <div style={{
+                  padding: '32px 20px', textAlign: 'center',
+                  fontSize: 13, color: '#3D1F00', lineHeight: 1.5,
+                }}>
+                  {priestTab === 'local' && !userCity
+                    ? 'Set your city in Profile to see local priests.'
+                    : priestTab === 'local'
+                      ? `No verified ${cfg.role}s in your city yet. Try Global.`
+                      : `No verified ${cfg.role}s available right now.`}
+                </div>
+              )}
+
+              {/* Priest cards */}
+              {!priestsLoading && filteredPriests.length > 0 && (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {filteredPriests.map((p) => {
+                    const isLocal  = userCity && p.city.toLowerCase() === userCity;
+                    const selected = selectedPriest?.id === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setSelectedPriest(p)}
+                        style={{
+                          display: 'block', width: '100%', textAlign: 'left',
+                          padding: 12, borderRadius: 14,
+                          background: selected
+                            ? `linear-gradient(180deg,#FFE7B8 0%,#F3D084 100%)`
+                            : `linear-gradient(180deg,#FCE3AC 0%,#E8C378 100%)`,
+                          border: `1.5px solid ${selected ? '#0A1628' : 'rgba(107,50,16,0.25)'}`,
+                          boxShadow: selected
+                            ? '0 8px 20px rgba(10,22,40,0.25), inset 0 1px 0 rgba(255,255,255,0.5)'
+                            : 'inset 0 1px 0 rgba(255,255,255,0.4)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {/* Location tag */}
+                        <div style={{
+                          fontSize: 10.5, fontWeight: 700, color: '#3D1F00',
+                          display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8,
+                        }}>
+                          {isLocal ? '📍' : '🌐'} <span>{isLocal ? 'Local' : 'Global'}</span>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                          {/* Avatar */}
+                          <div style={{
+                            width: 54, height: 54, borderRadius: 10,
+                            overflow: 'hidden', flexShrink: 0,
+                            background: 'linear-gradient(135deg,#C8920A,#6B3210)',
+                            border: '2px solid #3D1F00',
+                          }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={p.photo}
+                              alt={p.name}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                            />
+                          </div>
+
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            {/* Name */}
+                            <div style={{
+                              fontFamily: '"Playfair Display",Georgia,serif',
+                              fontSize: 15, fontWeight: 700, color: '#1A0800',
+                              lineHeight: 1.2,
+                            }}>
+                              {p.name}
+                            </div>
+
+                            {/* Rating + verified */}
+                            <div style={{
+                              display: 'flex', alignItems: 'center', gap: 10,
+                              fontSize: 12, marginTop: 3,
+                            }}>
+                              <span style={{ color: '#8B4A00', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <span style={{ color: '#C8920A' }}>★</span>
+                                {p.rating.toFixed(1)}
+                              </span>
+                              {p.isVerified && (
+                                <span style={{
+                                  display: 'flex', alignItems: 'center', gap: 3,
+                                  color: '#0A1628', fontWeight: 700,
+                                }}>
+                                  <span style={{
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    width: 14, height: 14, borderRadius: '50%',
+                                    background: '#16a34a', color: '#fff',
+                                    fontSize: 9,
+                                  }}>✓</span>
+                                  Verified
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Specialisations */}
+                            <div style={{
+                              fontSize: 11, color: '#3D1F00', marginTop: 4,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>
+                              {p.specialisations.length > 0
+                                ? p.specialisations.slice(0, 3).join(', ')
+                                : `${p.yearsExp}+ yrs · ${p.languages.slice(0,2).join(', ')}`}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <Next
+              disabled={!selectedPriest}
+              onClick={() => setStep(prefillCeremony ? 'when' : 'ceremony')}
+              label={selectedPriest
+                ? `Continue with ${selectedPriest.name.split(' ').slice(0,2).join(' ')}`
+                : `Pick a ${cfg.role} to continue`}
+            />
+          </div>
+        )}
 
         {step === 'ceremony' && (
           <div style={{ background: '#fff', borderRadius: 12, padding: 14, border: '1px solid rgba(200,146,10,0.20)' }}>
@@ -571,10 +826,16 @@ export default function PriestInviteBookingScreen() {
             <Row k="Contact" v={`${form.name} · ${form.phone}${form.email ? ' · ' + form.email : ''}`} />
             {form.notes && <Row k="Notes" v={form.notes} />}
             <div style={{ marginTop: 12, padding: 10, background: '#FFF6E0', border: '1px solid rgba(200,146,10,0.30)', borderRadius: 8, fontSize: 11, color: TEXT2, lineHeight: 1.5 }}>
-              <strong>What happens next:</strong> We save your request and instantly show you verified {cfg.role}s available for this ceremony, date and area. You pick one — only then do they receive your details.
+              <strong>What happens next:</strong> {selectedPriest
+                ? `We share these details with ${selectedPriest.name.split(' ').slice(0,2).join(' ')} after you complete payment on the next screen. They'll confirm within 24 hours.`
+                : `We share these details with your chosen ${cfg.role} after you complete payment on the next screen.`}
             </div>
             {errorMsg && <div style={{ marginTop: 10, padding: 10, background: '#FEE2E2', color: '#7A1F1F', borderRadius: 8, fontSize: 12 }}>{errorMsg}</div>}
-            <Next disabled={submitting} onClick={saveAndFindPriests} label={submitting ? 'Finding…' : `Find ${cfg.role}s`} />
+            <Next
+              disabled={submitting || !selectedPriest}
+              onClick={() => saveAndFindPriests('confirm')}
+              label={submitting ? 'Saving…' : `Continue with ${selectedPriest?.name.split(' ').slice(0,2).join(' ') ?? cfg.role}`}
+            />
           </div>
         )}
 
