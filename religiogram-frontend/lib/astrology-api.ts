@@ -267,14 +267,23 @@ const MOCK: Astrologer[] = [
 
 export interface ListFilters {
   channel?: ConsultationChannel;
+  channels?: ConsultationChannel[];               // multi-select from the sheet
   language?: string;
+  languages?: string[];                            // multi
   specialization?: string;
+  specializations?: string[];                      // multi
+  availability?: string[];                         // section-1 keys ('online','chat','voice','video','busy','offline','today')
   minExperience?: number;
-  gender?: 'male' | 'female';
+  maxExperience?: number;
+  experienceBands?: string[];                      // '0-3','3-5','5-10','10-15','15-20','20+'
+  gender?: 'male' | 'female' | 'other';
   onlineOnly?: boolean;
   verifiedOnly?: boolean;
+  verificationBadges?: string[];                   // 'verified','kyc','certified'
   minRating?: number;
+  minPricePaise?: number;
   maxPricePaise?: number;
+  topics?: string[];                               // consultation topics (aliased to specialisations today)
 }
 
 export type SortKey = 'popularity' | 'rating' | 'price_asc' | 'price_desc' | 'experience' | 'response';
@@ -377,8 +386,14 @@ export async function listAstrologers(
 ): Promise<Astrologer[]> {
   const params = new URLSearchParams();
   params.set('category', 'astrologer');
-  if (filters.specialization) params.set('specialisation', filters.specialization);
-  if (filters.channel)        params.set('channel', filters.channel);
+
+  // Server-side narrowing: send ONE specialisation + ONE channel when arrays
+  // are supplied, take the first entry. The remaining values in the array
+  // apply client-side. Legacy singular fields still win if set.
+  const serverSpec    = filters.specialization ?? filters.specializations?.[0];
+  const serverChannel = filters.channel        ?? filters.channels?.[0];
+  if (serverSpec)    params.set('specialisation', serverSpec);
+  if (serverChannel) params.set('channel', serverChannel);
   const qs = `?${params.toString()}`;
 
   let list: Astrologer[] = [];
@@ -390,14 +405,106 @@ export async function listAstrologers(
   }
   if (list.length === 0) list = MOCK.slice();
 
-  // Client-side filters for the ones not on the backend
-  if (filters.language)      list = list.filter((a) => a.languages.includes(filters.language!));
-  if (filters.minExperience) list = list.filter((a) => a.experienceYears >= filters.minExperience!);
-  if (filters.gender)        list = list.filter((a) => a.gender === filters.gender);
-  if (filters.onlineOnly)    list = list.filter((a) => a.isOnline);
-  if (filters.verifiedOnly)  list = list.filter((a) => a.isVerified);
-  if (filters.minRating)     list = list.filter((a) => a.rating >= filters.minRating!);
-  if (filters.maxPricePaise) list = list.filter((a) => a.ratePerMinPaise <= filters.maxPricePaise!);
+  /* ─── Client-side filters ───────────────────────────────────────────
+   * DATA CAVEATS (backend doesn't track these yet — filters below are
+   * best-effort / no-op pass-through so the UI still works):
+   *   • gender          — Provider entity has no gender field; the mapper
+   *                       defaults every row to 'male', so picking Female
+   *                       or Other will yield 0 rows against real data.
+   *                       Kept in the UI; still filters against MOCK.
+   *   • topics          — same list as specialisations for now (aliased).
+   *   • availability
+   *     ├─ 'busy'       — isBusy not tracked → pass-through (ignored).
+   *     └─ 'today'      — availableToday not tracked → pass-through.
+   *   • verificationBadges
+   *     ├─ 'kyc'        — treated as alias of isVerified.
+   *     └─ 'certified'  — treated as alias of isVerified.
+   *     TODO(phase-3): split KYC + certification into distinct badges.
+   * ------------------------------------------------------------------- */
+
+  // Multi-channel: astrologer must offer at least one selected channel
+  if (filters.channels && filters.channels.length > 0) {
+    list = list.filter((a) => filters.channels!.some((c) => a.channels.includes(c)));
+  }
+
+  // Language (singular OR multi)
+  if (filters.language) {
+    list = list.filter((a) => a.languages.includes(filters.language!));
+  }
+  if (filters.languages && filters.languages.length > 0) {
+    list = list.filter((a) => filters.languages!.some((l) => a.languages.includes(l)));
+  }
+
+  // Multi-specialisation: astrologer must have at least one selected
+  if (filters.specializations && filters.specializations.length > 0) {
+    list = list.filter((a) => filters.specializations!.some((s) => a.specializations.includes(s)));
+  }
+
+  // Topics: aliased to specialisations
+  if (filters.topics && filters.topics.length > 0) {
+    list = list.filter((a) => filters.topics!.some((t) => a.specializations.includes(t)));
+  }
+
+  // Availability
+  if (filters.availability && filters.availability.length > 0) {
+    const av = filters.availability;
+    list = list.filter((a) => {
+      // Any-of semantics: astrologer passes if it matches ANY selected key
+      let ok = false;
+      if (av.includes('online')  && a.isOnline && !a.isBusy)     ok = true;
+      if (av.includes('chat')    && a.channels.includes('chat')  && a.isOnline) ok = true;
+      if (av.includes('voice')   && a.channels.includes('voice') && a.isOnline) ok = true;
+      if (av.includes('video')   && a.channels.includes('video') && a.isOnline) ok = true;
+      if (av.includes('offline') && !a.isOnline)                  ok = true;
+      // 'busy' and 'today' — data not tracked → treat as pass-through
+      // (contributes ok=true so selection alone doesn't hide everyone).
+      if (av.includes('busy'))    ok = true;
+      if (av.includes('today'))   ok = true;
+      return ok;
+    });
+  }
+
+  // Experience: singular range wins; else map bands to ranges (any-of)
+  if (filters.minExperience !== undefined) {
+    list = list.filter((a) => a.experienceYears >= filters.minExperience!);
+  }
+  if (filters.maxExperience !== undefined) {
+    list = list.filter((a) => a.experienceYears <= filters.maxExperience!);
+  }
+  if (filters.experienceBands && filters.experienceBands.length > 0) {
+    const bandRanges: Record<string, [number, number]> = {
+      '0-3':   [0, 3],
+      '3-5':   [3, 5],
+      '5-10':  [5, 10],
+      '10-15': [10, 15],
+      '15-20': [15, 20],
+      '20+':   [20, 999],
+    };
+    list = list.filter((a) =>
+      filters.experienceBands!.some((band) => {
+        const r = bandRanges[band];
+        return r && a.experienceYears >= r[0] && a.experienceYears <= r[1];
+      }),
+    );
+  }
+
+  // Gender (no-op for real backend rows; still filters MOCK)
+  if (filters.gender) {
+    list = list.filter((a) => (a.gender as string) === filters.gender);
+  }
+
+  // Online + verified flags
+  if (filters.onlineOnly)   list = list.filter((a) => a.isOnline);
+  if (filters.verifiedOnly) list = list.filter((a) => a.isVerified);
+
+  // Verification badges — all currently alias to isVerified
+  if (filters.verificationBadges && filters.verificationBadges.length > 0) {
+    list = list.filter((a) => a.isVerified);
+  }
+
+  if (filters.minRating)      list = list.filter((a) => a.rating >= filters.minRating!);
+  if (filters.minPricePaise)  list = list.filter((a) => a.ratePerMinPaise >= filters.minPricePaise!);
+  if (filters.maxPricePaise)  list = list.filter((a) => a.ratePerMinPaise <= filters.maxPricePaise!);
 
   // Backend already orders by ranking_score. We only re-sort when the user
   // asks for a different order.

@@ -19,9 +19,15 @@ import {
   formatRupees,
   SPECIALIZATIONS,
   type Astrologer,
-  type ConsultationChannel,
+  type ListFilters,
   type SortKey,
 } from '@/lib/astrology-api';
+import FiltersSheet, {
+  EMPTY_FILTERS,
+  countActiveFilters,
+  SESSION_KEY,
+  type SheetFilters,
+} from '@/components/astrology/FiltersSheet';
 
 const NAVY   = '#0F2452';
 const GOLD   = '#C8920A';
@@ -35,11 +41,22 @@ export default function BrowsePage() {
   const initialCat  = params?.get('category') ?? undefined;
   const initialSort = (params?.get('sort') as SortKey) ?? 'popularity';
 
-  const [channel,        setChannel]        = useState<ConsultationChannel | undefined>(undefined);
-  const [onlineOnly,     setOnlineOnly]     = useState(false);
-  const [verifiedOnly,   setVerifiedOnly]   = useState(false);
+  /* ─── Quick filter (top-bar) state ─────────────────────────────────
+   * These 3 chips + Filters button drive the top row. `quickFilter`
+   * overrides sort order (top => sort by rating) and adds an onlineOnly
+   * predicate when set to 'online'. The full-filters sheet lives in a
+   * separate state tree so quick + sheet don't fight each other. */
+  const [quickFilter, setQuickFilter] = useState<'all' | 'online' | 'top'>('all');
   const [specialization, setSpecialization] = useState<string | undefined>(initialSpec);
-  const [sort,           setSort]           = useState<SortKey>(initialSort);
+  const [sort, setSort] = useState<SortKey>(initialSort);
+
+  /* ─── Full filters (bottom-sheet) state ────────────────────────────
+   * `sheetFilters` is the committed value applied to queries. The sheet
+   * component owns its own draft state internally and only calls onApply
+   * when the user hits Apply. */
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetFilters, setSheetFilters] = useState<SheetFilters>(EMPTY_FILTERS);
+  const activeFilterCount = useMemo(() => countActiveFilters(sheetFilters), [sheetFilters]);
 
   // If we arrived with a category query (love / marriage / etc.), map it to
   // a relevant specialisation so the list narrows appropriately.
@@ -60,6 +77,16 @@ export default function BrowsePage() {
     }
   }, [initialCat, specialization]);
 
+  // Clear persisted sheet selections when the browse page unmounts so a
+  // fresh session doesn't inherit stale filters.
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined') {
+        try { window.sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+      }
+    };
+  }, []);
+
   /* Fetch on filter/sort change. Backend now serves the marketplace, so
    * this is an async call — we render a spinner on the first load and
    * an inline pill during subsequent refetches so filter clicks feel
@@ -73,7 +100,30 @@ export default function BrowsePage() {
     let cancelled = false;
     const isFirst = results.length === 0;
     if (isFirst) setLoading(true); else setRefetching(true);
-    listAstrologers({ channel, onlineOnly, verifiedOnly, specialization }, sort)
+
+    // Compose the ListFilters for the API layer. Quick-filter overrides
+    // stack on top of sheetFilters — 'online' forces onlineOnly=true,
+    // 'top' bumps minRating floor and re-sorts by rating.
+    const effectiveSort: SortKey = quickFilter === 'top' ? 'rating' : sort;
+    const effectiveOnline = quickFilter === 'online' ? true : undefined;
+
+    const apiFilters: ListFilters = {
+      specialization,
+      onlineOnly: effectiveOnline,
+      channels:            sheetFilters.channels.length ? sheetFilters.channels : undefined,
+      availability:        sheetFilters.availability.length ? sheetFilters.availability : undefined,
+      languages:           sheetFilters.languages.length ? sheetFilters.languages : undefined,
+      specializations:     sheetFilters.specializations.length ? sheetFilters.specializations : undefined,
+      topics:              sheetFilters.topics.length ? sheetFilters.topics : undefined,
+      experienceBands:     sheetFilters.experienceBands.length ? sheetFilters.experienceBands : undefined,
+      gender:              sheetFilters.gender,
+      minRating:           sheetFilters.minRating,
+      minPricePaise:       sheetFilters.minPricePaise !== EMPTY_FILTERS.minPricePaise ? sheetFilters.minPricePaise : undefined,
+      maxPricePaise:       sheetFilters.maxPricePaise !== EMPTY_FILTERS.maxPricePaise ? sheetFilters.maxPricePaise : undefined,
+      verificationBadges:  sheetFilters.verificationBadges.length ? sheetFilters.verificationBadges : undefined,
+    };
+
+    listAstrologers(apiFilters, effectiveSort)
       .then((rows) => { if (!cancelled) setResults(rows); })
       .catch(() => { /* client already fell back to mock */ })
       .finally(() => {
@@ -83,7 +133,7 @@ export default function BrowsePage() {
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channel, onlineOnly, verifiedOnly, specialization, sort]);
+  }, [quickFilter, specialization, sort, sheetFilters]);
 
   return (
     <div style={{ background: CREAM, minHeight: '100svh', paddingBottom: 80 }}>
@@ -108,14 +158,15 @@ export default function BrowsePage() {
           </h1>
         </div>
 
-        {/* Channel chips */}
+        {/* Quick filter row: All / Online Now / Top Rated / Filters(sheet) */}
         <div style={{ display: 'flex', gap: 8, marginTop: 12, overflowX: 'auto', paddingBottom: 2 }}>
-          <Chip active={!channel}          onClick={() => setChannel(undefined)}>All</Chip>
-          <Chip active={channel === 'chat'} onClick={() => setChannel('chat')}>💬 Chat</Chip>
-          <Chip active={channel === 'voice'}onClick={() => setChannel('voice')}>📞 Voice</Chip>
-          <Chip active={channel === 'video'}onClick={() => setChannel('video')}>🎥 Video</Chip>
-          <Chip active={onlineOnly}         onClick={() => setOnlineOnly((v) => !v)}>● Online</Chip>
-          <Chip active={verifiedOnly}       onClick={() => setVerifiedOnly((v) => !v)}>✓ Verified</Chip>
+          <Chip active={quickFilter === 'all'}    onClick={() => setQuickFilter('all')}>All</Chip>
+          <Chip active={quickFilter === 'online'} onClick={() => setQuickFilter('online')}>● Online Now</Chip>
+          <Chip active={quickFilter === 'top'}    onClick={() => setQuickFilter('top')}>★ Top Rated</Chip>
+          <FiltersButton
+            count={activeFilterCount}
+            onClick={() => setSheetOpen(true)}
+          />
         </div>
 
         {/* Sort + spec */}
@@ -195,7 +246,62 @@ export default function BrowsePage() {
           results.map((a) => <BrowseCard key={a.id} a={a} />)
         )}
       </div>
+
+      {/* Bottom-sheet filter modal — mounted at page root so it overlays
+       *  everything (including the sticky header). */}
+      <FiltersSheet
+        open={sheetOpen}
+        value={sheetFilters}
+        onClose={() => setSheetOpen(false)}
+        onApply={(next) => { setSheetFilters(next); setSheetOpen(false); }}
+      />
     </div>
+  );
+}
+
+/** "Filters" pill with a filter-lines icon and a circular badge showing the
+ *  active-filter count. Sits at the end of the top quick-filter row. */
+function FiltersButton({ count, onClick }: { count: number; onClick: () => void }) {
+  const active = count > 0;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        position: 'relative',
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '8px 14px',
+        background: active
+          ? `linear-gradient(135deg,${GOLD_L},${GOLD})`
+          : '#FFFFFF',
+        color: NAVY,
+        border: `1px solid ${active ? GOLD : 'rgba(15,36,82,0.15)'}`,
+        borderRadius: 999,
+        fontSize: 12.5, fontWeight: 700,
+        whiteSpace: 'nowrap', flexShrink: 0,
+        cursor: 'pointer',
+      }}
+    >
+      {/* Two-line filter icon (SVG so it scales cleanly at any DPI) */}
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+        <path d="M4 6h16M7 12h10M10 18h4" stroke={NAVY} strokeWidth="2.2" strokeLinecap="round" />
+      </svg>
+      Filters
+      {count > 0 && (
+        <span
+          aria-label={`${count} active`}
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            minWidth: 18, height: 18, padding: '0 5px',
+            borderRadius: 999,
+            background: NAVY, color: CREAM,
+            fontSize: 10.5, fontWeight: 800, lineHeight: 1,
+          }}
+        >
+          {count}
+        </span>
+      )}
+    </button>
   );
 }
 
