@@ -58,7 +58,10 @@ export default function AdminUsersPage() {
   const [status, setStatus] = useState<AccountStatus | ''>('');
 
   const [meId, setMeId] = useState<string | null>(null);
-  const [action, setAction] = useState<{ user: AdminUserRow; target: AccountStatus } | null>(null);
+  /* Row-level action targets can only be the three mutable statuses the
+   * backend PATCH accepts — `pending_verification` isn't a state we let
+   * admins move users into from this console. */
+  const [action, setAction] = useState<{ user: AdminUserRow; target: 'active' | 'suspended' | 'banned' } | null>(null);
 
   // Debounce search — 300ms after the user stops typing.
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -251,7 +254,7 @@ function UserRow({
 }: {
   user: AdminUserRow;
   isSelf: boolean;
-  onAction: (target: AccountStatus) => void;
+  onAction: (target: 'active' | 'suspended' | 'banned') => void;
 }) {
   return (
     <tr className="border-t border-slate-100 hover:bg-slate-50/40">
@@ -346,7 +349,7 @@ function ConfirmActionModal({
 }: {
   title: string;
   user: AdminUserRow;
-  target: AccountStatus;
+  target: 'active' | 'suspended' | 'banned';
   onCancel: () => void;
   onConfirm: (reason: string) => Promise<void>;
 }) {
