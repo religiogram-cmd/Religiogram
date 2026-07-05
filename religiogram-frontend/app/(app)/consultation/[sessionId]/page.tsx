@@ -6,7 +6,13 @@ import ActiveSessionScreen, { type SessionSummary } from '@/components/consultat
 import SessionCompletionScreen from '@/components/consultation/SessionCompletionScreen';
 import { tokenStore } from '@/lib/api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001';
+/* NEXT_PUBLIC_API_BASE already ends in `/api/v1` in prod; don't add it again. */
+const API_BASE = (() => {
+  const fromEnv = process.env.NEXT_PUBLIC_API_BASE;
+  if (fromEnv) return fromEnv;
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') return '/api/v1';
+  return 'https://api.religiogram.com/api/v1';
+})();
 
 interface BookingData {
   id: string;
@@ -47,11 +53,11 @@ function ConsultationInner() {
     const tok = tokenStore.access ?? '';
     const h: Record<string, string> = tok ? { Authorization: 'Bearer ' + tok } : {};
     Promise.all([
-      fetch(API_BASE + '/api/v1/consultation/' + sessionId, { headers: h }).then(r => {
+      fetch(API_BASE + '/consultation/' + sessionId, { headers: h }).then(r => {
         if (!r.ok) throw new Error('Session ' + r.status);
         return r.json();
       }),
-      fetch(API_BASE + '/api/v1/wallet/balance', { headers: h }).then(r =>
+      fetch(API_BASE + '/wallet/balance', { headers: h }).then(r =>
         r.ok ? r.json() : { availablePaise: 0 }
       ),
     ])

@@ -83,14 +83,20 @@ export const SESSION_KEY = 'rg_astro_filters';
 
 /* ─────────────────────  Section option lists  ───────────────────── */
 
+/* Availability chips.
+ *
+ * `busy` and `today` are TODO — the backend does not yet track
+ * `providers.is_busy` (real-time in-session flag) or "available today"
+ * (weekly availability rollup). Hiding them until the columns exist —
+ * otherwise the chips looked interactive but silently returned every row.
+ * Add them back after wiring the underlying data.
+ */
 const AVAILABILITY_OPTS: Array<{ key: string; label: string }> = [
   { key: 'online',  label: 'Online Now' },
   { key: 'chat',    label: 'Available in Chat' },
   { key: 'voice',   label: 'Available in Voice Call' },
   { key: 'video',   label: 'Available in Video Call' },
-  { key: 'busy',    label: 'Busy' },
   { key: 'offline', label: 'Offline' },
-  { key: 'today',   label: 'Available Today' },
 ];
 
 const CHANNEL_OPTS: Array<{ key: ConsultationChannel; label: string }> = [

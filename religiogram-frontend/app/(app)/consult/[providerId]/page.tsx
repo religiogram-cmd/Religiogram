@@ -4,7 +4,16 @@ import { useState } from 'react';
 import OnlineConsultationScreen from '@/components/consultation/OnlineConsultationScreen';
 import { tokenStore } from '@/lib/api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001';
+/* API_BASE mirrors the resolution used by lib/api.ts + specialisations-api.ts.
+ * In prod NEXT_PUBLIC_API_BASE already ends in `/api/v1` so we must NOT
+ * add the segment again — otherwise every consult start hits
+ * `.../api/v1/api/v1/consultation/start` and 404s. */
+const API_BASE = (() => {
+  const fromEnv = process.env.NEXT_PUBLIC_API_BASE;
+  if (fromEnv) return fromEnv;
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') return '/api/v1';
+  return 'https://api.religiogram.com/api/v1';
+})();
 
 export default function ConsultProviderPage() {
   const { providerId } = useParams();
@@ -17,7 +26,7 @@ export default function ConsultProviderPage() {
     setInitError(null);
     const tok = tokenStore.access ?? '';
     try {
-      const res = await fetch(`${API_BASE}/api/v1/consultation/start`, {
+      const res = await fetch(`${API_BASE}/consultation/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -57,11 +66,23 @@ export default function ConsultProviderPage() {
           background: '#FEE2E2', color: '#991B1B', padding: '12px 20px',
           fontSize: 14, fontWeight: 600, textAlign: 'center',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 12,
         }}>
-          <span>{initError}</span>
+          <span style={{ flex: 1 }}>{initError}</span>
+          {/* If the error is a wallet issue, offer a direct top-up route. */}
+          {initError.toLowerCase().includes('balance') && (
+            <a
+              href="/wallet"
+              style={{
+                background: '#991B1B', color: '#fff', padding: '6px 12px',
+                borderRadius: 6, textDecoration: 'none', fontSize: 13, fontWeight: 700,
+              }}
+            >Add money</a>
+          )}
           <button
             onClick={() => setInitError(null)}
-            style={{ background: 'none', border: 'none', color: '#991B1B', fontSize: 18, cursor: 'pointer', padding: '0 0 0 12px' }}
+            style={{ background: 'none', border: 'none', color: '#991B1B', fontSize: 18, cursor: 'pointer', padding: '0 0 0 4px' }}
+            aria-label="Dismiss"
           >&#x2715;</button>
         </div>
       )}

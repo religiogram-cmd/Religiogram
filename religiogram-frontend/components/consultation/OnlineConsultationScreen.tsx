@@ -136,9 +136,18 @@ function PreSessionDialog({ consultant, walletBalance, onClose, onStartSession }
         </div>
 
         {!sufficient && (
-          <button style={{ width: '100%', padding: '12px 0', backgroundColor: '#f5f5f5', color: '#555', border: 'none', borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+          <a
+            href="/wallet"
+            style={{
+              display: 'block', textAlign: 'center', textDecoration: 'none',
+              width: '100%', padding: '12px 0',
+              backgroundColor: '#f5f5f5', color: '#555',
+              border: 'none', borderRadius: 10,
+              fontWeight: 600, fontSize: 14, cursor: 'pointer',
+            }}
+          >
             Add Money First
-          </button>
+          </a>
         )}
       </div>
     </div>
