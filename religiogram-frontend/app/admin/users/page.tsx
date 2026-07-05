@@ -28,9 +28,10 @@ const ROLE_LABEL: Record<UserRole, string> = {
 };
 
 const STATUS_LABEL: Record<AccountStatus, string> = {
-  active:    'Active',
-  suspended: 'Suspended',
-  banned:    'Banned',
+  active:               'Active',
+  suspended:            'Suspended',
+  banned:               'Banned',
+  pending_verification: 'Pending verification',
 };
 
 function timeAgo(iso: string): string {
