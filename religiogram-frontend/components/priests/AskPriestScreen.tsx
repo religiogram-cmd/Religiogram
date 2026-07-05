@@ -371,10 +371,6 @@ export default function AskPriestScreen() {
         })}
       </div>
 
-      {/* ── Bottom info bar — Rupees/min explainer ─────────────── */}
-      <div style={{ margin: '8px 14px 0', padding: '10px 12px', background: '#FFF6E0', border: '1px solid rgba(200,146,10,0.30)', borderRadius: 10, fontSize: 11, color: TEXT2, lineHeight: 1.55 }}>
-        <strong>How rupees/min works:</strong> Every {cfg.role}'s first <strong>5 minutes are free</strong>. After that, your wallet is debited per minute at the rate shown. End anytime — you only pay for time used.
-      </div>
     </div>
   );
 }
