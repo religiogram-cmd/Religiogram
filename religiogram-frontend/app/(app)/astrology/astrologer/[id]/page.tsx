@@ -178,28 +178,45 @@ export default function AstrologerDetail() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
             {(['chat', 'voice', 'video'] as ConsultationChannel[]).map((c) => {
               const enabled = a.channels.includes(c) && a.isOnline && !a.isBusy;
+              /* Route to the shared `/consult/[providerId]` pre-session
+               * screen (same one priests use). Chat and voice/video share
+               * one wallet-hold + session engine — the query params tell
+               * the pre-session screen which mode to open the call in.
+               * `mode=chat` renders text UI; `mode=call` starts the
+               * WebRTC session (audio-only for 'voice', camera on for
+               * 'video' — the /consultation page reads `channel`). */
+              const label = c === 'chat' ? 'Chat' : c === 'voice' ? 'Voice' : 'Video';
+              const icon  = c === 'chat' ? '💬'  : c === 'voice' ? '📞'    : '🎥';
+              const mode  = c === 'chat' ? 'chat' : 'call';
+              const commonStyle: React.CSSProperties = {
+                padding: '12px 6px',
+                background: enabled
+                  ? `linear-gradient(135deg,${GOLD_L},${GOLD})`
+                  : '#F3F4F6',
+                color: enabled ? NAVY : '#9CA3AF',
+                border: 'none', borderRadius: 12,
+                fontWeight: 800, fontSize: 13, cursor: enabled ? 'pointer' : 'not-allowed',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                boxShadow: enabled ? '0 6px 18px rgba(200,146,10,0.28)' : 'none',
+                textDecoration: 'none',
+              };
+              if (!enabled) {
+                return (
+                  <button key={c} type="button" disabled style={commonStyle}>
+                    <span style={{ fontSize: 18 }}>{icon}</span>
+                    {label}
+                  </button>
+                );
+              }
               return (
-                <button
+                <Link
                   key={c}
-                  type="button"
-                  disabled={!enabled}
-                  style={{
-                    padding: '12px 6px',
-                    background: enabled
-                      ? `linear-gradient(135deg,${GOLD_L},${GOLD})`
-                      : '#F3F4F6',
-                    color: enabled ? NAVY : '#9CA3AF',
-                    border: 'none', borderRadius: 12,
-                    fontWeight: 800, fontSize: 13, cursor: enabled ? 'pointer' : 'not-allowed',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                    boxShadow: enabled ? '0 6px 18px rgba(200,146,10,0.28)' : 'none',
-                  }}
+                  href={`/consult/${a.id}?mode=${mode}&channel=${c}`}
+                  style={commonStyle}
                 >
-                  <span style={{ fontSize: 18 }}>
-                    {c === 'chat' ? '💬' : c === 'voice' ? '📞' : '🎥'}
-                  </span>
-                  {c === 'chat' ? 'Chat' : c === 'voice' ? 'Voice' : 'Video'}
-                </button>
+                  <span style={{ fontSize: 18 }}>{icon}</span>
+                  {label}
+                </Link>
               );
             })}
           </div>
@@ -288,27 +305,49 @@ export default function AstrologerDetail() {
         borderTop: '1px solid rgba(15,36,82,0.08)',
         zIndex: 20,
       }}>
-        <button
-          type="button"
-          disabled={!a.isOnline || a.isBusy}
-          style={{
+        {(() => {
+          /* Primary CTA. When the astrologer is live + free we route to the
+           * shared `/consult/[providerId]` pre-session screen. The mode
+           * defaults to their first available channel — chat if they offer
+           * it (cheapest and safest to bootstrap), else 'call'. */
+          const available = a.isOnline && !a.isBusy;
+          const defaultChannel: ConsultationChannel =
+            a.channels.includes('chat')  ? 'chat'
+          : a.channels.includes('voice') ? 'voice'
+          :                                'video';
+          const defaultMode = defaultChannel === 'chat' ? 'chat' : 'call';
+          const baseStyle: React.CSSProperties = {
             width: '100%',
             padding: '15px 18px',
-            background: a.isOnline && !a.isBusy
+            background: available
               ? `linear-gradient(135deg,${GOLD_L},${GOLD})`
               : '#E5E7EB',
-            color: a.isOnline && !a.isBusy ? NAVY : '#6B7280',
+            color: available ? NAVY : '#6B7280',
             border: 'none', borderRadius: 14,
             fontSize: 15, fontWeight: 800,
-            cursor: a.isOnline && !a.isBusy ? 'pointer' : 'not-allowed',
-            boxShadow: a.isOnline && !a.isBusy ? '0 10px 26px rgba(200,146,10,0.4)' : 'none',
-          }}
-        >
-          {a.isOnline && !a.isBusy
-            ? `Consult Now · ${formatRupees(a.ratePerMinPaise)}/min`
-            : a.isOnline ? 'Currently Busy — Try Later' : `Notify me when ${a.name.split(' ')[0]} is online`
+            cursor: available ? 'pointer' : 'not-allowed',
+            boxShadow: available ? '0 10px 26px rgba(200,146,10,0.4)' : 'none',
+            textAlign: 'center', textDecoration: 'none',
+            display: 'block',
+          };
+          if (!available) {
+            return (
+              <button type="button" disabled style={baseStyle}>
+                {a.isOnline
+                  ? 'Currently Busy — Try Later'
+                  : `Notify me when ${a.name.split(' ')[0]} is online`}
+              </button>
+            );
           }
-        </button>
+          return (
+            <Link
+              href={`/consult/${a.id}?mode=${defaultMode}&channel=${defaultChannel}`}
+              style={baseStyle}
+            >
+              Consult Now · {formatRupees(a.ratePerMinPaise)}/min
+            </Link>
+          );
+        })()}
       </div>
     </div>
   );
