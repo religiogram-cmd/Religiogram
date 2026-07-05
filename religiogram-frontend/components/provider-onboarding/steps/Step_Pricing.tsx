@@ -286,13 +286,15 @@ export default function Step_Pricing({ flow, faithStepPath, servicesStepPath }: 
 
           {rows.map((r: any) => {
             const basePaise = rupeesToPaise(r.basePriceRupees || 0);
-            const addonPaise = r.addonFeeRupees ? rupeesToPaise(r.addonFeeRupees) : 0;
-            const travelPaise = r.travelFeeRupees ? rupeesToPaise(r.travelFeeRupees) : 0;
-            const { subtotal, platformFee, final } = computeFinalPricePaise(
-              basePaise,
-              addonPaise,
-              travelPaise,
-            );
+            /* `travelFeeRupees` is now the per-KILOMETRE rate the provider
+             * charges when travelling to the devotee's venue. The actual
+             * travel fee at booking time is computed as
+             *   distance_km × travel_rate_per_km
+             * so we don't include it in the "Devotee pays" preview below —
+             * we surface it separately as informational. Add-ons and the
+             * old flat platform-fee line have been removed at the user's
+             * request. */
+            const travelRatePerKmPaise = r.travelFeeRupees ? rupeesToPaise(r.travelFeeRupees) : 0;
             const hasBase = basePaise > 0;
 
             return (
@@ -307,7 +309,7 @@ export default function Step_Pricing({ flow, faithStepPath, servicesStepPath }: 
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <MoneyField
                     label="Base price"
                     required
@@ -320,18 +322,11 @@ export default function Step_Pricing({ flow, faithStepPath, servicesStepPath }: 
                     }
                   />
                   <MoneyField
-                    label="Add-ons"
-                    optional
-                    value={r.addonFeeRupees}
-                    onChange={(v) => setRow(r.key, { addonFeeRupees: v })}
-                    placeholder="0"
-                  />
-                  <MoneyField
-                    label="Travel fee"
+                    label="Travel fee (per km)"
                     optional
                     value={r.travelFeeRupees}
                     onChange={(v) => setRow(r.key, { travelFeeRupees: v })}
-                    placeholder="0"
+                    placeholder="e.g. 15"
                     disabled={r.mode === 'online'}
                   />
                 </div>
@@ -391,17 +386,16 @@ export default function Step_Pricing({ flow, faithStepPath, servicesStepPath }: 
 
                 {hasBase && (
                   <div className="rounded-xl bg-[#0F2452]/5 px-4 py-3 text-sm text-gray-700/90 space-y-1">
-                    <Line label="Base" paise={basePaise} />
-                    {addonPaise > 0 && <Line label="Add-ons" paise={addonPaise} />}
-                    {travelPaise > 0 && <Line label="Travel" paise={travelPaise} />}
-                    <Line label="Platform fee" paise={platformFee} muted />
-                    <div className="pt-2 mt-1 border-t border-[#0F2452]/15 flex justify-between">
+                    <div className="flex justify-between">
                       <span className="font-semibold">Devotee pays</span>
-                      <span className="font-semibold">{`Rs.${formatRupees(final)}`}</span>
+                      <span className="font-semibold">{`Rs.${formatRupees(basePaise)}`}</span>
                     </div>
-                    <p className="text-[11px] text-gray-700/50 pt-0.5">
-                      {`You receive Rs.${formatRupees(subtotal)} . platform fee covers booking, payment, and support.`}
-                    </p>
+                    {travelRatePerKmPaise > 0 && r.mode !== 'online' && (
+                      <p className="text-[11px] text-gray-700/60 pt-0.5">
+                        + Travel: Rs.{formatRupees(travelRatePerKmPaise)}/km — calculated from
+                        the venue distance at booking time.
+                      </p>
+                    )}
                   </div>
                 )}
               </section>

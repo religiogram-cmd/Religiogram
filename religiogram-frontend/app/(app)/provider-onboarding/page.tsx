@@ -66,18 +66,27 @@ export default function ProviderOnboardingEntry() {
   }
 
   const category = data.providerCategory as Category | undefined;
-  const isReturning = step > 1 && !!category;
-  // Both flow has 12 steps, priest / astrologer have 9. Used only for the
-  // "Step X of N" copy on the resume banner.
-  const resumeTotal = category === 'both' ? 12 : 9;
+
+  /* Per-category progress. A user may have started multiple applications
+   * (e.g. Astrologer up to Step 7, then Priest up to Step 3). We surface
+   * a separate resume banner for each, so tapping a specific one lands
+   * on that flow's exact last step. */
+  const progressByCategory = (data.progressByCategory ?? {}) as
+    Partial<Record<Category, number>>;
+  const totalSteps = (c: Category) => (c === 'both' ? 12 : 9);
+  const catLabel = (c: Category) =>
+    c === 'astrologer' ? 'Astrologer'
+  : c === 'both'       ? 'Priest & Astrologer'
+  :                      'Priest';
+  const resumeEntries = (['priest', 'astrologer', 'both'] as Category[])
+    .map((c) => ({ cat: c, step: progressByCategory[c] ?? 0 }))
+    .filter((e) => e.step > 1);
 
   const startWizard = (cat: Category) => {
     if (cat !== data.providerCategory) update({ providerCategory: cat });
-    // Route into the per-category sub-flow. If the user was already in the
-    // middle of THIS category we resume at their furthest step; if they're
-    // switching category, start over at step 1 (their old progress is
-    // preserved in the store but won't line up 1:1 across flows).
-    const resumeStep = cat === data.providerCategory ? Math.max(1, step) : 1;
+    /* Resume at the furthest step recorded for THIS specific category.
+     * Switching category doesn't reset the other category's progress. */
+    const resumeStep = Math.max(1, progressByCategory[cat] ?? 1);
     router.push(`/provider-onboarding/${cat}/step-${resumeStep}`);
   };
 
@@ -154,28 +163,35 @@ export default function ProviderOnboardingEntry() {
           />
         </div>
 
-        {/* Resume banner (only if user has real progress on either flow) */}
-        {isReturning && (
-          <div className="mt-5 p-4 rounded-xl border border-amber-700/30 bg-white/60">
+        {/* Resume banners — one PER category with in-progress work. Multiple
+         * applications can be in flight at once (e.g. Astrologer Step 7 +
+         * Priest Step 3). Tapping a specific banner jumps directly to that
+         * flow at its recorded step. */}
+        {resumeEntries.length > 0 && (
+          <div className="mt-5 space-y-3">
             <p className="text-[12px] tracking-wide uppercase text-amber-700 font-bold">
               Continue where you left off
             </p>
-            <p className="mt-1 text-sm text-[#0F2452]">
-              You&apos;re on Step {step} of {resumeTotal} —{' '}
-              {category === 'astrologer'
-                ? 'Astrologer'
-                : category === 'both'
-                  ? 'Priest & Astrologer'
-                  : 'Priest'}{' '}
-              application.
-            </p>
-            <button
-              onClick={() => router.push(`/provider-onboarding/${category}/step-${step}`)}
-              className="mt-3 px-5 py-3 rounded-xl font-semibold text-[#F7EFE1] bg-[#0F2452]
-                         hover:bg-[#0F2452] active:scale-[0.98] transition"
-            >
-              Resume — Step {step}
-            </button>
+            {resumeEntries.map(({ cat, step: catStep }) => (
+              <div
+                key={cat}
+                className="p-4 rounded-xl border border-amber-700/30 bg-white/60"
+              >
+                <p className="text-sm text-[#0F2452]">
+                  <b>{catLabel(cat)}</b> application — Step {catStep} of {totalSteps(cat)}
+                </p>
+                <button
+                  onClick={() => {
+                    if (cat !== data.providerCategory) update({ providerCategory: cat });
+                    router.push(`/provider-onboarding/${cat}/step-${catStep}`);
+                  }}
+                  className="mt-3 px-5 py-3 rounded-xl font-semibold text-[#F7EFE1] bg-[#0F2452]
+                             hover:bg-[#0F2452] active:scale-[0.98] transition"
+                >
+                  Resume — Step {catStep}
+                </button>
+              </div>
+            ))}
           </div>
         )}
 

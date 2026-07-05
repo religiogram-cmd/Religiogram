@@ -80,14 +80,11 @@ function validateDay(slots: DraftSlot[]): string[] {
     if (end - start < 15) errs.push('Each slot must be at least 15 minutes long.');
   }
 
-  for (let i = 0; i < avails.length; i++) {
-    for (let j = i + 1; j < avails.length; j++) {
-      if (overlaps(avails[i], avails[j])) {
-        errs.push('Available windows are overlapping. Merge them or split the break.');
-        break;
-      }
-    }
-  }
+  /* Overlapping availability windows are allowed intentionally — some
+   * providers want two overlapping windows (e.g. two channels open at the
+   * same time). Not an error. If the booking engine ever needs strictly
+   * non-overlapping windows we do that as a merge at query time, not at
+   * onboarding validation. */
 
   for (const b of breaks) {
     const inside = avails.some(

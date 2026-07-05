@@ -46,6 +46,16 @@ export interface ProviderOnboardingData {
   // steps show the union of both flows (services + specialisations, in-person
   // + per-minute pricing, etc).
   providerCategory?: 'priest' | 'astrologer' | 'both';
+
+  /**
+   * Furthest step reached PER category. Keyed by the same enum as
+   * `providerCategory`. Enables the landing chooser to show a "Continue
+   * where you left off" banner for EACH in-progress application (not
+   * just the most recent). A user who did Astrologer up to Step 7 and
+   * then started Priest sees two resume banners; tapping either resumes
+   * that specific flow at its recorded step.
+   */
+  progressByCategory?: Partial<Record<'priest' | 'astrologer' | 'both', number>>;
   // ── Astrologer-only fields ──
   specialisations?: string[];              // Vedic, KP, Tarot, etc.
   /** Per-spec years of experience map (Phase 2). Keys must exist in
@@ -204,9 +214,20 @@ export function ProviderOnboardingProvider({ children }: { children: ReactNode }
   const advance = useCallback(
     (step: number) => {
       setState((prev: any) => {
+        /* Also stamp the per-category progress so the landing chooser can
+         * surface separate resume banners for each in-progress application.
+         * `data.providerCategory` is the current sub-flow the user is in. */
+        const currentCat = prev.data.providerCategory as
+          | 'priest' | 'astrologer' | 'both' | undefined;
+        const prevProgress = prev.data.progressByCategory ?? {};
+        const progressByCategory = currentCat
+          ? { ...prevProgress, [currentCat]: Math.max(prevProgress[currentCat] ?? 0, step) }
+          : prevProgress;
+
         const next: OnboardingState = {
           ...prev,
           step: Math.max(prev.step, step),
+          data: { ...prev.data, progressByCategory },
           updatedAt: Date.now(),
           saveStatus: 'saving',
         };
