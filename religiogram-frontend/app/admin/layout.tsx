@@ -113,7 +113,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     router.replace('/auth');
   };
 
+  const isDashboard       = pathname === '/admin' || pathname === '/admin/dashboard' || pathname?.startsWith('/admin/dashboard');
   const isApplications    = pathname?.startsWith('/admin/applications');
+  const isUsers           = pathname?.startsWith('/admin/users');
+  const isProviders       = pathname?.startsWith('/admin/providers');
   const isSpecialisations = pathname?.startsWith('/admin/specialisations');
   const isRanking         = pathname?.startsWith('/admin/ranking');
 
@@ -134,11 +137,22 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <polyline points="15 18 9 12 15 6"/>
               </svg>
             </Link>
-            <Link href="/admin/applications" className="font-semibold tracking-tight">
+            <Link href="/admin/dashboard" className="font-semibold tracking-tight">
               ReligioGram Admin
             </Link>
           </div>
           <nav className="flex items-center gap-1 sm:gap-2 text-sm">
+            <Link
+              href="/admin/dashboard"
+              className={[
+                'px-3 py-1.5 rounded-md',
+                isDashboard
+                  ? 'bg-slate-800 text-white'
+                  : 'text-slate-200 hover:bg-slate-800',
+              ].join(' ')}
+            >
+              Dashboard
+            </Link>
             <Link
               href="/admin/applications"
               className={[
@@ -149,6 +163,28 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               ].join(' ')}
             >
               Applications
+            </Link>
+            <Link
+              href="/admin/users"
+              className={[
+                'px-3 py-1.5 rounded-md',
+                isUsers
+                  ? 'bg-slate-800 text-white'
+                  : 'text-slate-200 hover:bg-slate-800',
+              ].join(' ')}
+            >
+              Users
+            </Link>
+            <Link
+              href="/admin/providers"
+              className={[
+                'px-3 py-1.5 rounded-md',
+                isProviders
+                  ? 'bg-slate-800 text-white'
+                  : 'text-slate-200 hover:bg-slate-800',
+              ].join(' ')}
+            >
+              Providers
             </Link>
             <Link
               href="/admin/specialisations"

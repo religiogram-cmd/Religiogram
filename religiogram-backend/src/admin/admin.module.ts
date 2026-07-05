@@ -15,6 +15,7 @@ import { AdminAnalyticsController } from "./admin-analytics.controller";
 import { AdminAuditService } from "./admin-audit.service";
 import { AdminPaymentsController } from "./admin-payments.controller";
 import { AdminProviderVerificationController } from "./admin-provider-verification.controller";
+import { AdminUsersController } from "./admin-users.controller";
 import { KycVideoEntity } from "../service-providers/entities/kyc-video.entity";
 import { ProviderBankAccount } from "../service-providers/entities/provider-bank-account.entity";
 import { QUEUE } from "../common/queues/queue.constants";
@@ -26,6 +27,7 @@ import { Admin } from "./entities/admin.entity";
 import { AdminActionLog } from "./entities/admin-action-log.entity";
 
 import { ProviderEntity } from "../service-providers/entities/provider.entity";
+import { User } from "../users/entities/user.entity";
 import { Wallet } from "../wallet/entities/wallet.entity";
 import { LedgerEntry } from "../wallet/entities/ledger-entry.entity";
 import { WalletBalance } from "../wallet/entities/wallet-balance.entity";
@@ -65,6 +67,7 @@ import { ServiceProvidersModule } from '../service-providers/service-providers.m
       KycVideoEntity,
       WalletBalance,
       ProviderBankAccount,
+      User,
     ]),
   ],
   controllers: [
@@ -78,6 +81,7 @@ import { ServiceProvidersModule } from '../service-providers/service-providers.m
     AdminAnalyticsController,
     AdminPaymentsController,
     AdminProviderVerificationController,
+    AdminUsersController,
   ],
   providers: [AdminTemplesService, AdminAuditService],
   exports: [TypeOrmModule, AdminAuditService],

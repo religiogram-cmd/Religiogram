@@ -9,11 +9,12 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
-import { ProviderEntity, ProviderStatus } from '../service-providers/entities/provider.entity';
+import { ProviderEntity, ProviderStatus, ProviderCategory } from '../service-providers/entities/provider.entity';
 import { Booking, BookingStatus } from '../bookings/entities/booking.entity';
 import { LedgerEntry, EntryType } from '../wallet/entities/ledger-entry.entity';
 import { Dispute, DisputeStatus } from '../dispute/entities/dispute.entity';
 import { FraudSignal } from '../fraud/entities/fraud-signal.entity';
+import { User, AccountStatus } from '../users/entities/user.entity';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
@@ -30,6 +31,8 @@ export class AdminAnalyticsController {
     private readonly disputeRepo: Repository<Dispute>,
     @InjectRepository(FraudSignal)
     private readonly fraudRepo: Repository<FraudSignal>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly ds: DataSource,
   ) {}
 
@@ -44,6 +47,19 @@ export class AdminAnalyticsController {
       cancelledBookings,
       openDisputes,
       unresolvedFraudSignals,
+      totalUsers,
+      seekerUsers,
+      advisorUsers,
+      adminUsers,
+      activeUsers,
+      suspendedUsers,
+      bannedUsers,
+      priestPending,
+      priestApproved,
+      astrologerPending,
+      astrologerApproved,
+      bothPending,
+      bothApproved,
     ] = await Promise.all([
       this.providerRepo.count(),
       this.providerRepo.count({ where: { status: ProviderStatus.PendingReview } }),
@@ -53,6 +69,19 @@ export class AdminAnalyticsController {
       this.bookingRepo.count({ where: { status: BookingStatus.CANCELLED } }),
       this.disputeRepo.count({ where: { status: DisputeStatus.RAISED } }),
       this.fraudRepo.count({ where: { isResolved: false } }),
+      this.userRepo.count(),
+      this.userRepo.count({ where: { role: 'seeker' } }),
+      this.userRepo.count({ where: { role: 'advisor' } }),
+      this.userRepo.count({ where: { role: 'admin' } }),
+      this.userRepo.count({ where: { accountStatus: AccountStatus.ACTIVE } }),
+      this.userRepo.count({ where: { accountStatus: AccountStatus.SUSPENDED } }),
+      this.userRepo.count({ where: { accountStatus: AccountStatus.BANNED } }),
+      this.providerRepo.count({ where: { providerCategory: ProviderCategory.Priest,     status: ProviderStatus.PendingReview } }),
+      this.providerRepo.count({ where: { providerCategory: ProviderCategory.Priest,     status: ProviderStatus.Approved } }),
+      this.providerRepo.count({ where: { providerCategory: ProviderCategory.Astrologer, status: ProviderStatus.PendingReview } }),
+      this.providerRepo.count({ where: { providerCategory: ProviderCategory.Astrologer, status: ProviderStatus.Approved } }),
+      this.providerRepo.count({ where: { providerCategory: ProviderCategory.Both,       status: ProviderStatus.PendingReview } }),
+      this.providerRepo.count({ where: { providerCategory: ProviderCategory.Both,       status: ProviderStatus.Approved } }),
     ]);
 
     return {
@@ -60,6 +89,20 @@ export class AdminAnalyticsController {
       bookings:  { total: totalBookings, completed: completedBookings, cancelled: cancelledBookings },
       disputes:  { open: openDisputes },
       fraud:     { unresolved: unresolvedFraudSignals },
+      users: {
+        total:     totalUsers,
+        seekers:   seekerUsers,
+        advisors:  advisorUsers,
+        admins:    adminUsers,
+        active:    activeUsers,
+        suspended: suspendedUsers,
+        banned:    bannedUsers,
+      },
+      providersByCategory: {
+        priest:     { pending: priestPending,     approved: priestApproved },
+        astrologer: { pending: astrologerPending, approved: astrologerApproved },
+        both:       { pending: bothPending,       approved: bothApproved },
+      },
     };
   }
 
