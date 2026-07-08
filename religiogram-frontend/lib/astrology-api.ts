@@ -2,10 +2,13 @@
  * Astrology API client.
  *
  * The marketplace list + profile page are wired to the real
- * `GET /v1/providers` endpoint (filtered by `?category=astrologer`). The
- * MOCK[] constant below is kept as a **development seed only** — used when
- * the backend returns zero providers (fresh DB), so the UI still renders
- * something. In production once real astrologers approve, MOCK is invisible.
+ * `GET /v1/providers` endpoint (filtered by `?category=astrologer`).
+ *
+ * REAL DATA ONLY. There is no MOCK fallback — the previous seed array of
+ * fake astrologer profiles was deleted per product policy. If the backend
+ * returns zero astrologers, the marketplace shows a proper empty state
+ * ("No astrologers available right now") rather than surface synthetic
+ * humans as filler.
  *
  * Horoscope data (fetchHoroscope) comes from the backend AstrologyController.
  */
@@ -102,166 +105,9 @@ export const CATEGORIES = [
   { key: 'muhurat',     label: 'Muhurat',     icon: '📿' },
 ] as const;
 
-/* ─────────────────────  Mock astrologer data  ─────────────────────
- * Realistic seed set for Phase 1 UI. Phase 2 swaps this for a real
- * backend query on /astrology/astrologers (backed by the existing
- * `providers` table filtered by astrology specialisation).
- */
-
-const MOCK: Astrologer[] = [
-  {
-    id: 'a-001',
-    name: 'Acharya Vikas Sharma',
-    avatarUrl: null,
-    isOnline: true, isBusy: false, isLive: false, isVerified: true, isNew: false,
-    languages: ['Hindi', 'English', 'Sanskrit'],
-    experienceYears: 22,
-    qualification: 'Jyotish Acharya, MA (Vedic Studies)',
-    specializations: ['Vedic Astrology', 'Marriage', 'Career', 'Kundli'],
-    rating: 4.9, reviewCount: 8432,
-    ratePerMinPaise: 12000,
-    responseTimeSec: 45,
-    followers: 45230, completedConsultations: 12480, successRate: 96,
-    about: 'A 3rd-generation Vedic astrologer with 22 years of experience guiding families across India on marriage, career, and life-path questions.',
-    awards: ['Best Astrologer 2023 — Times Now', 'Featured on NDTV'],
-    channels: ['chat', 'voice', 'video'],
-    city: 'Varanasi', gender: 'male',
-    nextAvailableSlot: 'Now',
-  },
-  {
-    id: 'a-002',
-    name: 'Dr. Ananya Iyer',
-    avatarUrl: null,
-    isOnline: true, isBusy: true, isLive: false, isVerified: true, isNew: false,
-    languages: ['English', 'Tamil', 'Malayalam'],
-    experienceYears: 14,
-    qualification: 'PhD Vedic Astrology, KP Certified',
-    specializations: ['KP Astrology', 'Love', 'Marriage', 'Match Making'],
-    rating: 4.8, reviewCount: 5210,
-    ratePerMinPaise: 8500,
-    responseTimeSec: 60,
-    followers: 22100, completedConsultations: 7420, successRate: 94,
-    about: 'KP-certified astrologer specialising in relationship compatibility, marriage timing, and post-marriage guidance.',
-    awards: ['Top Rated 2024'],
-    channels: ['chat', 'voice'],
-    city: 'Chennai', gender: 'female',
-    nextAvailableSlot: 'In 8 min',
-  },
-  {
-    id: 'a-003',
-    name: 'Pandit Ravi Krishnan',
-    avatarUrl: null,
-    isOnline: true, isBusy: false, isLive: true, isVerified: true, isNew: false,
-    languages: ['Hindi', 'English', 'Kannada'],
-    experienceYears: 30,
-    qualification: 'Jyotish Ratna, Nadi Expert',
-    specializations: ['Nadi Astrology', 'Vedic Astrology', 'Remedies'],
-    rating: 4.9, reviewCount: 12340,
-    ratePerMinPaise: 25000,
-    responseTimeSec: 30,
-    followers: 89200, completedConsultations: 18900, successRate: 97,
-    about: 'Senior Nadi astrologer with 30 years of experience. Specialises in life-purpose readings and rare planetary remedies.',
-    awards: ['Padma Shri nominee 2022'],
-    channels: ['chat', 'voice', 'video'],
-    city: 'Bengaluru', gender: 'male',
-    nextAvailableSlot: 'Live now',
-  },
-  {
-    id: 'a-004',
-    name: 'Riya Kapoor',
-    avatarUrl: null,
-    isOnline: false, isBusy: false, isLive: false, isVerified: true, isNew: true,
-    languages: ['Hindi', 'English', 'Punjabi'],
-    experienceYears: 3,
-    qualification: 'Certified Tarot Reader, Numerologist',
-    specializations: ['Tarot Reading', 'Numerology', 'Love'],
-    rating: 4.7, reviewCount: 320,
-    ratePerMinPaise: 1500,
-    responseTimeSec: 90,
-    followers: 1240, completedConsultations: 380, successRate: 92,
-    about: 'New-age tarot and numerology reader with a fresh, modern approach. Perfect for Gen-Z relationship questions.',
-    awards: [],
-    channels: ['chat'],
-    city: 'Delhi', gender: 'female',
-    nextAvailableSlot: 'Tomorrow 10:00',
-  },
-  {
-    id: 'a-005',
-    name: 'Guru Mahesh Bhatt',
-    avatarUrl: null,
-    isOnline: true, isBusy: false, isLive: false, isVerified: true, isNew: false,
-    languages: ['Hindi', 'Marathi', 'Gujarati'],
-    experienceYears: 18,
-    qualification: 'Lal Kitab Ratna, Vastu Vishesh',
-    specializations: ['Lal Kitab', 'Vastu Shastra', 'Remedies'],
-    rating: 4.8, reviewCount: 4120,
-    ratePerMinPaise: 6000,
-    responseTimeSec: 55,
-    followers: 15800, completedConsultations: 5680, successRate: 95,
-    about: 'Lal Kitab expert and Vastu consultant. 18 years of guiding families on home energy and quick planetary remedies.',
-    awards: ['Vastu Excellence 2023'],
-    channels: ['chat', 'voice'],
-    city: 'Mumbai', gender: 'male',
-    nextAvailableSlot: 'In 15 min',
-  },
-  {
-    id: 'a-006',
-    name: 'Sadhvi Meera',
-    avatarUrl: null,
-    isOnline: true, isBusy: false, isLive: false, isVerified: true, isNew: false,
-    languages: ['Hindi', 'English', 'Bengali'],
-    experienceYears: 12,
-    qualification: 'MA Sanskrit, Palmistry Certified',
-    specializations: ['Palmistry', 'Face Reading', 'Career', 'Business'],
-    rating: 4.6, reviewCount: 2140,
-    ratePerMinPaise: 4500,
-    responseTimeSec: 70,
-    followers: 8900, completedConsultations: 3210, successRate: 93,
-    about: 'Palmistry and face-reading specialist with a warm, encouraging style. Career and business focus.',
-    awards: [],
-    channels: ['chat', 'video'],
-    city: 'Kolkata', gender: 'female',
-    nextAvailableSlot: 'Now',
-  },
-  {
-    id: 'a-007',
-    name: 'Acharya Pranav Joshi',
-    avatarUrl: null,
-    isOnline: true, isBusy: false, isLive: false, isVerified: true, isNew: false,
-    languages: ['Hindi', 'English', 'Sanskrit'],
-    experienceYears: 25,
-    qualification: 'Jyotish Vachaspati, Gemologist',
-    specializations: ['Gemology', 'Rudraksha', 'Vedic Astrology'],
-    rating: 4.9, reviewCount: 6890,
-    ratePerMinPaise: 15000,
-    responseTimeSec: 40,
-    followers: 35400, completedConsultations: 9120, successRate: 96,
-    about: 'Sr. Vedic astrologer + certified gemologist. Recommends authenticated gemstones and Rudraksha based on birth chart.',
-    awards: ['Gemology Excellence Award 2022'],
-    channels: ['chat', 'voice', 'video'],
-    city: 'Rishikesh', gender: 'male',
-    nextAvailableSlot: 'Now',
-  },
-  {
-    id: 'a-008',
-    name: 'Neha Verma',
-    avatarUrl: null,
-    isOnline: false, isBusy: false, isLive: false, isVerified: true, isNew: false,
-    languages: ['Hindi', 'English'],
-    experienceYears: 8,
-    qualification: 'Certified Astrologer, Life Coach',
-    specializations: ['Career', 'Love', 'Numerology', 'Remedies'],
-    rating: 4.7, reviewCount: 1580,
-    ratePerMinPaise: 3500,
-    responseTimeSec: 80,
-    followers: 5600, completedConsultations: 2100, successRate: 92,
-    about: 'Career-focused astrologer and life coach. Practical remedies + honest, clear guidance.',
-    awards: [],
-    channels: ['chat', 'voice'],
-    city: 'Pune', gender: 'female',
-    nextAvailableSlot: 'Tomorrow 09:00',
-  },
-];
+/* Mock astrologer data REMOVED. This app is real-data only — we do not
+ * surface synthetic humans as filler. If the backend returns zero
+ * astrologers, the marketplace shows a proper empty state instead. */
 
 /* ─────────────────────────  API surface  ───────────────────────── */
 
@@ -377,8 +223,9 @@ async function fetchProviders(qs: string): Promise<BackendProvider[]> {
  * is small enough that shipping filters piecewise on the server isn't worth
  * the coupling. When the list crosses 500-ish rows we push these down.
  *
- * If the fetch fails or returns zero (fresh DB), we fall back to MOCK so
- * new devs don't see an empty screen.
+ * Returns whatever the real backend serves. If the fetch fails or the DB
+ * is empty, an empty list is returned so the UI shows a proper empty
+ * state — we do NOT surface fake humans to real users.
  */
 export async function listAstrologers(
   filters: ListFilters = {},
@@ -401,17 +248,18 @@ export async function listAstrologers(
     const rows = await fetchProviders(qs);
     list = rows.map(toAstrologer);
   } catch {
-    /* network failure — fall through to mock so the screen isn't empty */
+    /* network failure — return empty. The UI renders a proper empty
+     * state ("No astrologers available right now"); we never show fake
+     * humans as filler. */
+    list = [];
   }
-  if (list.length === 0) list = MOCK.slice();
 
   /* ─── Client-side filters ───────────────────────────────────────────
    * DATA CAVEATS (backend doesn't track these yet — filters below are
    * best-effort / no-op pass-through so the UI still works):
    *   • gender          — Provider entity has no gender field; the mapper
    *                       defaults every row to 'male', so picking Female
-   *                       or Other will yield 0 rows against real data.
-   *                       Kept in the UI; still filters against MOCK.
+   *                       or Other will yield 0 rows.
    *   • topics          — same list as specialisations for now (aliased).
    *   • availability
    *     ├─ 'busy'       — isBusy not tracked → pass-through (ignored).
@@ -488,7 +336,9 @@ export async function listAstrologers(
     );
   }
 
-  // Gender (no-op for real backend rows; still filters MOCK)
+  // Gender — no-op today. Provider entity has no gender column so every
+  // real row is defaulted to 'male' by the mapper; selecting Female or
+  // Other will yield zero results until the backend tracks this.
   if (filters.gender) {
     list = list.filter((a) => (a.gender as string) === filters.gender);
   }
@@ -527,8 +377,9 @@ export async function getAstrologer(id: string): Promise<Astrologer | null> {
     const raw = await res.json() as BackendProvider;
     return toAstrologer(raw);
   } catch {
-    // Fall back to mock for the same-dev-experience reason as above
-    return MOCK.find((a) => a.id === id) ?? null;
+    /* Real-only policy: no mock fallback. If the backend can't serve
+     * the profile the caller renders "Astrologer not found". */
+    return null;
   }
 }
 
