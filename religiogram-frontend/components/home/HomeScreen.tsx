@@ -511,7 +511,7 @@ export default function HomeScreen() {
           {FAITH_CARDS.map(fc => (
             <Link
               key={fc.key}
-              href={`/priests?faith=${fc.key}`}
+              href={`/rituals?faith=${fc.key}`}
               style={{
                 position: 'relative', overflow: 'hidden', borderRadius: 18,
                 display: 'block', minHeight: 190, background: '#0A0A0A',

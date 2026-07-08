@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { tokenStore } from '@/lib/api';
 
 const GOLD = '#C8920A';
@@ -17,9 +17,19 @@ const FAITH_META: Record<string, { color: string; emoji: string }> = {
 
 export default function RitualsScreen() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [services, setServices] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
-  const [activeFaith, setActiveFaith] = useState<string>('hindu');
+  /* Honour ?faith= from the Home page's faith cards. The Home
+   * "Hindu / Muslim / Sikh / Christian" tiles link here with a faith
+   * param, and we want the tab strip below to open on that faith
+   * instead of the hard-coded default. Falls back to 'hindu' if the
+   * param is missing or not one of the known faiths. */
+  const initialFaith = (() => {
+    const f = (searchParams?.get('faith') ?? '').toLowerCase();
+    return f in FAITH_META ? f : 'hindu';
+  })();
+  const [activeFaith, setActiveFaith] = useState<string>(initialFaith);
 
   useEffect(() => {
     async function load() {
