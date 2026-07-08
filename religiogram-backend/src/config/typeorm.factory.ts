@@ -49,10 +49,16 @@ export function buildTypeOrmOptions(
   const masterUrl    = config.get<string>('database.url');
   const directUrl    = config.get<string>('database.directUrl');   // bypasses PgBouncer
   const replicaUrl   = config.get<string>('database.replicaUrl');
-  // P2-4: pool capped at 25. Each CCX23 node (4 vCPU, 8 GB RAM, PgBouncer)
-  // can comfortably service 25 concurrent backend connections per pod.
-  // With 2 app pods that's 50 connections total — well within PgBouncer's pool.
-  const poolSize     = Math.min(config.get<number>('database.poolSize', 25), 25);
+  /*
+   * PER-WORKER pool size. This is multiplied by (# cluster workers) × (# pods)
+   * to arrive at total Postgres connection count. Default 8 keeps us safe on
+   * managed PG defaults (max_connections=100):
+   *   8 conns × 4 workers × 2 pods = 64 conns  (headroom for admin / crons)
+   * If PgBouncer is in front, DATABASE_VIA_PROXY=true and DB_POOL_SIZE can
+   * be raised to 25. Hard-cap at 25 remains so a config typo can't blow up
+   * the DB.
+   */
+  const poolSize     = Math.min(config.get<number>('database.poolSize', 8), 25);
   const viaProxy     = config.get<boolean>('database.viaProxy', false);
   const ssl          = config.get<boolean>('database.ssl', false);
   const stmtTimeout  = config.get<number>('database.statementTimeoutMs', 5_000);

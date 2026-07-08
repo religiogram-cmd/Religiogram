@@ -259,6 +259,28 @@ export class ConsultationGateway
         if (set.size === 0) this.socketsByJti.delete(jti);
       }
     }
+
+    /* Ghost-busy prevention: if a PROVIDER's socket drops mid-session,
+     * clear their is_busy flag so the marketplace stops showing them as
+     * "Busy" indefinitely. We look up any ACTIVE session where this user
+     * is the provider and flip the flag. Non-blocking; session-grace
+     * eventually finalises the session via its cron sweep. */
+    const userId = client.data?.userId;
+    if (userId) {
+      this.ds.query(
+        `UPDATE providers p
+         SET is_busy = false
+         WHERE p.user_id = $1
+           AND EXISTS (
+             SELECT 1 FROM consultation_sessions s
+             WHERE s.provider_id::text = p.id::text
+               AND s.session_status IN ('active', 'paused', 'connecting')
+           )`,
+        [userId],
+      ).catch((err) =>
+        this.logger.warn(`is_busy clear on disconnect failed for user ${userId}: ${(err as Error).message}`),
+      );
+    }
   }
 
   @SubscribeMessage('session.join')

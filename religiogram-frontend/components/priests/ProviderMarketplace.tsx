@@ -54,6 +54,16 @@ interface Props {
    *  marketplace (hero + search + topic chips + filters). The invite flow
    *  leaves this unset — tab toggle stays local. */
   astrologerHref?: string;
+  /** Optional server-side filters, forwarded as query params to
+   *  GET /v1/providers. Keeps the marketplace's default view fast and
+   *  scales with backend indexes rather than 50-row client-side scans. */
+  filters?: {
+    availableNowOnly?: boolean;
+    minRating?: number;
+    languages?: string[];
+    specialisation?: string;
+    channel?: 'chat' | 'voice' | 'video';
+  };
 }
 
 /**
@@ -74,6 +84,7 @@ export default function ProviderMarketplace({
   initialProviderTab = 'priest',
   priestRoleLabel = 'Pandit',
   astrologerHref,
+  filters,
 }: Props) {
   const router = useRouter();
   const [providerTab, setProviderTab] = useState<'astrologer' | 'priest'>(initialProviderTab);
@@ -105,9 +116,21 @@ export default function ProviderMarketplace({
     const religionParam = faith === 'muslim' ? 'islam' : faith;
     const headers: Record<string, string> = {};
     if (tok) headers['Authorization'] = 'Bearer ' + tok;
-    const url = providerTab === 'astrologer'
-      ? `${API_BASE}/providers?category=astrologer&limit=50`
-      : `${API_BASE}/providers?category=priest&religion=${religionParam}&limit=50`;
+    /* Compose the query. Server-side narrowing is preferred wherever the
+     * backend supports it (category + religion + specialisation + channel
+     * + available + minRating + languages). Everything else stays client-
+     * side and applies to the returned page. */
+    const params = new URLSearchParams({ limit: '50' });
+    params.set('category', providerTab);
+    if (providerTab === 'priest') params.set('religion', religionParam);
+    if (filters?.availableNowOnly) params.set('available', 'now');
+    if (filters?.minRating != null && filters.minRating > 0) {
+      params.set('minRating', String(filters.minRating));
+    }
+    if (filters?.languages?.length) params.set('languages', filters.languages.join(','));
+    if (filters?.specialisation)    params.set('specialisation', filters.specialisation);
+    if (filters?.channel)           params.set('channel', filters.channel);
+    const url = `${API_BASE}/providers?${params.toString()}`;
     fetch(url, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(j => {
@@ -135,7 +158,18 @@ export default function ProviderMarketplace({
       })
       .catch(() => setAllPriests([]))
       .finally(() => setPriestsLoading(false));
-  }, [faith, providerTab]);
+    // Depend on filter primitives too so the list refetches when they
+    // change. Arrays flattened via JSON to trigger on shape change.
+  }, [
+    faith,
+    providerTab,
+    filters?.availableNowOnly,
+    filters?.minRating,
+    filters?.specialisation,
+    filters?.channel,
+    JSON.stringify(filters?.languages ?? []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ]);
 
   /* Local/Global sub-tabs. Auto-flip to Local if the user's city is known
    * AND at least one provider matches — that's the more useful default. */

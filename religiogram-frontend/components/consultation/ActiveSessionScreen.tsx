@@ -6,7 +6,11 @@ import { tokenStore } from '@/lib/api';
 import { formatRupees, formatPerMinute } from '@/lib/format-currency';
 import { startCall, type CallHandle } from '@/lib/webrtc-call';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001';
+/* Fallback includes `/api/v1` to match every other file in the repo — the
+ * TURN endpoint is at `${API_BASE}/consultation/turn-credentials`, and
+ * without the prefix that becomes `http://localhost:3001/consultation/…`
+ * which 404s in local dev. Prod uses NEXT_PUBLIC_API_BASE from env. */
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1';
 
 const NAVY = '#1B2A5C';
 const GOLD = '#C8920A';
@@ -224,7 +228,17 @@ export default function ActiveSessionScreen({
     if (raw) {
       raw.on('connect', () => raw.emit('session.join', { sessionId }));
 
-      raw.on('message', (payload: SocketMessage) => {
+      /* Backend gateway event contract (kept in sync via a single names-
+       * map here). The backend emits:
+       *   - message.new        chat message delivered
+       *   - billing.tick       per-minute billing update
+       *   - session.ended      session closed by either side
+       *   - billing.low_balance user balance about to run out
+       *   - session.joined     acknowledgement of session.join emit
+       * Legacy names (message / billing_tick / session_ended / balance_low)
+       * are ALSO subscribed for backward compat with older builds — Socket.IO
+       * lets us attach multiple listeners without cost. */
+      const onMessage = (payload: SocketMessage) => {
         const text = payload.text ?? payload.message ?? '';
         const senderId = payload.senderId ?? payload.from ?? '';
         if (!text) return;
@@ -232,13 +246,17 @@ export default function ActiveSessionScreen({
           ...prev,
           { id: payload.id ?? `sock-${Date.now()}`, sender: senderId === 'user' ? 'user' : 'consultant', text },
         ]);
-      });
+      };
+      raw.on('message.new', onMessage);
+      raw.on('message',     onMessage);   // legacy
 
-      raw.on('billing_tick', (payload: BillingTick) => {
+      const onBillingTick = (payload: BillingTick) => {
         if (payload.secondsElapsed !== undefined) setSeconds(payload.secondsElapsed);
-      });
+      };
+      raw.on('billing.tick',  onBillingTick);
+      raw.on('billing_tick',  onBillingTick); // legacy
 
-      raw.on('session_ended', (payload: SessionEndedPayload) => {
+      const onSessionEnded = (payload: SessionEndedPayload) => {
         setSessionEnded(true);
         const durationSecs = payload.durationSeconds ?? seconds;
         const chargedAmount =
@@ -251,14 +269,18 @@ export default function ActiveSessionScreen({
           ratePerMin,
           cashbackEarned: payload.cashbackEarned,
         });
-      });
+      };
+      raw.on('session.ended',  onSessionEnded);
+      raw.on('session_ended',  onSessionEnded); // legacy
 
-      raw.on('balance_low', () => {
+      const onBalanceLow = () => {
         if (!lowBalanceShownRef.current) {
           setShowLowBalance(true);
           lowBalanceShownRef.current = true;
         }
-      });
+      };
+      raw.on('billing.low_balance', onBalanceLow);
+      raw.on('balance_low',         onBalanceLow); // legacy
     }
 
     return () => { socket.disconnect(); socketRef.current = null; };
@@ -285,7 +307,10 @@ export default function ActiveSessionScreen({
       try {
         // Fetch TURN credentials from backend
         const tok = tokenStore.access ?? '';
-        const res = await fetch(`${API_BASE}/consultations/turn-credentials`, {
+        /* Backend route is `/consultation/turn-credentials` (singular).
+         * Old code hit `/consultations/…` and 404'd → WebRTC fell back
+         * to STUN-only, which fails behind most mobile carrier NATs. */
+        const res = await fetch(`${API_BASE}/consultation/turn-credentials`, {
           headers: tok ? { Authorization: `Bearer ${tok}` } : {},
         });
         if (!res.ok) throw new Error(`TURN creds ${res.status}`);
@@ -433,7 +458,14 @@ export default function ActiveSessionScreen({
     setMessages((prev) => [...prev, { id: `m${Date.now()}`, sender: 'user', text }]);
     setInputText('');
     const raw = socketRef.current?.raw;
-    if (raw?.connected) raw.emit('message', { sessionId, text });
+    /* Backend handler at consultation.gateway.ts registers `message.send`;
+     * the older `message` name is emitted too for backward compat with
+     * builds that predate the rename. Server ignores whichever it doesn't
+     * handle. */
+    if (raw?.connected) {
+      raw.emit('message.send', { sessionId, text });
+      raw.emit('message',      { sessionId, text }); // legacy
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

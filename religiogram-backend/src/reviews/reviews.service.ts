@@ -165,8 +165,11 @@ export class ReviewsService {
           [ReviewableType.TEMPLE, reviewableId],
         );
       } else if (reviewableType === ReviewableType.PROVIDER) {
-        // providers table uses bigint id but reviewableId is stored as UUID text.
-        // The providers.id is bigint so we cast safely.
+        /* providers.id is `bigint`, reviews.reviewable_id is now `varchar(64)`
+         * (migration 072 widened the column). We cast id::text on the left
+         * so bigint "42" matches reviewable_id '42'. Filter row-by-row on
+         * reviewable_id first (indexed via idx_reviews_target) so the sub-
+         * query is small. */
         await this.dataSource.query(
           `
           UPDATE providers

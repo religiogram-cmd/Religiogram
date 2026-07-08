@@ -659,6 +659,15 @@ export class BookingsService {
 
   /**
    * CAS: PENDING → CONFIRMED. Idempotent — if already CONFIRMED, returns the booking.
+   *
+   * On the first CONFIRMED transition (i.e. when we actually flip the row)
+   * we fire two notifications:
+   *   1. To the PROVIDER — "You have a new confirmed booking"
+   *   2. To the USER     — "Your booking is confirmed"
+   * Both are best-effort (non-blocking .catch) so a notification transport
+   * outage doesn't roll back the confirmation. This is the fix for the
+   * production audit finding that priests were never told they'd been
+   * booked.
    */
   async confirmBooking(bookingId: string, paymentId: string): Promise<Booking> {
     // First check if already confirmed (idempotency)
@@ -674,7 +683,30 @@ export class BookingsService {
       // Race: another process already confirmed; fetch fresh
       return this.bookingRepo.findOneOrFail({ where: { id: bookingId } });
     }
-    return this.bookingRepo.findOneOrFail({ where: { id: bookingId } });
+    const booking = await this.bookingRepo.findOneOrFail({ where: { id: bookingId } });
+
+    /* Notifications on first confirmation only (idempotency-safe because
+     * we only reach this branch when result.affected > 0). */
+    this.notifs.send(
+      booking.providerId,
+      NotificationType.BOOKING_CONFIRMED,
+      'New booking confirmed',
+      `You have a new confirmed booking for ${booking.serviceName ?? 'a ceremony'}. Open the app to see the details.`,
+      { bookingId: booking.id, scheduledAt: booking.scheduledAt },
+    ).catch((err) =>
+      this.logger.warn({ err, bookingId }, 'confirmBooking: notify provider failed'),
+    );
+    this.notifs.send(
+      booking.userId,
+      NotificationType.BOOKING_CONFIRMED,
+      'Booking confirmed',
+      `Your booking for ${booking.serviceName ?? 'the ceremony'} is confirmed. The provider will reach out shortly.`,
+      { bookingId: booking.id, scheduledAt: booking.scheduledAt },
+    ).catch((err) =>
+      this.logger.warn({ err, bookingId }, 'confirmBooking: notify user failed'),
+    );
+
+    return booking;
   }
 
   /**

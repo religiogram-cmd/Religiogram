@@ -64,14 +64,33 @@ export class SessionGraceService {
   async handleGraceExpiry(sessionId: string, billedSeconds: number, side: DisconnectSide): Promise<void> {
     this.logger.log(`Grace expired: session=${sessionId} side=${side} billedSeconds=${billedSeconds}`);
     try {
+      /* Column names in `consultation_sessions`:
+       *   id                (PK, uuid) — NOT `session_id`
+       *   session_status    — NOT `status`
+       *   disconnect_reason — NOT `end_reason`
+       *   billable_seconds  — NOT `billed_seconds`
+       *   ended_at
+       * (Fixed after audit revealed the old SQL silently affected zero rows,
+       * leaving grace-expired sessions ACTIVE and their wallet holds stuck.)
+       * Also clears the provider's is_busy flag so their marketplace card
+       * doesn't stay pinned Busy after abandonment. */
       await this.ds.query(`
         UPDATE consultation_sessions
-        SET status = 'ended',
-            end_reason = $1,
-            ended_at   = now(),
-            billed_seconds = $2
-        WHERE session_id = $3 AND status IN ('active', 'grace')
-      `, [`grace_expired_${side}`, billedSeconds, sessionId]);
+        SET session_status    = 'ended',
+            disconnect_reason = $1,
+            ended_at          = now(),
+            billable_seconds  = $2
+        WHERE id = $3 AND session_status IN ('active', 'paused', 'connecting', 'requested')
+      `, [`grace_expired_${side}`.slice(0, 50), billedSeconds, sessionId]);
+
+      // Clear provider is_busy for the abandoned session's provider.
+      await this.ds.query(`
+        UPDATE providers p
+        SET is_busy = false
+        FROM consultation_sessions s
+        WHERE s.id = $1 AND s.provider_id::text = p.id::text
+      `, [sessionId]);
+
       await this.finaliseSessionBilling(sessionId, billedSeconds);
     } catch (err) {
       this.logger.error(`Grace expiry handler failed for session ${sessionId}`, err);
@@ -99,7 +118,8 @@ export class SessionGraceService {
     warning: boolean;
   }> {
     const [session] = await this.ds.query<{ rate_per_minute: number }[]>(
-      `SELECT rate_per_minute FROM consultation_sessions WHERE session_id = $1`,
+      // PK column is `id`, not `session_id`.
+      `SELECT rate_per_minute FROM consultation_sessions WHERE id = $1`,
       [sessionId],
     );
     if (!session) return { canContinue: false, remainingSeconds: 0, warning: true };

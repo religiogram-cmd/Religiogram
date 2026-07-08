@@ -334,9 +334,20 @@ export default function PriestInviteBookingScreen() {
 
       const razorKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ?? '';
 
-      // If no Razorpay key OR backend doesn't have the route, fall back to a
-      // synthetic "paid" confirmation so the dev experience isn't blocked.
+      /* Test-payment shortcut: ONLY on localhost / non-prod. In production,
+       * missing Razorpay key or a failing order endpoint is a hard error —
+       * we must NOT confirm a booking without a real captured payment. This
+       * was flagged in the audit as a launch-blocker. */
+      const isProdHost = typeof window !== 'undefined'
+        && !['localhost', '127.0.0.1'].includes(window.location.hostname);
+
       if (!razorKey || !orderRes || !orderRes.ok || typeof window === 'undefined' || !window.Razorpay) {
+        if (isProdHost) {
+          setErrorMsg('Payment could not start. Please refresh and try again.');
+          setSubmitting(false);
+          return;
+        }
+        // Non-prod dev shortcut only.
         setPaymentId('TEST-' + Math.random().toString(36).slice(2, 10).toUpperCase());
         try { sessionStorage.removeItem('rg_invite_draft'); } catch { /* ignore */ }
         setStep('success');
@@ -587,7 +598,7 @@ export default function PriestInviteBookingScreen() {
               <input type="email" value={form.email} onChange={e => update('email', e.target.value)} placeholder="you@example.com" style={inputStyle} />
               {form.email && !EMAIL_RE.test(form.email) && <Hint err>Enter a valid email or leave blank.</Hint>}
             </Field>
-            <Field label="Notes for the ${cfg.role} (optional)">
+            <Field label={`Notes for the ${cfg.role} (optional)`}>
               <textarea value={form.notes} onChange={e => update('notes', e.target.value)} rows={3} placeholder="Anything specific — language, special items needed, attendees, etc." style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
             </Field>
             <Next disabled={!contactValid} onClick={() => setStep('review')} label="Review" />

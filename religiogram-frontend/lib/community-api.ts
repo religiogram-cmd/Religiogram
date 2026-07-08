@@ -417,11 +417,28 @@ export interface PresignBody {
   sizeBytes: number;
   purpose: 'avatar' | 'post' | 'dm' | 'story';
 }
+/**
+ * Backend response shape from `POST /uploads/presign`.
+ * (Was previously `{ url, publicUrl, s3Key }` here — that was fiction:
+ * the real backend returns `uploadUrl`, `key`, `fileId`, and `headers`,
+ * with no `publicUrl` field at all. Public URL comes back from `/confirm`.)
+ */
 export interface PresignResp {
-  url: string;          // PUT directly to this S3/R2 URL
-  publicUrl: string;    // the URL to store back in API calls
-  s3Key: string;
+  fileId: string;
+  uploadUrl: string;
+  key: string;
   expiresIn: number;
+  headers: Record<string, string>;
+  maxSizeBytes: number;
+}
+
+export interface ConfirmResp {
+  id: string;
+  url: string;         // canonical public URL — safe to persist
+  key: string;
+  status: string;
+  contentType: string;
+  sizeBytes: number;
 }
 
 export const uploads = {
@@ -441,12 +458,28 @@ export const uploads = {
     return call<PresignResp>('/uploads/presign', { method: 'POST', body: JSON.stringify(payload) });
   },
 
-  /** Convenience: presign + PUT + return the public URL. */
+  confirm: (fileId: string) =>
+    call<ConfirmResp>('/uploads/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ fileId }),
+    }),
+
+  /**
+   * Convenience: presign → PUT → confirm → return public URL.
+   * The confirm step is mandatory. Without it, the sweeper deletes the
+   * row after 10 minutes and the URL 404s. Also HeadObject-verifies the
+   * upload actually landed and the size matches what was declared.
+   */
   upload: async (file: File, purpose: PresignBody['purpose']): Promise<string> => {
     const ps = await uploads.presign({ mimeType: file.type, sizeBytes: file.size, purpose });
-    const putRes = await fetch(ps.url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+    const putRes = await fetch(ps.uploadUrl, {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': file.type },
+    });
     if (!putRes.ok) throw new ApiError(putRes.status, 'S3_UPLOAD_FAILED', 'Upload failed');
-    return ps.publicUrl;
+    const confirmed = await uploads.confirm(ps.fileId);
+    return confirmed.url;
   },
 };
 

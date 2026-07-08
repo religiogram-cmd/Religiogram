@@ -128,6 +128,14 @@ export class ConsultationIntroService {
       throw saveErr;
     }
 
+    /* Flip the provider row to is_busy=true so the marketplace hides
+     * "available now" and shows amber "Busy" indicators. Non-blocking:
+     * if it fails we log; the session still starts. Cleared in endSession
+     * and on socket disconnect via the gateway. */
+    this.providers.update({ id: providerId }, { isBusy: true } as any).catch((e: Error) =>
+      this.logger.warn(`Failed to set is_busy=true on provider ${providerId}: ${e.message}`),
+    );
+
     // 7. Check cashback eligibility (< CASHBACK_MAX_SESSIONS completed sessions)
     const cashbackEligible = await this.isCashbackEligible(userId);
 
@@ -203,6 +211,15 @@ export class ConsultationIntroService {
         ConsultationSession,
         { id: sessionId },
         { sessionStatus: SessionStatus.ENDED, totalCharge: totalCharged },
+      );
+
+      /* 4a.i. Clear the provider's is_busy flag now that the session
+       *      is officially ended, so the marketplace stops showing the
+       *      amber "Busy" indicator. Inside the tx so it's atomic with
+       *      the session state flip. */
+      await em.query(
+        `UPDATE providers SET is_busy = false WHERE id = $1`,
+        [session.providerId],
       );
 
       // 4b. Capture hold — mark wallet_hold as captured and debit the held column.

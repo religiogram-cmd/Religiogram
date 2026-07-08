@@ -233,6 +233,14 @@ export class ProviderEntity {
   @Column({ name: 'is_online', type: 'boolean', default: false })
   isOnline!: boolean;
 
+  /**
+   * Real-time in-session flag (migration 073). Set on consultation start,
+   * cleared on end / disconnect. Distinct from is_online — a provider can
+   * be Online + Busy (mid-session), Online + Not Busy (ready), or Offline.
+   */
+  @Column({ name: 'is_busy', type: 'boolean', default: false })
+  isBusy!: boolean;
+
   /** Time of the last meaningful action (login, booking, profile edit).
    *  Feeds the recent-activity ranking factor with exponential decay. */
   @Column({ name: 'last_activity_at', type: 'timestamptz', nullable: true })

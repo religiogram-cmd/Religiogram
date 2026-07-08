@@ -385,180 +385,23 @@ function Section({ title, action, children }: { title: string; action?: React.Re
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   STATIC FALLBACK DATA  (used when the API / mock-server is offline)
+   FALLBACK REMOVED (was: hard-coded temple/dargah/gurudwara/church data
+   with fake UPI IDs like 'laxminarayan@upi', 'somnath@upi', etc.).
+   Shipping fake donation UPI handles in prod is a real fraud vector,
+   and the "verified" flag being hard-coded true made it worse. If the
+   backend isn't reachable we now render an honest empty state.
+   Kept as an empty map to preserve the lookup shape below without
+   forcing a wider refactor.
    ══════════════════════════════════════════════════════════════════ */
 
-const FALLBACK_PLACES: Record<string, PlaceDetailDto> = {
-  'place-001': {
-    id:'place-001', type:'temple', name:'Lakshmi Narayan Mandir', city:'New Delhi', state:'Delhi',
-    address:'Mandir Marg, Connaught Place, New Delhi 110001',
-    lat:28.6339, lng:77.2090, ratingAvg:4.8, ratingCount:1240,
-    openingHours:'5:00 AM – 9:00 PM', description:'One of the most revered temples in Delhi, dedicated to Goddess Lakshmi and Lord Narayan.',
-    imageUrl:'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800',
-    galleryUrls:['https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800','https://images.unsplash.com/photo-1577048982768-5cb3e7ddfa23?w=800'],
-    donationEnabled:true, donationUpiId:'laxminarayan@upi', ownerId:null, isVerified:true, googlePlaceId:null,
-    upcomingEvents:[
-      { id:'e1', placeId:'place-001', title:'Satyanarayan Katha', description:'Monthly katha ceremony', startTime:'2026-05-26T17:00:00.000Z', endTime:'2026-05-26T20:00:00.000Z', recurring:false, createdAt:'' },
-      { id:'e2', placeId:'place-001', title:'Hanuman Jayanti Puja', description:'Special puja on Hanuman Jayanti', startTime:'2026-05-23T08:00:00.000Z', endTime:'2026-05-23T22:00:00.000Z', recurring:false, createdAt:'' },
-    ],
-    services:[
-      { id:'s1', placeId:'place-001', name:'Aarti', description:'Daily aarti at sunrise and sunset', createdAt:'' },
-      { id:'s2', placeId:'place-001', name:'Havan', description:'Sacred fire ritual', createdAt:'' },
-      { id:'s3', placeId:'place-001', name:'Weddings', description:'Hindu wedding ceremonies', createdAt:'' },
-      { id:'s4', placeId:'place-001', name:'Prasad Distribution', description:'Daily prasad at noon', createdAt:'' },
-    ]
-  },
-  'place-002': {
-    id:'place-002', type:'mosque', name:'Nizamuddin Dargah', city:'New Delhi', state:'Delhi',
-    address:'Nizamuddin West, New Delhi 110013',
-    lat:28.5933, lng:77.2461, ratingAvg:4.7, ratingCount:3200,
-    openingHours:'5:00 AM – 10:30 PM', description:'The dargah of the revered Sufi saint Hazrat Nizamuddin Auliya, a spiritual centre for centuries.',
-    imageUrl:'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=800',
-    galleryUrls:['https://images.unsplash.com/photo-1564507592333-c60657eea523?w=800'],
-    donationEnabled:true, donationUpiId:null, ownerId:null, isVerified:true, googlePlaceId:null,
-    upcomingEvents:[
-      { id:'e3', placeId:'place-002', title:'Qawwali Night', description:'Thursday evening devotional music', startTime:'2026-05-15T20:00:00.000Z', endTime:'2026-05-15T23:00:00.000Z', recurring:true, createdAt:'' },
-    ],
-    services:[
-      { id:'s5', placeId:'place-002', name:'Ziyarat', description:'Visiting the shrine for blessings', createdAt:'' },
-      { id:'s6', placeId:'place-002', name:'Qawwali', description:'Devotional Sufi music every Thursday', createdAt:'' },
-      { id:'s7', placeId:'place-002', name:'Langar', description:'Free food distribution', createdAt:'' },
-    ]
-  },
-  'place-003': {
-    id:'place-003', type:'gurudwara', name:'Gurdwara Bangla Sahib', city:'New Delhi', state:'Delhi',
-    address:'Baba Kharak Singh Marg, Connaught Place, New Delhi 110001',
-    lat:28.6271, lng:77.2097, ratingAvg:4.9, ratingCount:1890,
-    openingHours:'Open 24 hours', description:'One of the most prominent Sikh Gurudwaras in Delhi, known for its sacred sarovar (holy lake).',
-    imageUrl:'https://images.unsplash.com/photo-1526711657229-e7e080ed7aa1?w=800',
-    galleryUrls:['https://images.unsplash.com/photo-1526711657229-e7e080ed7aa1?w=800'],
-    donationEnabled:true, donationUpiId:null, ownerId:null, isVerified:true, googlePlaceId:null,
-    upcomingEvents:[
-      { id:'e4', placeId:'place-003', title:'Gurpurab Celebrations', description:"Anniversary of Guru's birth", startTime:'2026-05-22T06:00:00.000Z', endTime:'2026-05-22T22:00:00.000Z', recurring:false, createdAt:'' },
-    ],
-    services:[
-      { id:'s8', placeId:'place-003', name:'Ardas', description:'Sikh prayer ceremony', createdAt:'' },
-      { id:'s9', placeId:'place-003', name:'Langar Seva', description:'Free community kitchen open 24/7', createdAt:'' },
-      { id:'s10', placeId:'place-003', name:'Kirtan Sessions', description:'Devotional music', createdAt:'' },
-    ]
-  },
-  'place-004': {
-    id:'place-004', type:'church', name:'Sacred Heart Cathedral', city:'New Delhi', state:'Delhi',
-    address:'1 Ashoka Place, Connaught Place, New Delhi 110001',
-    lat:28.6281, lng:77.2174, ratingAvg:4.6, ratingCount:980,
-    openingHours:'6:00 AM – 8:00 PM', description:'A magnificent Gothic-style cathedral, one of the oldest and most beautiful churches in Delhi.',
-    imageUrl:'https://images.unsplash.com/photo-1438032005730-c779502df39b?w=800',
-    galleryUrls:['https://images.unsplash.com/photo-1438032005730-c779502df39b?w=800','https://images.unsplash.com/photo-1519817914152-22d216bb9170?w=800'],
-    donationEnabled:true, donationUpiId:null, ownerId:null, isVerified:true, googlePlaceId:null,
-    upcomingEvents:[
-      { id:'e5', placeId:'place-004', title:'Sunday Mass', description:'Weekly Sunday Holy Mass', startTime:'2026-05-12T09:00:00.000Z', endTime:'2026-05-12T10:30:00.000Z', recurring:true, createdAt:'' },
-    ],
-    services:[
-      { id:'s11', placeId:'place-004', name:'Sunday Mass', description:'Weekly Holy Mass', createdAt:'' },
-      { id:'s12', placeId:'place-004', name:'Baptism', description:'Christian baptism ceremony', createdAt:'' },
-      { id:'s13', placeId:'place-004', name:'Weddings', description:'Christian wedding ceremonies', createdAt:'' },
-    ]
-  },
-  'place-005': {
-    id:'place-005', type:'temple', name:'Govind Dev Ji Temple', city:'Jaipur', state:'Rajasthan',
-    address:'City Palace Complex, Jaleb Chowk, Jaipur 302002',
-    lat:26.9255, lng:75.8235, ratingAvg:4.9, ratingCount:2100,
-    openingHours:'4:30 AM – 12:00 PM, 5:30 PM – 9:30 PM', description:'The famous temple of Lord Govind Dev Ji (Krishna) in the City Palace complex of Jaipur.',
-    imageUrl:'https://images.unsplash.com/photo-1600074169098-16a54d791d0d?w=800',
-    galleryUrls:['https://images.unsplash.com/photo-1600074169098-16a54d791d0d?w=800'],
-    donationEnabled:true, donationUpiId:'govinddevji@upi', ownerId:null, isVerified:true, googlePlaceId:null,
-    upcomingEvents:[
-      { id:'e7', placeId:'place-005', title:'Janmashtami Celebrations', description:'Grand celebration of Lord Krishna birth', startTime:'2026-08-16T00:00:00.000Z', endTime:'2026-08-17T00:00:00.000Z', recurring:false, createdAt:'' },
-    ],
-    services:[
-      { id:'s14', placeId:'place-005', name:'Aarti', description:'Seven daily aartis', createdAt:'' },
-      { id:'s15', placeId:'place-005', name:'Bhajan Sandhya', description:'Evening devotional music', createdAt:'' },
-    ]
-  },
-  'place-006': {
-    id:'place-006', type:'gurudwara', name:'Golden Temple', city:'Amritsar', state:'Punjab',
-    address:'Golden Temple Rd, Amritsar 143006',
-    lat:31.6200, lng:74.8765, ratingAvg:5.0, ratingCount:84210,
-    openingHours:'Open 24 hours', description:'Sri Harmandir Sahib — the holiest Gurdwara and the most important pilgrimage site of Sikhism, sheathed in gold leaf.',
-    imageUrl:'https://images.unsplash.com/photo-1554995207-c18c203602cb?w=800',
-    galleryUrls:['https://images.unsplash.com/photo-1554995207-c18c203602cb?w=800','https://images.unsplash.com/photo-1526711657229-e7e080ed7aa1?w=800'],
-    donationEnabled:true, donationUpiId:'goldentemple@upi', ownerId:null, isVerified:true, googlePlaceId:null,
-    upcomingEvents:[
-      { id:'e9', placeId:'place-006', title:'Baisakhi Celebration', description:'Harvest festival and Sikh New Year', startTime:'2026-04-13T04:00:00.000Z', endTime:'2026-04-13T22:00:00.000Z', recurring:false, createdAt:'' },
-    ],
-    services:[
-      { id:'s16', placeId:'place-006', name:'Langar', description:'Free community meals served 24 hours', createdAt:'' },
-      { id:'s17', placeId:'place-006', name:'Kirtan', description:'Non-stop devotional Gurbani kirtan', createdAt:'' },
-      { id:'s18', placeId:'place-006', name:'Amrit Sanchar', description:'Sikh initiation ceremony', createdAt:'' },
-    ]
-  },
-  'place-007': {
-    id:'place-007', type:'temple', name:'Tirupati Balaji', city:'Tirupati', state:'Andhra Pradesh',
-    address:'Sri Vari Temple, Tirumala, Tirupati 517504',
-    lat:13.6833, lng:79.3473, ratingAvg:4.9, ratingCount:62445,
-    openingHours:'2:30 AM – 1:00 AM', description:'Sri Venkateswara Swamy Temple — the richest and most visited Hindu temple in the world atop the sacred Tirumala hills.',
-    imageUrl:'https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=800',
-    galleryUrls:['https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=800'],
-    donationEnabled:true, donationUpiId:'tirumala@upi', ownerId:null, isVerified:true, googlePlaceId:null,
-    upcomingEvents:[
-      { id:'e11', placeId:'place-007', title:'Brahmotsavam', description:'Annual 9-day grand festival', startTime:'2026-09-10T06:00:00.000Z', endTime:'2026-09-18T22:00:00.000Z', recurring:false, createdAt:'' },
-    ],
-    services:[
-      { id:'s19', placeId:'place-007', name:'Suprabhata Seva', description:'Early morning awakening service', createdAt:'' },
-      { id:'s20', placeId:'place-007', name:'Arjitha Sevas', description:'Special paid darshan services', createdAt:'' },
-      { id:'s21', placeId:'place-007', name:'Anna Prasadam', description:'Free meals for pilgrims', createdAt:'' },
-    ]
-  },
-  'place-008': {
-    id:'place-008', type:'mosque', name:'Jama Masjid Delhi', city:'New Delhi', state:'Delhi',
-    address:'Jama Masjid, Chandni Chowk, New Delhi 110006',
-    lat:28.6507, lng:77.2334, ratingAvg:4.8, ratingCount:41820,
-    openingHours:"7:00 AM – 12:00 PM, 1:30 PM – 6:30 PM", description:"India's largest mosque, a masterpiece of Mughal architecture built by Emperor Shah Jahan in 1656.",
-    imageUrl:'https://images.unsplash.com/photo-1545167622-3a6ac756afa4?w=800',
-    galleryUrls:['https://images.unsplash.com/photo-1545167622-3a6ac756afa4?w=800','https://images.unsplash.com/photo-1564507592333-c60657eea523?w=800'],
-    donationEnabled:false, donationUpiId:null, ownerId:null, isVerified:true, googlePlaceId:null,
-    upcomingEvents:[
-      { id:'e12', placeId:'place-008', title:"Eid ul-Fitr Namaz", description:'Special Eid prayer congregation', startTime:'2026-03-30T07:00:00.000Z', endTime:'2026-03-30T09:00:00.000Z', recurring:false, createdAt:'' },
-    ],
-    services:[
-      { id:'s22', placeId:'place-008', name:"Jumu'ah Prayer", description:'Weekly Friday congregational prayer', createdAt:'' },
-      { id:'s23', placeId:'place-008', name:'Islamic Education', description:'Quran and hadith classes', createdAt:'' },
-    ]
-  },
-  'place-009': {
-    id:'place-009', type:'church', name:'Basilica of Bom Jesus', city:'Old Goa', state:'Goa',
-    address:'Old Goa Rd, Bainguinim, Goa 403402',
-    lat:15.5009, lng:73.9116, ratingAvg:4.8, ratingCount:29100,
-    openingHours:'9:00 AM – 6:30 PM', description:"A UNESCO World Heritage Site, the Basilica holds the mortal remains of St. Francis Xavier and is one of India's finest examples of baroque architecture.",
-    imageUrl:'https://images.unsplash.com/photo-1519817914152-22d216bb9170?w=800',
-    galleryUrls:['https://images.unsplash.com/photo-1519817914152-22d216bb9170?w=800','https://images.unsplash.com/photo-1438032005730-c779502df39b?w=800'],
-    donationEnabled:true, donationUpiId:null, ownerId:null, isVerified:true, googlePlaceId:null,
-    upcomingEvents:[
-      { id:'e13', placeId:'place-009', title:'Feast of St. Francis Xavier', description:'Annual feast day celebration', startTime:'2026-12-03T09:00:00.000Z', endTime:'2026-12-03T18:00:00.000Z', recurring:false, createdAt:'' },
-    ],
-    services:[
-      { id:'s24', placeId:'place-009', name:'Daily Mass', description:'Holy Mass every morning', createdAt:'' },
-      { id:'s25', placeId:'place-009', name:'Guided Tours', description:'Historical and spiritual guided tours', createdAt:'' },
-    ]
-  },
-  'place-010': {
-    id:'place-010', type:'temple', name:'Somnath Temple', city:'Prabhas Patan', state:'Gujarat',
-    address:'Somnath, Prabhas Patan, Veraval 362268',
-    lat:20.8880, lng:70.4014, ratingAvg:4.9, ratingCount:38760,
-    openingHours:'6:00 AM – 9:30 PM', description:'The eternal shrine of Somnath — the first of the 12 Jyotirlinga shrines of Lord Shiva, rebuilt seven times after destruction.',
-    imageUrl:'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800',
-    galleryUrls:['https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800'],
-    donationEnabled:true, donationUpiId:'somnath@upi', ownerId:null, isVerified:true, googlePlaceId:null,
-    upcomingEvents:[
-      { id:'e14', placeId:'place-010', title:'Mahashivratri Celebration', description:'Grand overnight celebration for Lord Shiva', startTime:'2026-02-26T18:00:00.000Z', endTime:'2026-02-27T18:00:00.000Z', recurring:false, createdAt:'' },
-    ],
-    services:[
-      { id:'s26', placeId:'place-010', name:'Aarti', description:'Three daily aartis', createdAt:'' },
-      { id:'s27', placeId:'place-010', name:'Abhishek', description:'Sacred bathing ritual of the Shivalinga', createdAt:'' },
-      { id:'s28', placeId:'place-010', name:'Light & Sound Show', description:'Evening show on Somnath history', createdAt:'' },
-    ]
-  },
-};
+const FALLBACK_PLACES: Record<string, PlaceDetailDto> = {};
+
+// The old fake dataset lived here (10 entries: place-001 through place-010,
+// including Golden Temple, Tirupati Balaji, Somnath, etc. with fake UPI
+// handles and hard-coded ratings/reviews). Deleted deliberately — do not
+// re-add. If a real "seed places" story is needed later it should come from
+// the backend, be marked `isVerified: false` by default, and never carry
+// fake UPI IDs.
 
 /* ══════════════════════════════════════════════════════════════════
    MAIN COMPONENT

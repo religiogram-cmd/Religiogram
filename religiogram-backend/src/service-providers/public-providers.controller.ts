@@ -49,6 +49,15 @@ export class PublicProvidersController {
     // `channel` narrows to astrologers offering a specific real-time
     // channel: 'chat' | 'voice' | 'video'.
     @Query('channel') channel?: string,
+    // `available` filter — 'now' = online & not busy. Uses idx_providers_available
+    // partial index for fast marketplace default-view queries.
+    @Query('available') available?: string,
+    // `minRating` — server-side rating floor. Applied AFTER category/religion
+    // so it hits the hot path. Client-side rating filter still applies to
+    // the returned page.
+    @Query('minRating') minRating?: string,
+    // Multi-language filter — comma-separated. ANY match wins.
+    @Query('languages') languages?: string,
   ) {
     const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10)));
 
@@ -92,6 +101,25 @@ export class PublicProvidersController {
       const ch = channel.toLowerCase();
       if (ch === 'chat' || ch === 'voice' || ch === 'video') {
         qb.andWhere(':ch = ANY(p.consultation_channels)', { ch });
+      }
+    }
+    /* Available-now filter — hits idx_providers_available (partial index). */
+    if (available === 'now') {
+      qb.andWhere('p.is_online = true AND p.is_busy = false');
+    }
+    /* Minimum rating floor. NULLS excluded implicitly by the comparison. */
+    if (minRating) {
+      const min = parseFloat(minRating);
+      if (Number.isFinite(min) && min > 0) {
+        qb.andWhere('p.rating_avg IS NOT NULL AND p.rating_avg >= :minR', { minR: min });
+      }
+    }
+    /* Language filter — ANY match. Comma-separated `?languages=Hindi,English`.
+     * Uses text[] `languages` column with GIN index. */
+    if (languages) {
+      const langs = languages.split(',').map((l) => l.trim()).filter(Boolean);
+      if (langs.length > 0) {
+        qb.andWhere('p.languages && :langs', { langs });
       }
     }
 
@@ -164,6 +192,7 @@ export class PublicProvidersController {
       // Ranking signals (migration 071) — surface for UI badges (green dot
       // for online, verified checkmark, etc.).
       isOnline:             p.isOnline,
+      isBusy:               p.isBusy,
       isVerified:           p.isVerified,
       completedBookings:    p.completedBookingsCount,
       services:             (p.services ?? []).map(s => ({
