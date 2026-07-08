@@ -135,30 +135,11 @@ function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () =>
         <h1 style={{ color: GOLD, fontSize: 20, fontWeight: 800, margin: '0 auto', fontFamily: '"Playfair Display",Georgia,serif', letterSpacing: '0.01em', paddingTop: 14 }}>Priests</h1>
       </div>
 
-      <div style={{ padding: '12px 12px 0' }}>
-        {/* Hero card */}
-        <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 20, minHeight: 295, marginBottom: 14 }}>
-          <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${faith.heroImage})`, backgroundSize: 'cover', backgroundPosition: 'center top' }} />
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg,rgba(0,0,0,0.05) 0%,rgba(0,0,0,0.18) 30%,rgba(0,0,0,0.85) 100%)' }} />
-          <div style={{ position: 'relative', padding: '160px 16px 18px' }}>
-            <h1 style={{ color: '#fff', fontSize: 25, fontWeight: 900, margin: '0 0 7px', fontFamily: '"Playfair Display",Georgia,serif', textShadow: '0 2px 12px rgba(0,0,0,0.7)', letterSpacing: '-0.02em' }}>{faith.heroTitle}</h1>
-            <p style={{ color: 'rgba(255,255,255,0.78)', fontSize: 13, margin: '0 0 14px', fontFamily: '"Plus Jakarta Sans",sans-serif', lineHeight: 1.45, maxWidth: '78%' }}>{faith.heroDesc}</p>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, fontFamily: '"Plus Jakarta Sans",sans-serif' }}>Book in minutes</span>
-              <Link
-                href={
-                  faithKey === 'hindu'     ? '/priests/hindu/pujas'         :
-                  faithKey === 'muslim'    ? '/priests/muslim/services'     :
-                  faithKey === 'christian' ? '/priests/christian/services'  :
-                  `/priests/invite?faith=${faithKey}`
-                }
-                style={{ background: GOLD2, borderRadius: 100, padding: '8px 22px', boxShadow: '0 2px 10px rgba(232,160,32,0.35)', textDecoration: 'none' }}
-              >
-                <span style={{ color: NAVY, fontSize: 12, fontWeight: 800, fontFamily: '"Plus Jakarta Sans",sans-serif' }}>Explore &#x2192;</span>
-              </Link>
-            </div>
-          </div>
-        </div>
+      <div style={{ padding: '18px 12px 0' }}>
+        {/* The old "<Faith> Rituals & Services" hero card that used to sit
+         * here has been moved to the Home page (see HomeScreen.tsx). This
+         * page now goes straight to the action cards so users land where
+         * they can immediately do something. */}
 
         {/* Category cards */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
