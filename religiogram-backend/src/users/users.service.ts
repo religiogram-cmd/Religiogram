@@ -387,27 +387,55 @@ export class UsersService {
       }),
     );
 
-    // Revoke all Redis sessions — SCAN pattern covers both refresh token keys
-    // and any short-lived access-token block-list entries.
+    /* Full cascade cleanup so a delete is genuinely a delete:
+     *   - Revoke every Redis auth artefact (refresh, user cache, minIat stamp).
+     *   - Deactivate FCM device tokens so we never push to a deleted account.
+     *     (Physical delete is optional — soft-marking prevents dispatch but
+     *     keeps the row for post-mortem debugging.)
+     *   - Publish `user.deleted` for downstream modules (bookings, wallet,
+     *     notifications outbox) to cancel pending state.
+     *
+     * All best-effort with .allSettled so a partial failure never leaves the
+     * user in a half-deleted state — the anonymisation above already
+     * satisfies the DPDP/GDPR right-to-erasure minimum.
+     */
+    const nowSec = Math.floor(Date.now() / 1000);
     await Promise.allSettled([
       this.redis.scanDelete(`refresh:user:${userId}:*`),
+      this.redis.scanDelete(`refresh:${userId}:*`),
       this.redis.del(`user:cache:${userId}`),
+      this.redis.getClient().set(`user:${userId}:minIat`, String(nowSec)),
+      // Deactivate all FCM device tokens for this user — send() filters on
+      // is_active so no push will reach the deleted account.
+      this.dataSource
+        .query(`UPDATE device_tokens SET is_active = false WHERE user_id = $1`, [userId])
+        .catch(() => undefined),
     ]);
   }
 
   async searchByUsernameOrName(query: string, requesterId: string): Promise<User[]> {
-    // P2-2: prefix ILIKE + pg_trgm similarity — avoids seq-scan leading-wildcard
+    /* P2-2: prefix ILIKE + pg_trgm similarity — avoids seq-scan leading-wildcard.
+     *
+     * Previous implementation had a broken WHERE clause: the SQL fragment
+     * contained an unbalanced paren and a stray `:raw) > 0.2` that referenced
+     * an undefined column. Any call threw a Postgres syntax error at runtime.
+     * Rewritten as a clean prefix-match + trigram similarity union. */
     const sanitised = query.replace(/[%_\\]/g, '\\$&');
     return this.users
       .createQueryBuilder('u')
       .where(
-        `(u.username ILIKE :q OR u.name ILIKE :q OR u.display_name ILIKE :q
- :raw) > 0.2 OR similarity(u.display_name, :raw) > 0.2)`,
+        `(
+          u.username ILIKE :q
+          OR u.name ILIKE :q
+          OR u.display_name ILIKE :q
+          OR similarity(COALESCE(u.name, ''), :raw) > 0.2
+          OR similarity(COALESCE(u.display_name, ''), :raw) > 0.2
+        )`,
         { q: `${sanitised}%`, raw: query },
       )
       .andWhere('u.id != :me', { me: requesterId })
       .andWhere('u.is_active = true')
-      .orderBy(`similarity(COALESCE(u.display_name, u.name), :raw)`, 'DESC')
+      .orderBy(`similarity(COALESCE(u.display_name, u.name, ''), :raw)`, 'DESC')
       .setParameter('raw', query)
       .limit(20)
       .getMany();

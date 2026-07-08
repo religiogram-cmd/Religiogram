@@ -40,6 +40,10 @@ import { BookingsModule } from "../bookings/bookings.module";
 import { WalletModule } from '../wallet/wallet.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ServiceProvidersModule } from '../service-providers/service-providers.module';
+// AuthModule exports TokenService — admin-users.controller needs it to
+// revoke tokens on ban/suspend so a banned user is booted immediately
+// instead of waiting for the 15-min access-token TTL.
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -52,6 +56,8 @@ import { ServiceProvidersModule } from '../service-providers/service-providers.m
     BookingsModule,
     // Needs RankingService to bump a provider's ranking_score on approve.
     ServiceProvidersModule,
+    // Provides TokenService for ban → immediate session kill.
+    AuthModule,
     TypeOrmModule.forFeature([
       Temple,
       Admin,

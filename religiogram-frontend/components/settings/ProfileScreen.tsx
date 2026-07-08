@@ -609,7 +609,10 @@ export default function ProfileScreen() {
     setIsDeleting(true);
     try {
       const token = tokenStore.access;
-      const res = await fetch('/users/me', {
+      // Fix: previously called `/users/me` — hits the frontend origin, 404s.
+      // Backend lives at NEXT_PUBLIC_API_BASE with a `/api/v1` prefix.
+      const base = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1';
+      const res = await fetch(`${base}/users/me`, {
         method: 'DELETE',
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),

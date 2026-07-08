@@ -384,24 +384,13 @@ function Section({ title, action, children }: { title: string; action?: React.Re
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   FALLBACK REMOVED (was: hard-coded temple/dargah/gurudwara/church data
-   with fake UPI IDs like 'laxminarayan@upi', 'somnath@upi', etc.).
-   Shipping fake donation UPI handles in prod is a real fraud vector,
-   and the "verified" flag being hard-coded true made it worse. If the
-   backend isn't reachable we now render an honest empty state.
-   Kept as an empty map to preserve the lookup shape below without
-   forcing a wider refactor.
-   ══════════════════════════════════════════════════════════════════ */
-
-const FALLBACK_PLACES: Record<string, PlaceDetailDto> = {};
-
-// The old fake dataset lived here (10 entries: place-001 through place-010,
-// including Golden Temple, Tirupati Balaji, Somnath, etc. with fake UPI
-// handles and hard-coded ratings/reviews). Deleted deliberately — do not
-// re-add. If a real "seed places" story is needed later it should come from
-// the backend, be marked `isVerified: false` by default, and never carry
-// fake UPI IDs.
+/* Fake temple/dargah/gurudwara/church fallback data with fake UPI IDs
+ * (`laxminarayan@upi`, `somnath@upi`, `goldentemple@upi`, ...) previously
+ * lived here. Removed — including the variable itself and every call site.
+ * If backend is unreachable we render the honest "Place not found" state.
+ * If a real seed dataset is needed later, source it from the backend, mark
+ * `isVerified: false` by default, and never ship fake UPI handles.
+ */
 
 /* ══════════════════════════════════════════════════════════════════
    MAIN COMPONENT
@@ -437,38 +426,34 @@ export default function PlaceProfile({ id }: { id: string }) {
         if (p.status === 'fulfilled') {
           setPlace(p.value);
         } else {
-          // Try embedded static fallback first
-          const fallback = FALLBACK_PLACES[id];
-          if (fallback) {
-            setPlace(fallback);
-          } else {
-            // Last resort: fetch from Google Places Detail API route (for live Google IDs)
-            try {
-              const gRes  = await fetch(`/api/places/detail?placeId=${encodeURIComponent(id)}`);
-              const gData = await gRes.json();
-              if (gData?.data) {
-                setPlace(gData.data as PlaceDetailDto);
-              } else {
-                setError('Place not found');
-                setLoading(false);
-                return;
-              }
-            } catch {
+          // No local static fallback (previously served fake temple/dargah/
+          // gurudwara data with fake UPI IDs — a fraud vector). Try Google
+          // Places Detail API for live Google IDs; otherwise honest empty.
+          try {
+            const gRes  = await fetch(`/api/places/detail?placeId=${encodeURIComponent(id)}`);
+            const gData = await gRes.json();
+            if (gData?.data) {
+              setPlace(gData.data as PlaceDetailDto);
+            } else {
               setError('Place not found');
               setLoading(false);
               return;
             }
+          } catch {
+            setError('Place not found');
+            setLoading(false);
+            return;
           }
         }
 
         if (rv.status === 'fulfilled') {
           setReviews(rv.value);
         } else {
-          // Fallback reviews so the ratings section renders
+          // Honest empty ratings block — do not synthesise counts.
           setReviews({
             reviews: [], total: 0,
-            ratingAvg: FALLBACK_PLACES[id]?.ratingAvg ?? null,
-            ratingCount: FALLBACK_PLACES[id]?.ratingCount ?? 0,
+            ratingAvg: null,
+            ratingCount: 0,
             distribution: { 1:0, 2:0, 3:0, 4:0, 5:0 },
           });
         }

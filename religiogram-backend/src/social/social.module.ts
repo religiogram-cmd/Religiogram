@@ -10,6 +10,8 @@ import { DirectMessage } from './entities/direct-message.entity';
 import { FollowEntity } from './entities/follow.entity';
 import { Story } from './entities/story.entity';
 import { FeedItem } from './entities/feed-item.entity';
+import { UserReport } from './entities/user-report.entity';
+import { UserBlock } from './entities/user-block.entity';
 import { User } from '../users/entities/user.entity';
 import { SocialService } from './social.service';
 import { StoryService } from './story.service';
@@ -20,6 +22,7 @@ import { StoryExpiryScheduler } from './story-expiry.scheduler';
 import { SocialController } from './social.controller';
 import { FollowsController } from './follows.controller';
 import { CommunityController } from './community.controller';
+import { ModerationController } from './moderation.controller';
 import { SocialGateway } from './social.gateway';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuthModule } from '../auth/auth.module';
@@ -38,6 +41,8 @@ import { QUEUE } from '../common/queues/queue.constants';
       FollowEntity,
       Story,
       FeedItem,
+      UserReport,
+      UserBlock,
       User,
     ]),
     // Register the feed-fanout queue so SocialService can enqueue jobs
@@ -51,7 +56,7 @@ import { QUEUE } from '../common/queues/queue.constants';
   ],
   providers: [
     SocialService, StoryService, FeedService, FanOutProcessor, StoryExpiryProcessor, StoryExpiryScheduler, SocialGateway],
-  controllers: [SocialController, FollowsController, CommunityController],
+  controllers: [SocialController, FollowsController, CommunityController, ModerationController],
   exports: [SocialService, StoryService, FeedService],
 })
 export class SocialModule {}

@@ -12,6 +12,7 @@ import * as admin from 'firebase-admin';
 import type { ServiceAccount } from 'firebase-admin';
 import { Notification, NotificationType } from './entities/notification.entity';
 import { DeviceToken, DevicePlatform } from './entities/device-token.entity';
+import { NotificationPrefs } from './entities/notification-prefs.entity';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 import {
   PUSH_NOTIFICATION_QUEUE,
@@ -33,6 +34,9 @@ export class NotificationsService implements OnModuleInit {
 
     @InjectRepository(DeviceToken)
     private readonly deviceTokenRepo: Repository<DeviceToken>,
+
+    @InjectRepository(NotificationPrefs)
+    private readonly prefsRepo: Repository<NotificationPrefs>,
 
     @InjectQueue(PUSH_NOTIFICATION_QUEUE)
     private readonly pushQueue: Queue<SendSinglePushJobData | SendBatchPushJobData | SendMulticastPushJobData>,
@@ -76,6 +80,72 @@ export class NotificationsService implements OnModuleInit {
     }
   }
 
+  // ─── Notification preferences (FIX B) ─────────────────────────────────────
+
+  /** Defaults used when a user has no row in notification_prefs yet. */
+  private static readonly DEFAULT_PREFS: Omit<NotificationPrefs, 'createdAt' | 'updatedAt' | 'userId'> = {
+    pushEnabled: true,
+    emailEnabled: true,
+    smsEnabled: true,
+    marketingEnabled: false,
+    dndStartHour: null,
+    dndEndHour: null,
+  };
+
+  /**
+   * Return the user's notification prefs. If no row exists, return an
+   * unpersisted defaults object — callers should not assume it's saved.
+   */
+  async getPrefs(userId: string): Promise<NotificationPrefs> {
+    const row = await this.prefsRepo.findOne({ where: { userId } });
+    if (row) return row;
+    // Unpersisted defaults — DB row is only written on first PATCH.
+    const stub = this.prefsRepo.create({
+      userId,
+      ...NotificationsService.DEFAULT_PREFS,
+    });
+    return stub;
+  }
+
+  /**
+   * Upsert the user's notification prefs. Only fields present in `patch`
+   * are updated; nulls are respected (dnd_start_hour = null clears DND).
+   */
+  async updatePrefs(
+    userId: string,
+    patch: Partial<Pick<NotificationPrefs,
+      'pushEnabled' | 'emailEnabled' | 'smsEnabled' |
+      'marketingEnabled' | 'dndStartHour' | 'dndEndHour'>>,
+  ): Promise<NotificationPrefs> {
+    const existing = await this.prefsRepo.findOne({ where: { userId } });
+    if (!existing) {
+      const row = this.prefsRepo.create({
+        userId,
+        ...NotificationsService.DEFAULT_PREFS,
+        ...patch,
+      });
+      return this.prefsRepo.save(row);
+    }
+    Object.assign(existing, patch);
+    return this.prefsRepo.save(existing);
+  }
+
+  /**
+   * Return true if the current server hour falls inside the [start, end)
+   * DND window. Handles wrap-around (e.g. 22 → 6 spans midnight).
+   * Returns false if either bound is null.
+   */
+  private isInDndWindow(start: number | null, end: number | null): boolean {
+    if (start == null || end == null) return false;
+    if (start === end) return false;
+    const hour = new Date().getHours();
+    if (start < end) {
+      return hour >= start && hour < end;
+    }
+    // wrap-around: window spans midnight
+    return hour >= start || hour < end;
+  }
+
   // ─── Public API ────────────────────────────────────────────────────────────
 
   /**
@@ -109,6 +179,34 @@ export class NotificationsService implements OnModuleInit {
       if (existing) return existing;
     }
 
+    // FIX B: honour per-user notification preferences.
+    // Fail-open on lookup error so a DB glitch never loses a critical
+    // notification — the DB row is still persisted below, users just see
+    // it next time they open the app instead of via push.
+    let prefs: NotificationPrefs | null = null;
+    try {
+      prefs = await this.getPrefs(userId);
+    } catch (err) {
+      this.logger.warn(
+        `getPrefs failed for user=${userId} — failing open: ${(err as Error).message}`,
+      );
+    }
+    // Marketing type only fires if the user has opted in explicitly.
+    // Everyone else drops the notification entirely — no DB row.
+    if (type === NotificationType.MARKETING && prefs && !prefs.marketingEnabled) {
+      // Fake a returned row so callers don't crash — never persisted.
+      const stub = this.notificationRepo.create({
+        userId, type, title, body,
+        data: data ?? null, dedupKey: dedupKey ?? null,
+      });
+      return stub;
+    }
+    const suppressPush =
+      !!prefs && (
+        !prefs.pushEnabled ||
+        this.isInDndWindow(prefs.dndStartHour, prefs.dndEndHour)
+      );
+
     // N2: Write notification + outbox row in the same DB transaction.
     const saved = await this.notificationRepo.manager.transaction(async (tx) => {
       const notification = tx.create(Notification, {
@@ -130,6 +228,13 @@ export class NotificationsService implements OnModuleInit {
 
       return row;
     });
+
+    // FIX B: skip FCM dispatch entirely when push is disabled or the user
+    // is in their DND window — but keep the DB row (already committed above)
+    // so they see the notification when they open the app.
+    if (suppressPush) {
+      return saved;
+    }
 
     // Enqueue immediately as an optimistic fast path.
     // If this fails the outbox poller will retry (N2 guarantee).

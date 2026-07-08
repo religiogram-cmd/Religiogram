@@ -29,6 +29,8 @@ export enum NotificationType {
   // Reviews & misc
   REVIEW_RECEIVED      = 'review_received',
   SYSTEM               = 'system',
+  // Marketing / promotional — respects marketing_enabled in notification_prefs
+  MARKETING            = 'marketing',
 }
 
 /**

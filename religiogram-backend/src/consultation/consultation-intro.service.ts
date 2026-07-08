@@ -129,12 +129,31 @@ export class ConsultationIntroService {
     }
 
     /* Flip the provider row to is_busy=true so the marketplace hides
-     * "available now" and shows amber "Busy" indicators. Non-blocking:
-     * if it fails we log; the session still starts. Cleared in endSession
-     * and on socket disconnect via the gateway. */
-    this.providers.update({ id: providerId }, { isBusy: true } as any).catch((e: Error) =>
+     * "available now" and shows amber "Busy" indicators. AWAITED so
+     * two concurrent starts can't both see the provider as available.
+     * Cleared in endSession and on socket disconnect via the gateway. */
+    await this.providers.update({ id: providerId }, { isBusy: true } as any).catch((e: Error) =>
       this.logger.warn(`Failed to set is_busy=true on provider ${providerId}: ${e.message}`),
     );
+
+    /* ─── CRITICAL: start the billing tick loop. ───────────────────────
+     * Without this call, no per-minute tick rows are inserted, and
+     * endSession computes totalCharged=0 → full hold refunded → provider
+     * paid ₹0. This bug meant every consultation was effectively free.
+     * Non-fatal on failure: if the billing job cannot be enqueued, we
+     * log and continue — endSession will still refund the untouched hold
+     * cleanly. But under normal operation this MUST run for the session
+     * to actually cost money. */
+    // Intro sessions have no upstream booking row — pass sessionId as
+    // bookingId placeholder so the billing job has a consistent grouping key.
+    await this.billingService
+      .startBilling(sessionId, userId, providerId, sessionId, providerPerMinute)
+      .catch((e: Error) =>
+        this.logger.error(
+          `startBilling failed for session ${sessionId}; session will run without ticks: ${e.message}`,
+          e.stack,
+        ),
+      );
 
     // 7. Check cashback eligibility (< CASHBACK_MAX_SESSIONS completed sessions)
     const cashbackEligible = await this.isCashbackEligible(userId);

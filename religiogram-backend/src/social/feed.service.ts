@@ -85,6 +85,16 @@ export class FeedService {
       .innerJoinAndSelect('p.author', 'author')
       .where('fi.viewer_id = :viewerId', { viewerId })
       .andWhere('p.is_deleted = false')
+      // FIX C: hide posts from users the viewer has blocked. Correlated
+      // NOT EXISTS reads from idx_user_blocks (blocker_id, blocked_id) —
+      // O(1) per row given the small typical block-list size.
+      .andWhere(
+        'NOT EXISTS (' +
+        '  SELECT 1 FROM user_blocks ub ' +
+        '  WHERE ub.blocker_id = :viewerId AND ub.blocked_id = fi.author_id' +
+        ')',
+        { viewerId },
+      )
       .orderBy('fi.post_created_at', 'DESC')
       .addOrderBy('fi.post_id', 'DESC')
       .take(safeLimit + 1);

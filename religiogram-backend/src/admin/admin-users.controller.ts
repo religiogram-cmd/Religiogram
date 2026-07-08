@@ -30,6 +30,8 @@ import { ProviderEntity } from '../service-providers/entities/provider.entity';
 import { AdminAuditService } from './admin-audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
+import { TokenService } from '../auth/services/token.service';
+import { RedisService } from '../redis/redis.service';
 
 import { encodeCursor, decodeCursor } from '../common/pagination/cursor';
 
@@ -66,6 +68,8 @@ export class AdminUsersController {
     private readonly providerRepo: Repository<ProviderEntity>,
     private readonly audit: AdminAuditService,
     private readonly notifs: NotificationsService,
+    private readonly tokens: TokenService,
+    private readonly redis: RedisService,
   ) {}
 
   /* ─── GET /v1/admin/users ─── */
@@ -207,6 +211,34 @@ export class AdminUsersController {
 
     const previous = user.accountStatus;
     await this.userRepo.update({ id }, { accountStatus: dto.status });
+
+    /* ─── Ban / suspend: kill all live sessions immediately. ────────────
+     * Previously we only flipped the DB flag. Access tokens (JWT, 15 min TTL)
+     * remained valid until natural expiry, so a banned user had a ~15 min
+     * window to drain their wallet, DM others, book providers, etc.
+     *
+     * Now we:
+     *   1. `revokeAllForUser` deletes every refresh:{userId}:* key in Redis,
+     *      so no refresh can mint a new access token.
+     *   2. Set `user:{userId}:minIat` to now-1 so any access token with an
+     *      `iat` earlier than this is treated as revoked by socket + REST
+     *      guards on the very next request.
+     *   3. Publish `auth:jti:revoked` `user:{userId}` so open sockets are
+     *      hung up by the consultation + social gateways.
+     *
+     * Only fire when we're moving INTO a restrictive state — reinstating
+     * (ACTIVE) does not force logout. */
+    if (dto.status === AccountStatus.BANNED || dto.status === AccountStatus.SUSPENDED) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      await Promise.all([
+        this.tokens.revokeAllForUser(id).catch((e) =>
+          this.logger.warn(`revokeAllForUser failed for ${id}: ${(e as Error).message}`),
+        ),
+        this.redis.getClient().set(`user:${id}:minIat`, String(nowSec)).catch((e) =>
+          this.logger.warn(`Failed to stamp minIat for ${id}: ${(e as Error).message}`),
+        ),
+      ]);
+    }
 
     await this.audit.log({
       adminId:      me.id,

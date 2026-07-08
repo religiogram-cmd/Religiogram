@@ -110,10 +110,12 @@ export class SocialGateway
       (client.handshake?.headers?.authorization as string | undefined)?.split(' ')[1];
     if (!token) { client.disconnect(true); return; }
     try {
-      const publicKey = this.config.getOrThrow<string>('jwt.publicKey');
+      // Match TokenService::signAccessToken which uses HS256 + privateKey.
+      // Previously verified RS256+publicKey → every social socket rejected.
+      const secret = this.config.getOrThrow<string>('jwt.privateKey');
       const payload = this.jwtService.verify<JwtPayload>(token, {
-        algorithms: ['RS256'],
-        publicKey,
+        algorithms: ['HS256'],
+        secret,
       });
       if (payload.type !== 'access') throw new Error('Not an access token');
       // Check token is not revoked via minIat (logout-all protection)

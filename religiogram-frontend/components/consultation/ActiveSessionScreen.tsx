@@ -37,6 +37,7 @@ interface SocketMessage {
   id?: string;
   senderId?: string;
   text?: string;
+  content?: string;   // dual-key compat: backend may emit `content` instead of `text`
   message?: string;
   from?: string;
 }
@@ -239,7 +240,11 @@ export default function ActiveSessionScreen({
        * are ALSO subscribed for backward compat with older builds — Socket.IO
        * lets us attach multiple listeners without cost. */
       const onMessage = (payload: SocketMessage) => {
-        const text = payload.text ?? payload.message ?? '';
+        // Dual-key compat: newer backend builds emit `content` alongside
+        // `text`; older builds emit only `text`; oldest emit only `message`.
+        // Prefer `content` first so we survive a future backend that drops
+        // `text` entirely.
+        const text = payload.content ?? payload.text ?? payload.message ?? '';
         const senderId = payload.senderId ?? payload.from ?? '';
         if (!text) return;
         setMessages((prev) => [
@@ -461,10 +466,15 @@ export default function ActiveSessionScreen({
     /* Backend handler at consultation.gateway.ts registers `message.send`;
      * the older `message` name is emitted too for backward compat with
      * builds that predate the rename. Server ignores whichever it doesn't
-     * handle. */
+     * handle.
+     *
+     * Dual-key compat: we send BOTH `text` and `content` in the payload.
+     * The current gateway accepts `content|text|message`; a future build
+     * that only reads `content` will still work without a coordinated
+     * frontend deploy. Emitting both is essentially free. */
     if (raw?.connected) {
-      raw.emit('message.send', { sessionId, text });
-      raw.emit('message',      { sessionId, text }); // legacy
+      raw.emit('message.send', { sessionId, text, content: text });
+      raw.emit('message',      { sessionId, text, content: text }); // legacy
     }
   };
 

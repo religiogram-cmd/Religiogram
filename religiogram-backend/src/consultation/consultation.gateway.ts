@@ -216,13 +216,18 @@ export class ConsultationGateway
       return;
     }
     try {
-      const publicKey = this.config.getOrThrow<string>('jwt.publicKey');
-      const issuer    = this.config.get<string>('jwt.issuer');
-      const audience  = this.config.get<string>('jwt.audience');
+      // Sockets must verify with the SAME algorithm the token was signed with.
+      // Access tokens are signed HS256 with `jwt.privateKey` in TokenService
+      // (see auth/services/token.service.ts::signAccessToken). Previously this
+      // gateway verified with RS256+publicKey and rejected every connection —
+      // consultation chat + call signaling were 100% dead.
+      const secret   = this.config.getOrThrow<string>('jwt.privateKey');
+      const issuer   = this.config.get<string>('jwt.issuer');
+      const audience = this.config.get<string>('jwt.audience');
 
       const payload = this.jwtService.verify<JwtPayload>(token, {
-        algorithms: ['RS256'],
-        publicKey, issuer, audience,
+        algorithms: ['HS256'],
+        secret, issuer, audience,
       });
 
       if (payload.type !== 'access') throw new Error('Not an access token');
@@ -333,7 +338,13 @@ export class ConsultationGateway
   ): Promise<void> {
     if (!this.ensureLive(client)) return;
     if (!this.checkRateLimit(client)) return; // P2-3
-    const { sessionId, content, messageType = MessageType.TEXT } = payload;
+    // Payload contract compatibility: the frontend historically sends `text`
+    // (see ActiveSessionScreen), whereas the DTO uses `content`. Accept both.
+    // Ditto `message` as a further legacy alias. Falls back through in order.
+    const anyPayload = payload as unknown as { sessionId?: string; content?: string; text?: string; message?: string; messageType?: MessageType };
+    const sessionId = anyPayload.sessionId;
+    const content = anyPayload.content ?? anyPayload.text ?? anyPayload.message ?? '';
+    const messageType: MessageType = anyPayload.messageType ?? MessageType.TEXT;
 
     if (!sessionId) throw new WsException('sessionId is required');
     if (!content?.trim()) throw new WsException('content is required');
@@ -377,13 +388,19 @@ export class ConsultationGateway
       senderId:    saved.sender_id,
       senderRole:  saved.sender_role,
       messageType: saved.message_type,
+      // Emit BOTH `content` and `text` so any client version parses correctly.
+      // Frontend historically read `payload.text` — omitting it caused every
+      // received message to be dropped on the client.
       content:     saved.content,
+      text:        saved.content,
       seq:         saved.seq,
       isRead:      saved.is_read,
       createdAt:   saved.created_at,
     };
 
     this.server.to(room).emit('message.new', serialized);
+    // Emit legacy event name too for old clients that only listen on `message`.
+    this.server.to(room).emit('message', serialized);
   }
 
   @SubscribeMessage('message.history')

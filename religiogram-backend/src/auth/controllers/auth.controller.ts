@@ -25,6 +25,7 @@ import { Public } from '../decorators/public.decorator';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { JwtRefreshGuard } from '../guards/jwt-refresh.guard';
 import { OtpThrottleGuard } from '../guards/otp-throttle.guard';
+import { Throttle } from '@nestjs/throttler';
 import { GoogleOAuthGuard } from '../guards/google-oauth.guard';
 import type { AuthenticatedUser } from '../interfaces/jwt-payload.interface';
 import type { GoogleProfile } from '../../users/users.service';
@@ -229,6 +230,9 @@ export class AuthController {
 
   /* ════════ REFRESH + LOGOUT ════════ */
 
+  // Rate limit refresh: 30/min per IP is more than any legit client needs but
+  // low enough to blunt a stolen-token replay burst.
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Public()
   @UseGuards(JwtRefreshGuard)
   @Post('refresh')
@@ -276,6 +280,10 @@ export class AuthController {
 
   /* ─── Email / password ─────────────────────────────────────── */
 
+  // Rate limit registration: 5/min per IP. Higher would let a signup bot
+  // pollute the users table with junk accounts + trigger our email/SMS
+  // providers to charge us for verification sends.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
   @Public()
   @HttpCode(HttpStatus.CREATED)
@@ -303,9 +311,13 @@ export class AuthController {
     return result;
   }
 
+  // Rate limit login: 10/min per IP. Real users retry a wrong password 2–3
+  // times, never 60. This makes online credential-stuffing infeasible while
+  // still letting a legit user recover from typos on the same connection.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
   @Public()
-  
+
   @HttpCode(HttpStatus.OK)
   async emailLogin(
     @Body() dto: EmailLoginDto,

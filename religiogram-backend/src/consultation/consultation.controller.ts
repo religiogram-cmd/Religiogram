@@ -154,7 +154,30 @@ export class ConsultationController {
     @Body() body: ExtendSessionDto,
   ) {
     const userId = req.user?.sub ?? req.user?.id;
-    return this.introSvc.extendSession(userId, sessionId, {
+    // Fix: service expects (sessionId, userId, opts). Previously the two ID
+    // args were swapped so every extend returned NotFound/Forbidden.
+    return this.introSvc.extendSession(sessionId, userId, {
+      extendMinutes: body.extendMinutes,
+      upgradePlan: body.upgradePlan,
+      idempotencyKey: body.idempotencyKey,
+    });
+  }
+
+  /**
+   * POST /v1/consultation/:id/upgrade — legacy path used by the older
+   * frontend build. Forwards to the same extendSession handler with the
+   * requested `upgradePlan`. Kept as a separate route so existing clients
+   * don't break; new clients should call /extend directly.
+   */
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post(':id/upgrade')
+  async upgradeConsultation(
+    @Req() req: any,
+    @Param('id') sessionId: string,
+    @Body() body: ExtendSessionDto,
+  ) {
+    const userId = req.user?.sub ?? req.user?.id;
+    return this.introSvc.extendSession(sessionId, userId, {
       extendMinutes: body.extendMinutes,
       upgradePlan: body.upgradePlan,
       idempotencyKey: body.idempotencyKey,
@@ -178,6 +201,7 @@ export class ConsultationController {
     @Param('id') sessionId: string,
   ) {
     const userId = req.user?.sub ?? req.user?.id;
-    return this.introSvc.getSession(userId, sessionId);
+    // Fix: service expects (sessionId, userId). Args were swapped.
+    return this.introSvc.getSession(sessionId, userId);
   }
 }

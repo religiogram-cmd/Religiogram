@@ -692,7 +692,8 @@ export class BookingsService {
       NotificationType.BOOKING_CONFIRMED,
       'New booking confirmed',
       `You have a new confirmed booking for ${booking.serviceName ?? 'a ceremony'}. Open the app to see the details.`,
-      { bookingId: booking.id, scheduledAt: booking.scheduledAt },
+      // notifs.send data is Record<string,string> — scheduledAt is a Date; toISOString for FCM.
+      { bookingId: booking.id, scheduledAt: booking.scheduledAt?.toISOString?.() ?? String(booking.scheduledAt ?? '') },
     ).catch((err) =>
       this.logger.warn({ err, bookingId }, 'confirmBooking: notify provider failed'),
     );
@@ -701,7 +702,8 @@ export class BookingsService {
       NotificationType.BOOKING_CONFIRMED,
       'Booking confirmed',
       `Your booking for ${booking.serviceName ?? 'the ceremony'} is confirmed. The provider will reach out shortly.`,
-      { bookingId: booking.id, scheduledAt: booking.scheduledAt },
+      // notifs.send data is Record<string,string> — scheduledAt is a Date; toISOString for FCM.
+      { bookingId: booking.id, scheduledAt: booking.scheduledAt?.toISOString?.() ?? String(booking.scheduledAt ?? '') },
     ).catch((err) =>
       this.logger.warn({ err, bookingId }, 'confirmBooking: notify user failed'),
     );

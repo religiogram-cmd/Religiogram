@@ -460,10 +460,19 @@ export class SocialService {
     params.push(safeLimit + 1);
     let feedRows: Array<{ post_id: string; inserted_at: Date }> = [];
     try {
+      // FIX C: exclude posts authored by users the viewer has blocked. The
+      // join is on social_posts.author_id (this legacy feed_items schema
+      // doesn't carry author_id) — cheap because feed_items is already
+      // keyed on post_id and social_posts.id is PK.
       feedRows = await this.ds.query(
         `SELECT fi.post_id, fi.inserted_at
          FROM feed_items fi
+         JOIN social_posts sp ON sp.id = fi.post_id
          ${whereClause}
+           AND NOT EXISTS (
+             SELECT 1 FROM user_blocks ub
+              WHERE ub.blocker_id = $1 AND ub.blocked_id = sp.author_id
+           )
          ORDER BY fi.inserted_at DESC, fi.post_id DESC
          LIMIT $${params.length}`,
         params,
@@ -743,6 +752,19 @@ export class SocialService {
     if (dto.recipientId === senderId) {
       throw new ForbiddenException('Cannot send a message to yourself');
     }
+    // FIX C: refuse if either party has blocked the other. Symmetric check
+    // — a blocked user can't reach out to the blocker (obvious) AND the
+    // blocker can't accidentally DM someone they blocked either.
+    const blockRow: Array<{ n: string }> = await this.ds.query(
+      `SELECT 1 AS n FROM user_blocks
+        WHERE (blocker_id = $1 AND blocked_id = $2)
+           OR (blocker_id = $2 AND blocked_id = $1)
+        LIMIT 1`,
+      [senderId, dto.recipientId],
+    );
+    if (blockRow.length > 0) {
+      throw new ForbiddenException('You cannot message this user');
+    }
     const msg = this.dms.create({ senderId, recipientId: dto.recipientId, content: (dto as any).content ?? (dto as any).text ?? '' });
     const saved = await this.dms.save(msg);
     const response = {
@@ -777,6 +799,18 @@ export class SocialService {
 
   async getConversation(userId: string, otherId: string, cursor?: string, limit = 50) {
     const safeTake = Math.min(100, Math.max(1, limit));
+    // FIX C: hide the conversation entirely if the viewer has blocked the
+    // other user. We don't 403 — we return an empty page so the frontend
+    // can render "This conversation is unavailable" without a network error.
+    const blockRow: Array<{ n: string }> = await this.ds.query(
+      `SELECT 1 AS n FROM user_blocks
+        WHERE blocker_id = $1 AND blocked_id = $2
+        LIMIT 1`,
+      [userId, otherId],
+    );
+    if (blockRow.length > 0) {
+      return { items: [], nextCursor: null, hasMore: false };
+    }
     const qb = this.dms.createQueryBuilder('m')
       .where('(m.sender_id = :u AND m.recipient_id = :o) OR (m.sender_id = :o AND m.recipient_id = :u)', { u: userId, o: otherId })
       .orderBy('m.created_at', 'DESC')
@@ -893,9 +927,22 @@ export class SocialService {
       .limit(50)
       .getMany();
 
+    // FIX C: fetch the viewer's block-list once, filter threads client-side.
+    // Cheap SET membership beats per-row correlated subqueries at this small
+    // page size (50 rows).
+    let blocked = new Set<string>();
+    try {
+      const rows: Array<{ blocked_id: string }> = await this.ds.query(
+        `SELECT blocked_id FROM user_blocks WHERE blocker_id = $1`,
+        [userId],
+      );
+      blocked = new Set(rows.map((r) => r.blocked_id));
+    } catch { /* non-fatal — table may not exist on very old DBs */ }
+
     const threads = new Map<string, any>();
     for (const m of msgs) {
       const otherId = m.senderId === userId ? m.recipientId : m.senderId;
+      if (blocked.has(otherId)) continue;
       if (!threads.has(otherId)) {
         const other = m.senderId === userId ? m.recipient : m.sender;
         if (!other) continue; // skip malformed

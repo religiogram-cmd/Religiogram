@@ -288,9 +288,15 @@ export class AdminProviderVerificationController {
   ) {
     const provider = await this.mustFind(providerId);
 
+    /* KYC split-brain fix: the public marketplace query filters on
+     * `providers.isVerified = true`, not on `status`. Previously this
+     * approve path set only `status = Approved` — providers approved
+     * through the primary admin UI never surfaced in search. Setting
+     * isVerified here reconciles the two paths (verification.service also
+     * sets it) so both admin flows produce discoverable providers. */
     await this.providers.update(
       { id: providerId },
-      { status: ProviderStatus.Approved, approvedAt: new Date() },
+      { status: ProviderStatus.Approved, approvedAt: new Date(), isVerified: true } as any,
     );
 
     await this.logAction({
