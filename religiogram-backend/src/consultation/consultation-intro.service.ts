@@ -311,10 +311,14 @@ export class ConsultationIntroService {
         birth_date: string | null;
         birth_time: string | null;
         birth_city: string | null;
+        birth_country: string | null;
+        timezone: string | null;
         rashi: string | null;
         nakshatra: string | null;
+        lagna: string | null;
       }>>(
-        `SELECT full_name, birth_date, birth_time, birth_city, rashi, nakshatra
+        `SELECT full_name, birth_date, birth_time, birth_city, birth_country,
+                timezone, rashi, nakshatra, lagna
            FROM ai_birth_profiles
           WHERE user_id = $1
           LIMIT 1`,
@@ -338,10 +342,26 @@ export class ConsultationIntroService {
       const parts: string[] = ['User details:'];
       if (fullName)  parts.push(`Name: ${fullName}`);
       if (birthDate) parts.push(`DOB: ${birthDate}`);
-      if (birthTime) parts.push(`Time: ${birthTime}`);
-      if (r.birth_city) parts.push(`Place: ${r.birth_city}`);
+      // Include timezone next to birth time so the astrologer knows how to
+      // interpret it — a bare "03:45" is meaningless without knowing which
+      // TZ was in effect on that date at that location.
+      if (birthTime) {
+        parts.push(r.timezone ? `Time: ${birthTime} (${r.timezone})` : `Time: ${birthTime}`);
+      }
+      if (r.birth_city) {
+        // Join country when present so the astrologer sees the full origin
+        // ("Delhi, India") — but skip if the city string already contains
+        // the country (older clients baked it into `birthCity` before the
+        // structured `birth_country` column existed).
+        const cityLine = r.birth_country
+          && !r.birth_city.toLowerCase().includes(r.birth_country.toLowerCase())
+          ? `${r.birth_city}, ${r.birth_country}`
+          : r.birth_city;
+        parts.push(`Place: ${cityLine}`);
+      }
       if (r.rashi)      parts.push(`Rashi: ${r.rashi}`);
       if (r.nakshatra)  parts.push(`Nakshatra: ${r.nakshatra}`);
+      if (r.lagna)      parts.push(`Lagna: ${r.lagna}`);
       // If nothing survived (all fields blank + decryption failed silently),
       // treat as "no profile" so the fallback message shows.
       return parts.length > 1 ? parts.join('\n') : null;

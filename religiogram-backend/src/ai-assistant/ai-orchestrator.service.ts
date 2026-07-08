@@ -539,6 +539,10 @@ export class AiOrchestratorService implements OnModuleInit {
     birthDate: string;
     birthTime?: string;
     birthCity: string;
+    /** Plaintext — country isn't PII on its own and is displayed as-is in
+     *  the astrologer's context brief. Optional; older frontends may not
+     *  send it. */
+    birthCountry?: string;
     placeLat?: number;
     placeLon?: number;
     isSelf?: boolean;
@@ -550,6 +554,7 @@ export class AiOrchestratorService implements OnModuleInit {
       birthCity: data.birthCity, // city is not PII, keep plain for display
     };
 
+    let profileId: string;
     const existing = await this.profileRepo.findOne({ where: { userId } });
     if (existing) {
       await this.profileRepo.update(existing.id, {
@@ -557,22 +562,68 @@ export class AiOrchestratorService implements OnModuleInit {
         birthDate: encryptedData.birthDate,
         birthTime: encryptedData.birthTime,
         birthCity: encryptedData.birthCity,
+        birthCountry: data.birthCountry,
+        // Clear cached kundli — inputs changed, so any prior rashi/nakshatra
+        // /lagna values must be recomputed. Fresh values are written by the
+        // fire-and-forget block below.
+        rashi:     undefined,
+        nakshatra: undefined,
+        lagna:     undefined,
         kundliJson: undefined,
       });
-      return { saved: true, profileId: existing.id };
+      profileId = existing.id;
+    } else {
+      const profile = this.profileRepo.create({
+        userId,
+        fullName:  encryptedData.fullName,
+        birthDate: encryptedData.birthDate,
+        birthTime: encryptedData.birthTime,
+        birthCity: encryptedData.birthCity,
+        birthCountry: data.birthCountry,
+        birthLat:  data.placeLat,
+        birthLng:  data.placeLon,
+      });
+      await this.profileRepo.save(profile);
+      profileId = profile.id;
     }
 
-    const profile = this.profileRepo.create({
-      userId,
-      fullName:  encryptedData.fullName,
-      birthDate: encryptedData.birthDate,
-      birthTime: encryptedData.birthTime,
-      birthCity: encryptedData.birthCity,
-      birthLat:  data.placeLat,
-      birthLng:  data.placeLon,
-    });
-    await this.profileRepo.save(profile);
-    return { saved: true, profileId: profile.id };
+    /* Fire-and-forget kundli precompute.
+     *
+     * KundliService.calculateKundli() runs the Swiss Ephemeris math for
+     * planets + lagna + rashi + nakshatra and writes the derived columns
+     * back onto the same row (see kundli.service.ts). We DO NOT await it:
+     *   - the user just needs an immediate save confirmation to close the
+     *     modal; the derived values are only surfaced later on the Kundli
+     *     tab and inside the astrologer's context brief, where a late
+     *     backfill is fine
+     *   - if birth_time is missing we still get rashi + nakshatra (moon-
+     *     based, no ascendant math needed) and lagna comes up as null
+     *   - swiss ephemeris ships with its own ephemeris file lookup that
+     *     can throw on cold boot — we swallow those into a warn log
+     *
+     * Feeds off the DECRYPTED plaintext (KundliService reads .birthDate
+     * as YYYY-MM-DD; we pass the plaintext directly since the encrypted
+     * value on disk would be gibberish to the calculator). */
+    void (async () => {
+      try {
+        const row = await this.profileRepo.findOne({ where: { id: profileId } });
+        if (!row) return;
+        // Substitute decrypted values for the calculator only — do NOT persist
+        // these plaintext fields back; that path stays on saveBirthProfile.
+        const rowForCalc: AiBirthProfile = {
+          ...row,
+          birthDate: data.birthDate,
+          birthTime: data.birthTime,
+        } as AiBirthProfile;
+        await this.kundli.calculateKundli(rowForCalc);
+      } catch (err) {
+        this.logger.warn(
+          `Post-save kundli precompute failed for user ${userId}: ${(err as Error).message}`,
+        );
+      }
+    })();
+
+    return { saved: true, profileId };
   }
 
   /** Return the saved birth profile for a user (null if none).
@@ -594,6 +645,10 @@ export class AiOrchestratorService implements OnModuleInit {
       fullName:  safeDec(row.fullName)  ?? row.fullName,
       birthDate: safeDec(row.birthDate) ?? row.birthDate,
       birthTime: row.birthTime ? safeDec(row.birthTime) : row.birthTime,
+      // birthCity + birthCountry are already plaintext — the spread above
+      // already includes them, listed here for reviewer clarity.
+      birthCity:    row.birthCity,
+      birthCountry: row.birthCountry,
     } as AiBirthProfile;
   }
 

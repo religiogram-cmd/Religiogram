@@ -42,6 +42,10 @@ interface SocketMessage {
   content?: string;   // dual-key compat: backend may emit `content` instead of `text`
   message?: string;
   from?: string;
+  /** Monotonic per-session sequence number from consultation.gateway.ts
+   *  (Redis INCR). Used as a compound-key dedup fallback when `id` is
+   *  missing or when `message.history` + `message.new` race on connect. */
+  seq?: number;
 }
 
 interface BillingTick {
@@ -192,6 +196,34 @@ export default function ActiveSessionScreen({
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const callHandleRef = useRef<CallHandle | null>(null);
 
+  /* ── Pending-echo queue for own-message dedup ─────────────────────────
+   *
+   * The race we're solving: when the user hits Send we optimistically push
+   * a bubble onto `messages` with a temp id like `m<timestamp>`. The server
+   * then persists the message, assigns it a UUID, and emits it back to
+   * every joined socket (including ours) via `message.new`. That echo has
+   * a completely different id, so the id-based dedup at line ~271 never
+   * matches, and the message renders twice — once optimistically, once
+   * from the server echo.
+   *
+   * Fix: when we register an optimistic own-message, we also stash
+   * { text, ts, tempId } here. When a `message.new` arrives with
+   * senderRole === 'user' (i.e. our own echo, not the provider), we look
+   * for a pending entry whose text matches, within a 5 s window. If we
+   * find one, we REPLACE the optimistic bubble in place (swap the id to
+   * the server's UUID, keep the text) instead of appending — this way the
+   * user sees exactly one bubble, and future reactions to the server id
+   * (read receipts, edits) still resolve.
+   *
+   * If NO match is found, we still append — the echo may legitimately be
+   * from a different device (user connected on phone AND desktop, sent
+   * from phone) and we do want to render it.
+   *
+   * The queue is capped at 20 entries and stale (>30 s) entries are
+   * dropped on every push so it can't grow without bound.
+   */
+  const pendingEchoesRef = useRef<Array<{ tempId: string; text: string; ts: number }>>([]);
+
   const ratePerSec = ratePerMin / 60;
   const charged = seconds * ratePerSec;
   const remaining = walletBalance - charged;
@@ -252,21 +284,69 @@ export default function ActiveSessionScreen({
         // Prefer `content` first so we survive a future backend that drops
         // `text` entirely.
         const text = payload.content ?? payload.text ?? payload.message ?? '';
-        const senderId = payload.senderId ?? payload.from ?? '';
         const senderRole = payload.senderRole ?? payload.sender_role ?? '';
         if (!text) return;
-        // Backend now posts sender_role='system' lifecycle messages
-        // (welcome, birth-details brief, provider-joined). Render them as a
-        // centered info pill rather than a chat bubble.
+        /* Backend now posts sender_role='system' lifecycle messages
+         * (welcome, birth-details brief, provider-joined). Render them as a
+         * centered info pill rather than a chat bubble. The previous mapping
+         * did `senderId === 'user'` which compared a UUID to the literal
+         * string 'user' — always false, so on reconnect every user-side
+         * message rendered as the consultant. Route off senderRole instead:
+         * this component is the seeker-side screen, so 'user' = mine
+         * (right-aligned) and any provider role becomes 'consultant'. */
         const sender: ChatMessage['sender'] =
-          senderRole === 'system' ? 'system'
-          : senderId === 'user'    ? 'user'
+          senderRole === 'system'   ? 'system'
+          : senderRole === 'user'   ? 'user'
           : 'consultant';
+
         setMessages((prev) => {
-          const id = payload.id ?? `sock-${Date.now()}`;
-          // Guard against dupes when both `message.new` and `message` fire.
-          if (prev.some((m) => m.id === id)) return prev;
-          return [...prev, { id, sender, text }];
+          const serverId = payload.id;
+          // Compound dedup key: prefer server id (UUID). If unavailable and
+          // we have a per-session seq, use `seq:<n>` — the backend's Redis-
+          // INCR guarantees monotonic uniqueness within a session so this
+          // is safe as an id when the id field is somehow absent (older
+          // clients that only saw the legacy `message` event, or a mid-
+          // deploy backend that hasn't stamped uuids yet).
+          const dedupKey = serverId
+            ?? (payload.seq != null ? `seq:${payload.seq}` : `sock-${Date.now()}`);
+
+          // Idempotency: `message.history` and `message.new` can race during
+          // connect — both may deliver the same row. Skip if we've already
+          // rendered this id/seq.
+          if (prev.some((m) => m.id === dedupKey)) return prev;
+          // Second-tier seq guard: if `seq` is present, check that no
+          // existing message already carries the matching `seq:` key. This
+          // catches the case where the same row arrives once via history
+          // (with its UUID as id) and once via message.new (also with
+          // UUID) — both use the same UUID so the check above wins, but
+          // if for any reason the ids differ, seq is authoritative.
+          if (payload.seq != null && prev.some((m) => m.id === `seq:${payload.seq}`)) return prev;
+
+          // Own-message optimistic reconciliation.
+          //
+          // If this echo has senderRole === 'user' we sent it ourselves.
+          // Look for a matching pending entry (same text, within 5 s). If
+          // one exists, swap its temp id for the server id in place —
+          // that way the same visual bubble now carries the real id (for
+          // future read receipts / edits) without a second bubble ever
+          // appearing.
+          if (senderRole === 'user') {
+            const now = Date.now();
+            const pending = pendingEchoesRef.current;
+            const idx = pending.findIndex(p => p.text === text && (now - p.ts) < 5000);
+            if (idx >= 0) {
+              const { tempId } = pending[idx];
+              pending.splice(idx, 1);
+              // Replace the optimistic entry's id with the server id so
+              // future ops (dedup on reconnect, read receipts) match up.
+              return prev.map(m => m.id === tempId ? { ...m, id: dedupKey } : m);
+            }
+            // No match — fall through and append. This is the
+            // multi-device case (e.g. user sent from phone, this session
+            // is web) and rendering it is correct.
+          }
+
+          return [...prev, { id: dedupKey, sender, text }];
         });
       };
       raw.on('message.new', onMessage);
@@ -483,8 +563,30 @@ export default function ActiveSessionScreen({
   const sendMessage = () => {
     const text = inputText.trim();
     if (!text) return;
-    setMessages((prev) => [...prev, { id: `m${Date.now()}`, sender: 'user', text }]);
+
+    // Optimistic append with a temp id. The server will echo this message
+    // back with a UUID; the pending-echo queue below lets onMessage
+    // reconcile the two (see pendingEchoesRef declaration for the race
+    // being solved).
+    const tempId = `m${Date.now()}`;
+    setMessages((prev) => [...prev, { id: tempId, sender: 'user', text }]);
     setInputText('');
+
+    // Register the pending echo so the server round-trip can reconcile.
+    // Also age out anything > 30 s (server never echoed — likely dropped
+    // by network) and cap the queue at 20 entries so a stalled connection
+    // can't make it grow without bound.
+    {
+      const now = Date.now();
+      const queue = pendingEchoesRef.current;
+      // Prune stale entries first
+      const fresh = queue.filter(p => (now - p.ts) < 30_000);
+      fresh.push({ tempId, text, ts: now });
+      // Cap to the newest 20 entries — a healthy chat rarely has >1
+      // in-flight anyway; the cap is defence-in-depth for a wedged socket.
+      pendingEchoesRef.current = fresh.slice(-20);
+    }
+
     const raw = socketRef.current?.raw;
     /* Backend handler at consultation.gateway.ts registers `message.send`;
      * the older `message` name is emitted too for backward compat with

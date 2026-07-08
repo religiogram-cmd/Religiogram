@@ -135,6 +135,9 @@ export class AiAssistantController {
       birthDate:  string;
       birthTime?: string;
       birthCity:  string;
+      /** Plaintext country name (e.g. "India"). Optional — older clients
+       *  bake the country into the city string; new clients send it here. */
+      birthCountry?: string;
       placeLat?:  number;
       placeLon?:  number;
       isSelf?:    boolean;

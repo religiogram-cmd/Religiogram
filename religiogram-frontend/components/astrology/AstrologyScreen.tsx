@@ -70,6 +70,12 @@ export default function AstrologyScreen() {
    * appears after the modal is dismissed so we never stack two overlays. */
   const [showBirthModal, setShowBirthModal] = useState(false);
   const [birthChecked, setBirthChecked] = useState(false);
+  /* Whether the current user has a saved birth profile on the backend.
+   * Bookkept so a subsequent modal open (e.g. user navigates back into
+   * the astrology tab after saving elsewhere, or after `onSaved` fires)
+   * doesn't re-gate them. `null` = still checking; `false` = confirmed
+   * missing; `true` = confirmed present. */
+  const [hasProfile, setHasProfile] = useState<boolean | null>(null);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [walletPromptDismissed, setWalletPromptDismissed] = useState(false);
 
@@ -96,12 +102,27 @@ export default function AstrologyScreen() {
           : false;
         const p = await birthProfile.get();
         if (cancelled) return;
-        const hasProfile = !!(p && p.fullName && p.birthDate && p.birthCity);
-        if (!hasProfile && !skipped) setShowBirthModal(true);
-      } catch { /* non-fatal — never block the screen */ }
+        const found = !!(p && p.fullName && p.birthDate && p.birthCity);
+        setHasProfile(found);
+        if (!found && !skipped) setShowBirthModal(true);
+      } catch {
+        // Non-fatal — never block the screen. Leave hasProfile as null so
+        // a retry can still populate it later without spuriously gating.
+      }
       finally { if (!cancelled) setBirthChecked(true); }
     })();
     return () => { cancelled = true; };
+  }, []);
+
+  // Cross-component signal from BirthDetailsModal (and anywhere else that
+  // might edit the profile in the future). When we receive it we flip
+  // hasProfile to true so a subsequent re-mount doesn't re-open the modal
+  // while the network state has already been updated by the save call.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onUpdated = () => setHasProfile(true);
+    window.addEventListener('birth:profile:updated', onUpdated);
+    return () => window.removeEventListener('birth:profile:updated', onUpdated);
   }, []);
 
   // Fetch wallet balance for the recharge nudge. WalletBadge fetches its own
@@ -290,8 +311,18 @@ export default function AstrologyScreen() {
           Uses localStorage to remember "Skip" across sessions so we don't
           nag on every visit. */}
       <BirthDetailsModal
-        open={showBirthModal}
+        // hasProfile short-circuit: even if `showBirthModal` is somehow true
+        // (e.g. dev tools flipped it, or a future path that opens the modal
+        // programmatically), a confirmed-present profile suppresses the
+        // gate. Belt-and-braces alongside the bootstrap effect.
+        open={showBirthModal && hasProfile !== true}
         onClose={() => setShowBirthModal(false)}
+        onSaved={() => {
+          // Modal has persisted the profile server-side — flip local state
+          // so a re-render (or a future re-mount within the same tab) won't
+          // re-open the gate.
+          setHasProfile(true);
+        }}
       />
     </div>
   );

@@ -448,6 +448,7 @@ export interface BirthProfile {
   birthDate?: string;
   birthTime?: string;
   birthCity?: string;
+  birthCountry?: string | null;
   birthLat?: number | null;
   birthLng?: number | null;
   timezone?: string | null;
@@ -461,6 +462,9 @@ export interface BirthProfileInput {
   birthDate: string;   // YYYY-MM-DD
   birthTime?: string;  // HH:mm (optional)
   birthCity: string;
+  /** Structured country column on the backend (migration 78). Kept optional
+   *  so older client builds still compile. */
+  birthCountry?: string;
   placeLat?: number;
   placeLon?: number;
   timezone?: string;

@@ -39,8 +39,19 @@ export default function WalletScreen() {
   const [msg, setMsg]     = useState<string | null>(null);
 
   useEffect(() => {
-    walletApi.balance().then(b => setBal(b)).catch(console.error).finally(() => setLdBal(false));
-    walletApi.transactions().then(r => setTxns(r.transactions)).catch(console.error).finally(() => setLdTx(false));
+    walletApi.balance()
+      .then(b => setBal(b ?? null))
+      .catch(console.error)
+      .finally(() => setLdBal(false));
+    /* Coerce to array — the previous `setTxns(r.transactions)` silently
+     * pushed `undefined` into state whenever the API response arrived in
+     * an unexpected shape (missing key, empty body, auth-error JSON). The
+     * next render then crashed on `txns.length` with the classic
+     * "Cannot read properties of undefined (reading 'length')" error. */
+    walletApi.transactions()
+      .then(r => setTxns(Array.isArray(r?.transactions) ? r.transactions : []))
+      .catch(console.error)
+      .finally(() => setLdTx(false));
   }, []);
 
   const addMoney = useCallback(async (amtRupees: number) => {
@@ -84,13 +95,14 @@ export default function WalletScreen() {
         rzp.open();
       });
 
-      // Refresh balance and transactions
+      // Refresh balance and transactions (defensively — never let undefined
+      // land in state or the next render will crash on `.length`).
       const [newBal, newTxns] = await Promise.all([
         walletApi.balance(),
         walletApi.transactions(),
       ]);
-      setBal(newBal);
-      setTxns(newTxns.transactions);
+      setBal(newBal ?? null);
+      setTxns(Array.isArray(newTxns?.transactions) ? newTxns.transactions : []);
       setMsg(`${formatINR(amtRupees * 100)} added to your wallet.`);
     } catch (err: any) {
       if (err?.message === 'dismissed') {
@@ -185,7 +197,7 @@ export default function WalletScreen() {
           </div>
           {ldTx
             ? <div style={{ padding:'24px 16px', textAlign:'center', color:'#7A6650', fontSize:13 }}>Loading...</div>
-            : txns.length === 0
+            : (txns?.length ?? 0) === 0
               ? <EmptyState
                   icon="💳"
                   title="No transactions yet"
@@ -207,7 +219,7 @@ export default function WalletScreen() {
                           {c ? '+' : '-'}{fmt(tx.amountPaise)}
                         </span>
                       </div>
-                      {i < txns.length - 1 && <div style={{ height:1, background:'rgba(27,42,92,0.06)', margin:'0 16px' }}/>}
+                      {i < (txns?.length ?? 0) - 1 && <div style={{ height:1, background:'rgba(27,42,92,0.06)', margin:'0 16px' }}/>}
                     </div>
                   );
                 })

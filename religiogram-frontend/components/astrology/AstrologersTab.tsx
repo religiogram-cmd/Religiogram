@@ -3,8 +3,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { formatPerMinute } from '@/lib/format-currency';
+import { listAstrologers } from '@/lib/astrology-api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001';
+// (Dead constant removed — listAstrologers() from astrology-api handles the
+// URL internally so both this tab and /astrology/browse now share one path.)
 
 const FILTERS = ['All', 'Love', 'Career', 'Marriage', 'Health', 'Wealth', 'Legal', 'Tarot', 'Vedic', 'KP', 'Numerology', 'Education'];
 const NAVY = '#0F2452';
@@ -50,7 +52,17 @@ function ChatBubbleIcon() {
   );
 }
 
-type Astrologer = {
+/**
+ * Card view-model for AstrologersTab.
+ *
+ * Renamed from `Astrologer` so it stops shadowing the shared `Astrologer`
+ * interface exported from `@/lib/astrology-api` (also imported into this
+ * file via listAstrologers) — the previous name silently masked the real
+ * type when a future refactor referenced it in the same scope. This local
+ * shape is intentionally denormalised for grid rendering (initials, color
+ * palette slot, "1k+" orders string) — it is NOT the API model.
+ */
+type AstrologerCardVM = {
   id: number | string;
   name: string;
   initials: string;
@@ -67,7 +79,7 @@ type Astrologer = {
   color: string;
 };
 
-function AstrologerCard({ a, onChat, onCall }: { a: Astrologer; onChat: () => void; onCall: () => void }) {
+function AstrologerCard({ a, onChat, onCall }: { a: AstrologerCardVM; onChat: () => void; onCall: () => void }) {
   return (
     <div style={{
       background: '#fff',
@@ -191,32 +203,41 @@ export default function AstrologersTab() {
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [showOnlineOnly, setShowOnlineOnly] = useState(false);
-  const [astrologers, setAstrologers] = useState<Astrologer[]>([]);
+  const [astrologers, setAstrologers] = useState<AstrologerCardVM[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ─── Load live astrologer data from the providers/priests API ─────────────
+  // ─── Load live astrologer data via the SAME API used by /astrology/browse ─
+  // Previously we called /priests?category=astrology directly here, while
+  // the browse page called /providers?category=astrologer through
+  // listAstrologers(). Two surfaces of the same list ended up sourced from
+  // two different endpoints — counts and data could diverge. Unified via
+  // astrology-api's listAstrologers so both screens always show the same set.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`${API_BASE}/priests?category=astrology&limit=20&page=1`)
-      .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then(data => {
+    listAstrologers({})
+      .then((rows) => {
         if (cancelled) return;
-        const items: Astrologer[] = (data?.data ?? data?.priests ?? []).map((p: any, i: number) => ({
-          id:          p.id ?? i,
-          name:        p.displayName ?? p.name ?? 'Astrologer',
-          initials:    (p.displayName ?? p.name ?? 'A').split(' ').slice(0,2).map((w: string) => w[0]).join('').toUpperCase(),
-          specialties: p.services?.map((s: any) => s.serviceName ?? s) ?? ['Vedic'],
-          languages:   p.languages ?? ['Hindi'],
-          rating:      Number(p.ratingAvg ?? 4.5),
-          reviews:     p.ratingCount ?? 0,
-          experience:  p.experienceYears ?? 5,
-          pricePerMin: Math.round((p.pricePerMinutePaise ?? 1500) / 100),
-          online:      p.isOnline ?? false,
-          verified:    p.isVerified ?? false,
-          celebrity:   (p.ratingCount ?? 0) > 10000,
-          orders:      p.ratingCount ? `${Math.round(p.ratingCount / 1000)}k+` : '0',
-          color:       ['#0F2452','#7B2D8B','#C17F24','#2E7D32','#AD1457'][i % 5],
+        const palette = ['#0F2452','#7B2D8B','#C17F24','#2E7D32','#AD1457'];
+        // Map from the shared Astrologer shape (astrology-api.ts) to the
+        // display-only shape this tab renders. Field names here follow the
+        // shared interface exactly so both this tab and /astrology/browse
+        // stay in sync.
+        const items: AstrologerCardVM[] = rows.map((p, i) => ({
+          id:          p.id,
+          name:        p.name ?? 'Astrologer',
+          initials:    (p.name ?? 'A').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase(),
+          specialties: p.specializations?.length ? p.specializations : ['Vedic'],
+          languages:   p.languages?.length ? p.languages : ['Hindi'],
+          rating:      Number(p.rating ?? 4.5),
+          reviews:     Number(p.reviewCount ?? 0),
+          experience:  Number(p.experienceYears ?? 5),
+          pricePerMin: Math.round(Number(p.ratePerMinPaise ?? 1500) / 100),
+          online:      Boolean(p.isOnline),
+          verified:    Boolean(p.isVerified),
+          celebrity:   Number(p.reviewCount ?? 0) > 10000,
+          orders:      p.reviewCount ? `${Math.round(Number(p.reviewCount) / 1000)}k+` : '0',
+          color:       palette[i % palette.length],
         }));
         if (items.length > 0) setAstrologers(items);
       })

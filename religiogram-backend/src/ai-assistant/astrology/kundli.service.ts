@@ -42,8 +42,20 @@ export class KundliService {
 
     const kundli = { planets, lagna, rashi, nakshatra, dashas };
 
-    // Cache computed kundli back into profile
-    await this.profileRepo.update(profile.userId, { rashi, nakshatra, lagna: lagna?.lagna, kundliJson: kundli as any });
+    /* Cache computed kundli back into the profile row.
+     * NB: TypeORM's Repository.update(scalar, partial) treats the scalar as
+     * the value of the PRIMARY key column (`id` here), NOT `user_id`. Passing
+     * `profile.userId` as a scalar matched zero rows and silently discarded
+     * every computed rashi/nakshatra/lagna — the astrologer's context brief
+     * kept saying "User has not provided birth details" for the chart lines,
+     * and the Kundli tab kept re-computing on every open because the cache
+     * check `if (profile.kundliJson) return` never succeeded.
+     * Passing an object criterion targets the correct WHERE user_id = ...
+     * clause. */
+    await this.profileRepo.update(
+      { userId: profile.userId },
+      { rashi, nakshatra, lagna: lagna?.lagna, kundliJson: kundli as any },
+    );
 
     return kundli;
   }

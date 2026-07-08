@@ -45,7 +45,29 @@ export default function BirthDetailsModal({ open, onClose, onSaved }: Props) {
 
   if (!open) return null;
 
-  const canSubmit = !!(form.fullName.trim() && form.birthDate && form.birthCity.trim());
+  /**
+   * Basic DOB sanity check: must be a real date, not in the future, and not
+   * absurdly old (a 130-year cap covers legitimate submissions while
+   * preventing "0000-01-01" typos or "1200-04-15" nonsense from landing in
+   * the astrologer's context card).
+   */
+  const isBirthDateSane = (v: string): boolean => {
+    if (!v) return false;
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return false;
+    const now = new Date();
+    const minAllowed = new Date();
+    minAllowed.setFullYear(now.getFullYear() - 130);
+    return d.getTime() <= now.getTime() && d.getTime() >= minAllowed.getTime();
+  };
+
+  const dobInvalid = form.birthDate.length > 0 && !isBirthDateSane(form.birthDate);
+  const canSubmit = !!(
+    form.fullName.trim() &&
+    form.birthDate &&
+    !dobInvalid &&
+    form.birthCity.trim()
+  );
 
   const handleSkip = () => {
     try {
@@ -59,30 +81,44 @@ export default function BirthDetailsModal({ open, onClose, onSaved }: Props) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || saving) return;
+    if (dobInvalid) {
+      setError('Please enter a real birth date (not in the future).');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      // birthCountry isn't in the backend schema — we bake it into the city
-      // string so the astrologer sees "Delhi, India" rather than just "Delhi".
-      const city = form.birthCountry && !form.birthCity.toLowerCase().includes(form.birthCountry.toLowerCase())
-        ? `${form.birthCity.trim()}, ${form.birthCountry.trim()}`
-        : form.birthCity.trim();
+      // Structured save — backend now has a dedicated `birth_country`
+      // column (migration 78), so we send city and country as separate
+      // fields. The astrologer context brief renders them together
+      // ("Place: Delhi, India") on the server side.
+      const cityTrimmed    = form.birthCity.trim();
+      const countryTrimmed = form.birthCountry.trim();
       await birthProfile.save({
         fullName:  form.fullName.trim(),
         birthDate: form.birthDate,
         birthTime: form.birthTime || undefined,
-        birthCity: city,
+        birthCity: cityTrimmed,
+        birthCountry: countryTrimmed || undefined,
         timezone:  form.timezone || 'Asia/Kolkata',
       });
       setSaved(true);
       if (typeof window !== 'undefined') {
         try { window.dispatchEvent(new Event('wallet:refresh')); } catch { /* non-fatal */ }
+        // Broadcast so any mounted screen (e.g. AstrologyScreen's first-
+        // visit gate) can refresh its "does the user have a profile?" state
+        // without having to re-fetch on next paint.
+        try { window.dispatchEvent(new Event('birth:profile:updated')); } catch { /* non-fatal */ }
       }
       // Small confirmation flash, then close.
       setTimeout(() => {
         setSaving(false);
-        onClose();
+        // Notify the parent BEFORE closing so any state the parent flips on
+        // success is committed before its `open={showBirthModal}` gate goes
+        // false — this ordering matters when the parent decides whether to
+        // pop a follow-up prompt in the same render.
         onSaved?.();
+        onClose();
       }, 700);
     } catch (err: unknown) {
       setSaving(false);
@@ -181,9 +217,23 @@ export default function BirthDetailsModal({ open, onClose, onSaved }: Props) {
                 type="date"
                 value={form.birthDate}
                 onChange={(e) => setForm((f) => ({ ...f, birthDate: e.target.value }))}
+                // Native browser guard: block future dates + absurdly old ones
+                // at the picker level. handleSubmit re-validates in case the
+                // user types the value directly.
+                max={new Date().toISOString().slice(0, 10)}
+                min={(() => {
+                  const d = new Date();
+                  d.setFullYear(d.getFullYear() - 130);
+                  return d.toISOString().slice(0, 10);
+                })()}
                 required
                 style={inputStyle}
               />
+              {dobInvalid && (
+                <span style={{ color: '#B23B3B', fontSize: 12, marginTop: 4, display: 'block' }}>
+                  Please enter a real date of birth.
+                </span>
+              )}
             </Field>
 
             <Field label="Time of Birth">
