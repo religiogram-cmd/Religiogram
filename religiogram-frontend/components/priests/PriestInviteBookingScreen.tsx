@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { tokenStore } from '@/lib/api';
+import ProviderMarketplace, { type ProviderRecord } from './ProviderMarketplace';
 
 // Razorpay Checkout — loaded dynamically.
 declare global { interface Window { Razorpay?: new (opts: Record<string, unknown>) => { open: () => void; on: (e: string, cb: () => void) => void } } }
@@ -131,14 +132,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  */
 type Step = 'select' | 'ceremony' | 'when' | 'where' | 'contact' | 'review' | 'priests' | 'confirm' | 'success';
 
-// Faith-specific priest pool. Replace with backend response from /priests/match when wired.
-interface PriestRecord {
-  id: string; name: string; yearsExp: number; languages: string[]; rating: number; reviews: number;
-  fee: number; available: boolean; distanceKm: number; photo: string;
-}
-// No hardcoded priest list. The "matched priests" step now fetches live
-// candidates from GET /v1/providers/by-religion/:religion. We do NOT ship
-// fake humans as filler.
+// Provider records are typed by ProviderMarketplace (imported as ProviderRecord).
+// No hardcoded priest list — live candidates come from GET /v1/providers.
+// We do NOT ship fake humans as filler.
 
 export default function PriestInviteBookingScreen() {
   const router = useRouter();
@@ -163,90 +159,20 @@ export default function PriestInviteBookingScreen() {
   const [errorMsg, setErrorMsg] = useState('');
   const [bookingId, setBookingId] = useState('');
   const [requestId, setRequestId] = useState('');
-  const [selectedPriest, setSelectedPriest] = useState<PriestRecord | null>(null);
+  const [selectedPriest, setSelectedPriest] = useState<ProviderRecord | null>(null);
   const [paymentId, setPaymentId] = useState('');
 
-  // Live priest list fetched from the real backend.
-  // As of the pick-priest-first restructure we fetch once when the user
-  // reaches the 'select' step (the new landing) and REUSE the same list
-  // for the legacy mid-flow 'priests' picker if it's ever hit via a
-  // deep-link. Enriched with specialisations + city so the Local/Global
-  // card layout can render exactly the mockup design.
-  interface PriestListItem extends PriestRecord {
-    city: string;
-    specialisations: string[];
-    isVerified: boolean;
-  }
-  const [allPriests, setAllPriests] = useState<PriestListItem[]>([]);
-  const [priestsLoading, setPriestsLoading] = useState(false);
-  const matchedPriests = allPriests; // legacy alias for the old render block
+  /* Legacy mid-flow 'priests' step no longer runs any local fetch — the
+   * marketplace picker on the 'select' step handles all provider discovery
+   * via <ProviderMarketplace/>. Kept as an empty stub so the deep-link
+   * type union stays intact; the block below will render an empty list. */
+  const matchedPriests: ProviderRecord[] = [];
 
-  /* Top-level provider toggle: Astrologers vs Pandits.
-   * Pandits filter by the user's religion; astrologers are cross-religion
-   * (an astrologer can serve any faith). Switching tabs invalidates the
-   * cached list so we always show data matching the current selection. */
-  const [providerTab, setProviderTab] = useState<'astrologer' | 'priest'>('priest');
-  const providerLabel = providerTab === 'astrologer' ? 'Astrologer' : cfg.role;
-
-  useEffect(() => {
-    if (step !== 'select' && step !== 'priests') return;
-    const tok = tokenStore.access ?? '';
-    setPriestsLoading(true);
-    // Reset any previously-selected provider when the tab flips — a picked
-    // astrologer shouldn't survive a switch back to priests, or vice versa.
-    setSelectedPriest(null);
-    setAllPriests([]);
-    const religionParam = faith === 'muslim' ? 'islam' : faith;
-    const headers: Record<string, string> = {};
-    if (tok) headers['Authorization'] = 'Bearer ' + tok;
-    /* Public directory endpoint. For priests we filter by religion; for
-     * astrologers we drop religion since they're cross-faith. */
-    const url = providerTab === 'astrologer'
-      ? `${API_BASE}/providers?category=astrologer&limit=50`
-      : `${API_BASE}/providers?category=priest&religion=${religionParam}&limit=50`;
-    fetch(url, { headers })
-      .then(r => r.ok ? r.json() : null)
-      .then(j => {
-        const raw: any[] = Array.isArray(j) ? j : (j?.items ?? j?.data ?? []);
-        setAllPriests(raw.map((p: any): PriestListItem => ({
-          id:              String(p.id ?? p.providerId ?? ''),
-          name:            String(p.fullName ?? p.name ?? 'Provider'),
-          yearsExp:        Number(p.experienceYears ?? 0),
-          languages:       Array.isArray(p.languages) ? p.languages.map(String) : [],
-          rating:          Number(p.ratingAvg ?? p.rating ?? 0),
-          reviews:         Number(p.ratingCount ?? p.reviewCount ?? 0),
-          fee:             Math.round(Number(p.perMinutePaise ?? p.basePricePaise ?? 0) / 100),
-          available:       Boolean(p.availableNow ?? p.isOnline ?? true),
-          distanceKm:      Number(p.distanceKm ?? 0),
-          photo:           String(p.avatarUrl ?? p.photoUrl ?? `/priests/${faith}-ask.jpg`),
-          city:            String(p.city ?? ''),
-          specialisations: Array.isArray(p.specialisations) ? p.specialisations.map(String) : [],
-          isVerified:      Boolean(p.isVerified ?? true), // approved providers are, by definition, verified
-        })));
-      })
-      .catch(() => setAllPriests([]))
-      .finally(() => setPriestsLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, faith, providerTab]);
-
-  /* Local/Global tabs. Local = same city as the user's stored city (from
-   * localStorage, populated during profile setup / provider onboarding).
-   * If we don't know the user's city, Local shows an empty state and the
-   * Global tab is auto-selected. */
-  const [priestTab, setPriestTab] = useState<'local' | 'global'>('global');
+  /* Read the user's city once for the marketplace's Nearby filter. Same
+   * localStorage key populated during profile / provider onboarding. */
   const userCity = typeof window !== 'undefined'
     ? (window.localStorage.getItem('rg_user_city') ?? '').trim().toLowerCase()
     : '';
-  useEffect(() => {
-    // Auto-flip to Local if we know the user's city and there's at least
-    // one local priest — that's the more useful default.
-    if (userCity && allPriests.some(p => p.city.toLowerCase() === userCity)) {
-      setPriestTab('local');
-    }
-  }, [userCity, allPriests]);
-  const filteredPriests = priestTab === 'local' && userCity
-    ? allPriests.filter(p => p.city.toLowerCase() === userCity)
-    : allPriests;
 
   // Load Razorpay Checkout SDK on mount (idempotent — won't re-add if already loaded).
   useEffect(() => {
@@ -555,282 +481,26 @@ export default function PriestInviteBookingScreen() {
 
         {step === 'select' && (
           <div>
-            {/* ── Top-level Astrologers / Pandits segmented control ──
-             * Sits ABOVE the golden marketplace panel. Same navy-active
-             * pill visual language as the Nearby/Global sub-tabs below,
-             * but rendered on the cream page background so it reads as a
-             * separate top-level filter, not part of the golden panel.
-             * Switching invalidates the fetch cache (see effect above). */}
-            <div style={{
-              display: 'flex',
-              background: 'rgba(10,22,40,0.08)',
-              borderRadius: 999,
-              padding: 4,
-              marginBottom: 14,
-              border: '1px solid rgba(10,22,40,0.15)',
-            }}>
-              <button
-                type="button"
-                onClick={() => setProviderTab('astrologer')}
-                style={{
-                  flex: 1, padding: '11px 0', borderRadius: 999, border: 'none',
-                  background: providerTab === 'astrologer' ? NAVY : 'transparent',
-                  color: providerTab === 'astrologer' ? CREAM : NAVY,
-                  fontSize: 14, fontWeight: 800, cursor: 'pointer',
-                  boxShadow: providerTab === 'astrologer' ? '0 3px 8px rgba(10,22,40,0.25)' : 'none',
-                  fontFamily: '"Playfair Display",Georgia,serif',
-                  transition: 'background 0.15s',
-                  minHeight: 44,
-                }}
-              >Astrologers</button>
-              <button
-                type="button"
-                onClick={() => setProviderTab('priest')}
-                style={{
-                  flex: 1, padding: '11px 0', borderRadius: 999, border: 'none',
-                  background: providerTab === 'priest' ? NAVY : 'transparent',
-                  color: providerTab === 'priest' ? CREAM : NAVY,
-                  fontSize: 14, fontWeight: 800, cursor: 'pointer',
-                  boxShadow: providerTab === 'priest' ? '0 3px 8px rgba(10,22,40,0.25)' : 'none',
-                  fontFamily: '"Playfair Display",Georgia,serif',
-                  transition: 'background 0.15s',
-                  minHeight: 44,
-                }}
-              >Pandits</button>
-            </div>
-
-            {/* ── Golden card panel — Local / Global tabs + priest cards ──
-             * Layout matches the reference mockup exactly:
-             *   - Ornate top/bottom borders on the panel
-             *   - Centered "Available <role>s" title with diamond divider
-             *   - Local/Global pill toggle (Local highlighted navy when active)
-             *   - Each priest displayed with a small location tag ABOVE the
-             *     card (📍 Local / 🌐 Global), then a horizontal card with
-             *     photo left + info right, gold gradient background with a
-             *     thin decorative border along top and bottom.
-             */}
-            <div style={{
-              borderRadius: 20,
-              padding: '18px 14px 20px',
-              background: `linear-gradient(180deg,#F4C67B 0%,#E1B461 50%,#C99436 100%)`,
-              border: '2px solid #7A4A10',
-              boxShadow:
-                '0 12px 30px rgba(107,50,16,0.25),' +
-                'inset 0 1px 0 rgba(255,255,255,0.6),' +
-                'inset 0 0 0 1px rgba(122,74,16,0.35)',
-            }}>
-              <div style={{
-                textAlign: 'center',
-                fontSize: 18, fontWeight: 800, color: '#2D1500',
-                fontFamily: '"Playfair Display",Georgia,serif',
-                letterSpacing: '0.01em',
-                marginBottom: 4,
-              }}>Available {providerLabel}s</div>
-              <div style={{
-                textAlign: 'center', marginBottom: 14,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                gap: 6,
-              }}>
-                <span style={{ color: '#7A4A10', fontSize: 10 }}>◆</span>
-                <span style={{ height: 1, width: 46, background: '#7A4A10', opacity: 0.55 }} />
-                <span style={{ color: '#7A4A10', fontSize: 10 }}>◆</span>
-              </div>
-
-              {/* Local / Global toggle */}
-              <div style={{
-                display: 'flex',
-                background: 'rgba(45,21,0,0.15)',
-                borderRadius: 999,
-                padding: 4,
-                marginBottom: 16,
-                border: '1px solid rgba(122,74,16,0.30)',
-                boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.10)',
-              }}>
-                <button
-                  type="button"
-                  onClick={() => setPriestTab('local')}
-                  style={{
-                    flex: 1, padding: '10px 0', borderRadius: 999, border: 'none',
-                    background: priestTab === 'local' ? '#0A1628' : 'transparent',
-                    color: priestTab === 'local' ? '#F4C67B' : '#2D1500',
-                    fontSize: 14, fontWeight: 800, cursor: 'pointer',
-                    boxShadow: priestTab === 'local' ? '0 3px 8px rgba(0,0,0,0.25)' : 'none',
-                    fontFamily: '"Playfair Display",Georgia,serif',
-                    transition: 'background 0.15s',
-                  }}
-                >Nearby</button>
-                <button
-                  type="button"
-                  onClick={() => setPriestTab('global')}
-                  style={{
-                    flex: 1, padding: '10px 0', borderRadius: 999, border: 'none',
-                    background: priestTab === 'global' ? '#0A1628' : 'transparent',
-                    color: priestTab === 'global' ? '#F4C67B' : '#2D1500',
-                    fontSize: 14, fontWeight: 800, cursor: 'pointer',
-                    boxShadow: priestTab === 'global' ? '0 3px 8px rgba(0,0,0,0.25)' : 'none',
-                    fontFamily: '"Playfair Display",Georgia,serif',
-                    transition: 'background 0.15s',
-                  }}
-                >Global</button>
-              </div>
-
-              {/* Loading + empty states */}
-              {priestsLoading && (
-                <div style={{ textAlign: 'center', padding: '40px 0' }}>
-                  <span aria-hidden style={{
-                    display: 'inline-block', width: 28, height: 28,
-                    borderRadius: '50%',
-                    border: '3px solid rgba(45,21,0,0.20)',
-                    borderTopColor: '#2D1500',
-                    animation: 'spin 0.8s linear infinite',
-                  }} />
-                  <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-                </div>
-              )}
-              {!priestsLoading && filteredPriests.length === 0 && (
-                <div style={{
-                  padding: '32px 20px', textAlign: 'center',
-                  fontSize: 13, color: '#2D1500', lineHeight: 1.5, fontWeight: 600,
-                }}>
-                  {priestTab === 'local' && !userCity
-                    ? `Set your city in Profile to see nearby ${providerLabel.toLowerCase()}s.`
-                    : priestTab === 'local'
-                      ? `No verified ${providerLabel}s in your city yet. Try Global.`
-                      : `No verified ${providerLabel}s available right now.`}
-                </div>
-              )}
-
-              {/* Priest cards — location tag OUTSIDE each card, card below */}
-              {!priestsLoading && filteredPriests.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {filteredPriests.map((p) => {
-                    const isLocal  = !!(userCity && p.city.toLowerCase() === userCity);
-                    const selected = selectedPriest?.id === p.id;
-                    return (
-                      <div key={p.id}>
-                        {/* Location tag ABOVE the card, matches reference mockup */}
-                        <div style={{
-                          fontSize: 12, fontWeight: 800, color: '#2D1500',
-                          display: 'flex', alignItems: 'center', gap: 5,
-                          marginBottom: 6, paddingLeft: 4,
-                        }}>
-                          <span style={{ fontSize: 13 }}>{isLocal ? '📍' : '🌐'}</span>
-                          <span>{isLocal ? 'Nearby' : 'Global'}</span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => setSelectedPriest(p)}
-                          style={{
-                            display: 'block', width: '100%', textAlign: 'left',
-                            padding: 0, borderRadius: 12,
-                            background: selected
-                              ? `linear-gradient(180deg,#FFEBBE 0%,#F5CE87 100%)`
-                              : `linear-gradient(180deg,#F9DFA4 0%,#E5BE79 100%)`,
-                            border: `1.5px solid ${selected ? '#0A1628' : '#8B5A16'}`,
-                            boxShadow: selected
-                              ? '0 8px 20px rgba(10,22,40,0.25), inset 0 1px 0 rgba(255,255,255,0.55)'
-                              : '0 3px 8px rgba(107,50,16,0.15), inset 0 1px 0 rgba(255,255,255,0.5)',
-                            cursor: 'pointer',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {/* Ornate top border */}
-                          <div style={{
-                            height: 3,
-                            background: 'linear-gradient(90deg,transparent 0%,#8B5A16 20%,#8B5A16 80%,transparent 100%)',
-                            opacity: 0.55,
-                          }} />
-
-                          <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '12px 12px' }}>
-                            {/* Avatar */}
-                            <div style={{
-                              width: 58, height: 58, borderRadius: 8,
-                              overflow: 'hidden', flexShrink: 0,
-                              background: 'linear-gradient(135deg,#C8920A,#6B3210)',
-                              border: '2px solid #2D1500',
-                              boxShadow: '0 2px 6px rgba(45,21,0,0.35)',
-                            }}>
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={p.photo}
-                                alt={p.name}
-                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                              />
-                            </div>
-
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              {/* Name */}
-                              <div style={{
-                                fontFamily: '"Playfair Display",Georgia,serif',
-                                fontSize: 16, fontWeight: 800, color: '#1A0800',
-                                lineHeight: 1.2,
-                              }}>
-                                {p.name}
-                              </div>
-
-                              {/* Rating + verified */}
-                              <div style={{
-                                display: 'flex', alignItems: 'center', gap: 12,
-                                fontSize: 13, marginTop: 4,
-                              }}>
-                                <span style={{
-                                  color: '#5A2A00', fontWeight: 800,
-                                  display: 'flex', alignItems: 'center', gap: 3,
-                                }}>
-                                  <span style={{ color: '#E0A020', fontSize: 14 }}>★</span>
-                                  {p.rating.toFixed(1)}
-                                </span>
-                                {p.isVerified && (
-                                  <span style={{
-                                    display: 'flex', alignItems: 'center', gap: 4,
-                                    color: '#0F5132', fontWeight: 700, fontSize: 12,
-                                  }}>
-                                    <span style={{
-                                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                      width: 15, height: 15, borderRadius: '50%',
-                                      background: '#16a34a', color: '#fff',
-                                      fontSize: 10, fontWeight: 900,
-                                    }}>✓</span>
-                                    Verified
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Specialisations */}
-                              <div style={{
-                                fontSize: 12, color: '#3D1F00', marginTop: 5,
-                                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                fontWeight: 500,
-                              }}>
-                                {p.specialisations.length > 0
-                                  ? p.specialisations.slice(0, 3).join(', ')
-                                  : `${p.yearsExp}+ yrs · ${p.languages.slice(0,2).join(', ')}`}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Ornate bottom border — mirrors the top */}
-                          <div style={{
-                            height: 3,
-                            background: 'linear-gradient(90deg,transparent 0%,#8B5A16 20%,#8B5A16 80%,transparent 100%)',
-                            opacity: 0.55,
-                          }} />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            {/* The Astrologers/Pandits toggle + golden Nearby/Global panel +
+             * provider cards now live in the shared <ProviderMarketplace/>.
+             * Same UI, same fetch endpoints, same look — factored out so
+             * /priests (FaithDetailPage) can render the exact same view and
+             * open its 3-button bottom sheet on tap instead of advancing
+             * the invite wizard. Tapping here still just selects the
+             * provider for this booking flow. */}
+            <ProviderMarketplace
+              faith={faith}
+              userCity={userCity}
+              onProviderTap={(p) => setSelectedPriest(p)}
+              priestRoleLabel={cfg.role}
+            />
 
             <Next
               disabled={!selectedPriest}
               onClick={() => setStep(prefillCeremony ? 'when' : 'ceremony')}
               label={selectedPriest
                 ? `Continue with ${selectedPriest.name.split(' ').slice(0,2).join(' ')}`
-                : `Pick a ${providerLabel} to continue`}
+                : `Pick a ${cfg.role} to continue`}
             />
           </div>
         )}

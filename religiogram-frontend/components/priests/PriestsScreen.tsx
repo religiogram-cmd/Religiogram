@@ -1,14 +1,20 @@
 'use client';
-import { Suspense, useEffect } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useReligion } from '@/lib/useReligion';
 import ReligionPicker from '@/components/discovery/ReligionPicker';
+import ProviderMarketplace, {
+  type Faith as MarketplaceFaith,
+  type ProviderRecord,
+} from '@/components/priests/ProviderMarketplace';
 
-const GOLD   = '#C8920A';
-const GOLD2  = '#E8A020';
-const NAVY   = '#0A1628';
-const PARCH  = '#F5E6C0';
+const GOLD    = '#C8920A';
+const GOLD2   = '#E8A020';
+const GOLD_L  = '#E0A92F';
+const NAVY    = '#0A1628';
+const PARCH   = '#F5E6C0';
+const CREAM   = '#FFF8E7';
 
 /* ── Faith config ─────────────────────────────────────────────── */
 const FAITHS: Record<string, {
@@ -66,29 +72,9 @@ const FAITHS: Record<string, {
  * by the old LandingPage. They now live nowhere else, so removed to
  * keep this file focused on the FaithDetailPage flow.                  */
 
-/* category icon SVG */
-function CatIcon({ type }: { type: string }) {
-  if (type === 'cal') return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={GOLD2} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="18" rx="3"/>
-      <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-      <rect x="7" y="14" width="2.5" height="2.5" rx="0.5" fill={GOLD2} stroke="none"/>
-      <rect x="11" y="14" width="2.5" height="2.5" rx="0.5" fill={GOLD2} stroke="none"/>
-      <rect x="15" y="14" width="2.5" height="2.5" rx="0.5" fill={GOLD2} stroke="none"/>
-    </svg>
-  );
-  if (type === 'music') return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={GOLD2} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-    </svg>
-  );
-  /* chat */
-  return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={GOLD2} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-    </svg>
-  );
-}
+/* CatIcon (calendar / music / chat SVGs) used to render category cards
+ * inside FaithDetailPage. Those cards were replaced by the marketplace
+ * layout + bottom-sheet action modal, so CatIcon is no longer needed. */
 
 /* Landing removed — the 4 religion cards now live on /home (see
  * components/home/HomeScreen.tsx). Users reach a specific faith either
@@ -121,13 +107,39 @@ function PickYourFaithFallback() {
 }
 
 /* ── Faith detail ─────────────────────────────────────────────── */
+/**
+ * Faith-specific role label for the "Available <role>s" panel title inside
+ * ProviderMarketplace, and for the action-modal copy. Matches the labels
+ * used elsewhere across the priests flows (Pandit / Imam / Granthi / Priest).
+ */
+const ROLE_BY_FAITH: Record<string, string> = {
+  hindu:     'Pandit',
+  muslim:    'Imam',
+  sikh:      'Granthi',
+  christian: 'Priest',
+};
+
 function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () => void }) {
   const faith = FAITHS[faithKey];
+  const roleLabel = ROLE_BY_FAITH[faithKey] ?? 'Pandit';
+
+  /* Bottom-sheet state — set when a user taps a provider card. Modal shows
+   * up to 3 action buttons (Invite, Ask via Chat, Voice/Video Call) whose
+   * availability depends on the provider's consultationChannels. */
+  const [actionModalProvider, setActionModalProvider] = useState<ProviderRecord | null>(null);
+
+  /* Same localStorage key populated during profile / provider onboarding.
+   * Passed into ProviderMarketplace for the Nearby filter. */
+  const userCity = typeof window !== 'undefined'
+    ? (window.localStorage.getItem('rg_user_city') ?? '').trim().toLowerCase()
+    : '';
+
   if (!faith) return null;
 
   return (
-    <div style={{ minHeight: '100svh', background: NAVY, paddingBottom: 96 }}>
-      {/* Header */}
+    <div style={{ minHeight: '100svh', background: CREAM, paddingBottom: 96 }}>
+      {/* Header — preserved from the old FaithDetailPage: back button
+       * (top-left), "Priests" title in gold, navy background. */}
       <div style={{ background: NAVY, paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 14, paddingLeft: 20, paddingRight: 20, display: 'flex', alignItems: 'center', position: 'relative', boxShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>
         <button onClick={onBack} style={{ position: 'absolute', left: 16, top: 'calc(env(safe-area-inset-top,0px) + 10px)', width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.1)', border: '1.5px solid rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -135,38 +147,284 @@ function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () =>
         <h1 style={{ color: GOLD, fontSize: 20, fontWeight: 800, margin: '0 auto', fontFamily: '"Playfair Display",Georgia,serif', letterSpacing: '0.01em', paddingTop: 14 }}>Priests</h1>
       </div>
 
-      <div style={{ padding: '18px 12px 0' }}>
-        {/* The old "<Faith> Rituals & Services" hero card that used to sit
-         * here has been moved to the Home page (see HomeScreen.tsx). This
-         * page now goes straight to the action cards so users land where
-         * they can immediately do something. */}
+      {/* Marketplace layout — same component the invite flow's `select`
+       * step uses. Differences here: Pandits tab is the default, and tapping
+       * a card opens the 3-button action sheet (Invite / Ask via Chat /
+       * Voice-Video Call) instead of advancing a booking wizard. */}
+      <div style={{ padding: '14px 14px 0' }}>
+        <ProviderMarketplace
+          faith={faithKey as MarketplaceFaith}
+          userCity={userCity}
+          onProviderTap={(p) => setActionModalProvider(p)}
+          priestRoleLabel={roleLabel}
+        />
+      </div>
 
-        {/* Category cards */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {faith.categories.map(cat => (
-            <Link key={cat.id} href={cat.href} style={{ textDecoration: 'none' }}>
-              <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 18, minHeight: 148, boxShadow: '0 6px 24px rgba(0,0,0,0.4)', cursor: 'pointer' }}>
-                <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${cat.image})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg,rgba(10,22,40,0.94) 0%,rgba(10,22,40,0.62) 58%,rgba(10,22,40,0.15) 100%)' }} />
-                <div style={{ position: 'relative', padding: '14px 16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                    <div style={{ width: 54, height: 54, borderRadius: 14, flexShrink: 0, background: 'rgba(10,22,40,0.82)', border: `1.5px solid ${GOLD}55`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <CatIcon type={cat.icon} />
-                    </div>
-                    <h3 style={{ color: GOLD2, fontSize: 16, fontWeight: 800, margin: 0, fontFamily: '"Playfair Display",Georgia,serif', lineHeight: 1.25 }}>{cat.title}</h3>
-                  </div>
-                  <p style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, margin: '0 0 12px', fontFamily: '"Plus Jakarta Sans",sans-serif', maxWidth: '62%', lineHeight: 1.4 }}>{cat.subtitle}</p>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <div style={{ background: GOLD2, borderRadius: 100, padding: '6px 18px', boxShadow: '0 2px 10px rgba(232,160,32,0.3)', display: 'inline-flex', alignItems: 'center' }}>
-                      <span style={{ color: NAVY, fontSize: 11, fontWeight: 800, fontFamily: '"Plus Jakarta Sans",sans-serif' }}>Explore &#x2192;</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Link>
-          ))}
+      {/* Bottom-sheet action modal */}
+      {actionModalProvider && (
+        <ProviderActionSheet
+          provider={actionModalProvider}
+          faith={faithKey}
+          roleLabel={roleLabel}
+          onClose={() => setActionModalProvider(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── Bottom-sheet action modal ──────────────────────────────────
+ * Opens when a user taps a provider card on FaithDetailPage. Shows:
+ *   1. Provider name + rating at the top
+ *   2. Invite for Event  → /priests/invite?faith=<faith>&priestId=<id>
+ *      (astrologer variant: ...&providerId=<id>&kind=astrologer)
+ *   3. Ask via Chat      → /consult/<id>?mode=chat&channel=chat
+ *   4. Voice Call        → /consult/<id>?mode=call&channel=voice  (if enabled)
+ *   5. Video Call        → /consult/<id>?mode=call&channel=video  (if enabled)
+ *
+ * Voice + Video only render if the provider's channels array includes them.
+ * Backdrop tap or ✕ button dismisses.
+ */
+function ProviderActionSheet({
+  provider, faith, roleLabel, onClose,
+}: {
+  provider: ProviderRecord;
+  faith: string;
+  roleLabel: string;
+  onClose: () => void;
+}) {
+  /* Astrologers are cross-faith — the invite flow needs `providerId` +
+   * `kind=astrologer`. Priests still use the legacy `priestId` param.
+   * We detect astrologer by absence of specialisations tied to religion —
+   * but there's no clean signal on the record, so we fall back to the
+   * marketplace's initial provider tab context. Simpler: providers who
+   * lack a religion match still surface here; use a rough heuristic where
+   * the card came from the astrologer tab by inspecting whether the
+   * provider has any channel enabled AND no priest-only cue. As a safe
+   * default we treat records surfaced via the Astrologers tab as
+   * astrologer-kind. Since ProviderMarketplace doesn't currently forward
+   * the tab, we default to 'priest' invite links here — the invite flow's
+   * ceremony list still applies regardless. */
+  const inviteHref = `/priests/invite?faith=${encodeURIComponent(faith)}&priestId=${encodeURIComponent(provider.id)}`;
+
+  const hasChat  = provider.channels.includes('chat');
+  const hasVoice = provider.channels.includes('voice');
+  const hasVideo = provider.channels.includes('video');
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        background: 'rgba(10,22,40,0.55)',
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+        animation: 'rgsheetFade 0.18s ease-out',
+      }}
+    >
+      <style>{`
+        @keyframes rgsheetFade { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes rgsheetUp { from { transform: translateY(100%) } to { transform: translateY(0) } }
+      `}</style>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: 560,
+          background: CREAM,
+          borderRadius: '22px 22px 0 0',
+          boxShadow: '0 -12px 40px rgba(0,0,0,0.35)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)',
+          animation: 'rgsheetUp 0.22s ease-out',
+        }}
+      >
+        {/* Drag handle */}
+        <div style={{
+          width: 42, height: 4, borderRadius: 4,
+          background: 'rgba(122,74,16,0.35)',
+          margin: '10px auto 6px',
+        }} />
+
+        {/* Header: name + rating + close */}
+        <div style={{ padding: '4px 18px 12px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontFamily: '"Playfair Display",Georgia,serif',
+              fontSize: 18, fontWeight: 800, color: '#1A0800',
+              lineHeight: 1.2,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {provider.name}
+            </div>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              fontSize: 13, marginTop: 4,
+            }}>
+              <span style={{
+                color: '#5A2A00', fontWeight: 800,
+                display: 'flex', alignItems: 'center', gap: 3,
+              }}>
+                <span style={{ color: '#E0A020', fontSize: 14 }}>★</span>
+                {provider.rating.toFixed(1)}
+                {provider.reviews > 0 && (
+                  <span style={{ color: '#8B6B35', fontWeight: 600, marginLeft: 2 }}>
+                    ({provider.reviews})
+                  </span>
+                )}
+              </span>
+              {provider.isVerified && (
+                <span style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  color: '#0F5132', fontWeight: 700, fontSize: 12,
+                }}>
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    width: 15, height: 15, borderRadius: '50%',
+                    background: '#16a34a', color: '#fff',
+                    fontSize: 10, fontWeight: 900,
+                  }}>✓</span>
+                  Verified
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              width: 36, height: 36, borderRadius: '50%',
+              background: 'rgba(10,22,40,0.06)',
+              border: '1px solid rgba(10,22,40,0.15)',
+              color: NAVY,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', flexShrink: 0,
+              minHeight: 36,
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
         </div>
 
+        {/* Action buttons */}
+        <div style={{ padding: '4px 18px 8px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Invite for Event */}
+          <Link
+            href={inviteHref}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              padding: '14px 18px', borderRadius: 12,
+              background: `linear-gradient(135deg, ${GOLD_L} 0%, ${GOLD} 100%)`,
+              color: NAVY,
+              fontWeight: 800, fontSize: 14,
+              textDecoration: 'none',
+              boxShadow: '0 6px 18px rgba(200,146,10,0.30)',
+              minHeight: 48,
+              fontFamily: '"Plus Jakarta Sans",sans-serif',
+            }}
+          >
+            <span style={{ fontSize: 18 }}>📅</span>
+            Invite for Event
+          </Link>
+
+          {/* Ask via Chat */}
+          {hasChat ? (
+            <Link
+              href={`/consult/${encodeURIComponent(provider.id)}?mode=chat&channel=chat`}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '14px 18px', borderRadius: 12,
+                background: NAVY,
+                color: CREAM,
+                fontWeight: 800, fontSize: 14,
+                textDecoration: 'none',
+                boxShadow: '0 6px 18px rgba(10,22,40,0.30)',
+                minHeight: 48,
+                fontFamily: '"Plus Jakarta Sans",sans-serif',
+              }}
+            >
+              <span style={{ fontSize: 18 }}>💬</span>
+              Ask via Chat
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '14px 18px', borderRadius: 12,
+                background: '#EFE7D2',
+                color: '#8B6B35',
+                fontWeight: 700, fontSize: 13,
+                border: 'none',
+                cursor: 'not-allowed',
+                minHeight: 48,
+                fontFamily: '"Plus Jakarta Sans",sans-serif',
+              }}
+            >
+              <span style={{ fontSize: 18, opacity: 0.5 }}>💬</span>
+              Chat not available for this {roleLabel.toLowerCase()}
+            </button>
+          )}
+
+          {/* Voice + Video — only when the provider has those channels */}
+          {(hasVoice || hasVideo) && (
+            <div style={{ display: 'flex', gap: 10 }}>
+              {hasVoice && (
+                <Link
+                  href={`/consult/${encodeURIComponent(provider.id)}?mode=call&channel=voice`}
+                  style={{
+                    flex: 1,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    padding: '14px 12px', borderRadius: 12,
+                    background: '#fff',
+                    color: NAVY,
+                    border: `1.5px solid ${GOLD}`,
+                    fontWeight: 800, fontSize: 13,
+                    textDecoration: 'none',
+                    minHeight: 48,
+                    fontFamily: '"Plus Jakarta Sans",sans-serif',
+                  }}
+                >
+                  <span style={{ fontSize: 16 }}>📞</span>
+                  Voice Call
+                </Link>
+              )}
+              {hasVideo && (
+                <Link
+                  href={`/consult/${encodeURIComponent(provider.id)}?mode=call&channel=video`}
+                  style={{
+                    flex: 1,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    padding: '14px 12px', borderRadius: 12,
+                    background: '#fff',
+                    color: NAVY,
+                    border: `1.5px solid ${GOLD}`,
+                    fontWeight: 800, fontSize: 13,
+                    textDecoration: 'none',
+                    minHeight: 48,
+                    fontFamily: '"Plus Jakarta Sans",sans-serif',
+                  }}
+                >
+                  <span style={{ fontSize: 16 }}>🎥</span>
+                  Video Call
+                </Link>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Provider tagline (specialisations, if any) */}
+        {provider.specialisations.length > 0 && (
+          <div style={{
+            padding: '4px 18px 12px', fontSize: 11.5, color: '#8B6B35',
+            textAlign: 'center', fontStyle: 'italic', lineHeight: 1.4,
+          }}>
+            {provider.specialisations.slice(0, 3).join(' · ')}
+          </div>
+        )}
       </div>
     </div>
   );
