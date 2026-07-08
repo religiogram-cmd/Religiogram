@@ -148,15 +148,19 @@ function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () =>
       </div>
 
       {/* Marketplace layout — same component the invite flow's `select`
-       * step uses. Differences here: Pandits tab is the default, and tapping
+       * step uses. Differences here: Pandits tab is the default, tapping
        * a card opens the 3-button action sheet (Invite / Ask via Chat /
-       * Voice-Video Call) instead of advancing a booking wizard. */}
+       * Voice-Video Call) instead of advancing a booking wizard, and the
+       * Astrologers tab NAVIGATES to /astrology/browse (which has the
+       * richer hero + search + topic chips + full filter sheet) instead
+       * of showing the golden marketplace panel for astrologers. */}
       <div style={{ padding: '14px 14px 0' }}>
         <ProviderMarketplace
           faith={faithKey as MarketplaceFaith}
           userCity={userCity}
           onProviderTap={(p) => setActionModalProvider(p)}
           priestRoleLabel={roleLabel}
+          astrologerHref="/astrology/browse"
         />
       </div>
 

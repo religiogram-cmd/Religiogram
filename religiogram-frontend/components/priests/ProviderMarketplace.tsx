@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { tokenStore } from '@/lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1';
@@ -47,6 +48,12 @@ interface Props {
   /** Role label to substitute for "Pandits" (e.g. faith-specific "Imams",
    *  "Granthis", "Priests"). Default: 'Pandit'. */
   priestRoleLabel?: string;
+  /** If set, the Astrologers tab becomes a navigation link to this URL
+   *  instead of toggling to the local astrologer list. FaithDetailPage
+   *  passes `/astrology/browse` so users get the full-featured astrology
+   *  marketplace (hero + search + topic chips + filters). The invite flow
+   *  leaves this unset — tab toggle stays local. */
+  astrologerHref?: string;
 }
 
 /**
@@ -66,8 +73,21 @@ export default function ProviderMarketplace({
   onProviderTap,
   initialProviderTab = 'priest',
   priestRoleLabel = 'Pandit',
+  astrologerHref,
 }: Props) {
+  const router = useRouter();
   const [providerTab, setProviderTab] = useState<'astrologer' | 'priest'>(initialProviderTab);
+  /* When a nav URL is provided for the Astrologers tab, tapping it routes
+   * there instead of toggling to the local astrologer list. Used by
+   * FaithDetailPage to send users to /astrology/browse (which has the
+   * richer hero + search + topic chips + filters UI). */
+  const handleAstrologerTap = () => {
+    if (astrologerHref) {
+      router.push(astrologerHref);
+      return;
+    }
+    setProviderTab('astrologer');
+  };
   const providerLabel = providerTab === 'astrologer' ? 'Astrologer' : priestRoleLabel;
 
   const [allPriests, setAllPriests] = useState<ProviderRecord[]>([]);
@@ -142,7 +162,7 @@ export default function ProviderMarketplace({
       }}>
         <button
           type="button"
-          onClick={() => setProviderTab('astrologer')}
+          onClick={handleAstrologerTap}
           style={{
             flex: 1, padding: '11px 0', borderRadius: 999, border: 'none',
             background: providerTab === 'astrologer' ? NAVY : 'transparent',
