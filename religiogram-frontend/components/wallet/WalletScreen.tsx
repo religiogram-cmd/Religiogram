@@ -126,7 +126,6 @@ export default function WalletScreen() {
 
   const isError = !!msg && (msg.includes('failed') || msg.includes('valid') || msg.includes('Minimum') || msg.includes('Maximum'));
   const balR = bal ? fmt(bal.availablePaise, 2) : '—';
-  const proR = bal ? fmt(bal.promoCreditsPaise) : '—';
   const hldR = bal ? fmt(bal.heldPaise)         : '0';
 
   return (
@@ -145,8 +144,7 @@ export default function WalletScreen() {
             ? <p style={{ color:'#fff', fontSize:28, fontWeight:800, margin:'0 0 6px' }}>Loading...</p>
             : <p style={{ color:'#fff', fontSize:38, fontWeight:800, margin:'0 0 6px', letterSpacing:'-0.02em' }}>{balR}</p>
           }
-          <p style={{ color:'#C8920ACC', fontSize:13, margin:'0 0 12px', fontWeight:600 }}>Promo Credits: {proR}</p>
-          <div style={{ display:'flex', alignItems:'center', gap:6, borderTop:'1px solid rgba(255,255,255,0.15)', paddingTop:12 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6, borderTop:'1px solid rgba(255,255,255,0.15)', paddingTop:12, marginTop:12 }}>
             <span style={{ color:'rgba(255,255,255,0.6)', fontSize:12 }}>Held:</span>
             <span style={{ color:'#fff', fontSize:12, fontWeight:600 }}>{hldR}</span>
           </div>
@@ -176,7 +174,7 @@ export default function WalletScreen() {
             <div style={{ flex:1, display:'flex', alignItems:'center', border:'1.5px solid rgba(27,42,92,0.2)', borderRadius:10, padding:'0 12px', background:'#FFFBF0' }}>
               <span style={{ color:'#7A6650', fontSize:16, marginRight:4 }}>₹</span>
               <input
-                type="number" placeholder="Min ₹10, max ₹50,000"
+                type="number" placeholder="Enter amount"
                 value={ca} onChange={e => setCa(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && addCustom()}
                 min={10} max={50000}
