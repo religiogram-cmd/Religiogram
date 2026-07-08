@@ -1,9 +1,8 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 const GOLD = '#C8920A';
-const GOLD2 = '#E8A020';
 const NAVY = '#0A1628';
 const PARCH = '#F5E6C0';
 
@@ -127,13 +126,15 @@ export default function RitualsScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  /* Honour ?faith= from the Home page's faith cards. Falls back to
-   * 'hindu' when the param is missing or not one of the known faiths. */
-  const initialFaith = (() => {
+  /* Faith is now driven purely by the URL — the visible faith tab strip
+   * was removed in favour of a single-faith view. Users land here with
+   * ?faith=hindu (or muslim / sikh / christian) from the Home page's
+   * "Explore" cards, and this screen shows that faith's rituals directly.
+   * Falls back to 'hindu' if the param is missing or unrecognised. */
+  const activeFaith = (() => {
     const f = (searchParams?.get('faith') ?? '').toLowerCase();
     return f in FAITH_META ? f : 'hindu';
   })();
-  const [activeFaith, setActiveFaith] = useState<string>(initialFaith);
 
   const rituals = CATALOG[activeFaith] ?? [];
 
@@ -165,33 +166,17 @@ export default function RitualsScreen() {
 
   return (
     <div style={{ minHeight: '100svh', background: PARCH, paddingBottom: 96 }}>
-      {/* Header */}
-      <div style={{ background: NAVY, paddingTop: 'env(safe-area-inset-top,0px)', padding: '16px 20px 20px' }}>
-        <h1 style={{ color: GOLD, fontSize: 20, fontWeight: 800, margin: '0 0 4px', fontFamily: '"Playfair Display",Georgia,serif', paddingTop: 14 }}>
-          Rituals & Services
+      {/* Header — single-faith view. The faith selector strip that used
+       * to sit here was removed; users land here from Home's faith cards
+       * which already encode the choice in the URL. The title reflects
+       * the active faith so it's obvious which catalog is showing. */}
+      <div style={{ background: NAVY, paddingTop: 'env(safe-area-inset-top,0px)', padding: '16px 20px 22px' }}>
+        <h1 style={{ color: GOLD, fontSize: 22, fontWeight: 800, margin: '0 0 4px', fontFamily: '"Playfair Display",Georgia,serif', paddingTop: 14 }}>
+          {FAITH_META[activeFaith]?.emoji} {FAITH_META[activeFaith]?.label} Rituals
         </h1>
-        <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, margin: '0 0 14px', fontFamily: '"Plus Jakarta Sans",sans-serif' }}>
-          Book a verified priest for pujas, ceremonies & rituals
+        <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12.5, margin: 0, fontFamily: '"Plus Jakarta Sans",sans-serif' }}>
+          Book a verified priest for pujas, ceremonies &amp; rituals
         </p>
-
-        {/* Faith tabs */}
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none' }}>
-          {Object.entries(FAITH_META).map(([f, meta]) => (
-            <button
-              key={f}
-              onClick={() => setActiveFaith(f)}
-              style={{
-                flexShrink: 0, padding: '8px 18px', borderRadius: 100, cursor: 'pointer',
-                background: activeFaith === f ? GOLD2 : 'rgba(255,255,255,0.1)',
-                border: 'none',
-                color: activeFaith === f ? NAVY : 'rgba(255,255,255,0.75)',
-                fontSize: 12.5, fontWeight: 700, fontFamily: '"Plus Jakarta Sans",sans-serif',
-              }}
-            >
-              {meta.emoji} {meta.label}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Body */}
