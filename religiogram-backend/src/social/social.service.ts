@@ -381,7 +381,17 @@ export class SocialService {
       } catch (err: any) { lastErr = err; }
     }
     if (!inserted) throw new BadRequestException(`Could not create post: ${lastErr?.message ?? 'DB error'}`);
-    setImmediate(() => { this.ds.query(`INSERT INTO feed_items (user_id,post_id,inserted_at) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [authorId,postId,now]).catch(()=>{}); try { this.redis.publish(`feed:${authorId}`, JSON.stringify({postId,authorId,createdAt:now})); } catch {} });
+    /* Fan-out to followers' feeds.
+     * Previously this only inserted the author's own row into feed_items
+     * (with the WRONG columns — user_id/inserted_at — which no longer
+     * exist), so followers never saw new posts unless the friendship
+     * back-fill happened to catch them. Now we route through the same
+     * sync/async decision the community createCommunityPost uses. Live
+     * pub/sub still fires for author-echo. */
+    setImmediate(() => {
+      this._fanOutPost(postId, authorId, now).catch(() => {});
+      try { this.redis.publish(`feed:${authorId}`, JSON.stringify({ postId, authorId, createdAt: now })); } catch {}
+    });
     return { id: postId, authorId, caption, imageUrls, likesCount: 0, commentsCount: 0, sharesCount: 0, isDeleted: false, hashtags: [], postType: 'text', category: null, text: caption, imageUrl: null, createdAt: now, updatedAt: now } as any;
   }
 

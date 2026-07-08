@@ -194,6 +194,26 @@ export class ConsultationController {
     return this.introSvc.endSession(sessionId, userId);
   }
 
+  /**
+   * POST /v1/consultation/:id/accept — provider answers an incoming call.
+   *
+   * Cancels the 30 s answer-timeout armed by startSession() and
+   * transitions the session from REQUESTED → ACTIVE. Idempotent: a
+   * second accept from the same provider is a no-op.
+   *
+   * Auth: JwtAuthGuard (class-level).  ForbiddenException if the caller
+   * is not the target provider on the session.
+   */
+  @Post(':id/accept')
+  @ApiOperation({ summary: 'Provider accepts an incoming consultation call' })
+  async acceptConsultation(
+    @Req() req: any,
+    @Param('id') sessionId: string,
+  ) {
+    const userId = req.user?.sub ?? req.user?.id;
+    return this.introSvc.acceptSession(sessionId, userId);
+  }
+
   /** GET /v1/consultation/:id — live screen reconnect state §8.3 */
   @Get(':id')
   async getConsultation(

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ProviderEntity, ProviderStatus } from './entities/provider.entity';
 
@@ -48,6 +48,7 @@ export class RankingService {
   constructor(
     @InjectRepository(ProviderEntity)
     private readonly providers: Repository<ProviderEntity>,
+    @InjectDataSource() private readonly ds: DataSource,
   ) {}
 
   /** Recompute one provider's score. Idempotent, safe to call at any time. */
@@ -59,19 +60,94 @@ export class RankingService {
     return score;
   }
 
-  /** Full sweep — used by cron and admin trigger. Returns count updated. */
+  /** Full sweep — used by cron and admin trigger. Returns count updated.
+   *
+   * Rewritten from N+1 (SELECT + N UPDATEs) to a single UPDATE ... FROM
+   * that recomputes ranking_score in-database for every approved provider
+   * in one round-trip. Mirrors the fields used by computeScore() so the
+   * batch path stays in lock-step with the per-provider bump() path.
+   *
+   * Formula (must mirror computeScore):
+   *   20 · gatekeep(approved)
+   * + 10 · is_verified
+   * + 20 · profile_completeness (0..1)
+   * + min(20, rating_avg/5 · 20)               when rating_avg > 0
+   * + min(15, log10(rating_count + 1) · 5)     when rating_count > 0
+   * + min(25, log10(completed_bookings_count + 1) · 5) when > 0
+   * +  5 · is_online
+   * +  5 · exp_decay(last_activity_at, 24h half-life)
+   * + (min(20, experience_years) / 20) · 15   when > 0
+   *
+   * Weights per profileCompleteness():
+   *   fullName=1, city=1, bio(>=40)=1.5, languages(any)=1,
+   *   experience_years>0=1, pan_s3_key=1, selfie_s3_key=1  → total 7.5
+   */
   async recomputeAll(): Promise<{ updated: number; ms: number }> {
     const started = Date.now();
-    // Only rank approved providers — draft/pending/rejected/suspended stay
-    // at 0. Keeps the marketplace list clean and the sweep small.
-    const rows = await this.providers.find({ where: { status: ProviderStatus.Approved } });
-    for (const p of rows) {
-      const score = this.computeScore(p);
-      await this.providers.update({ id: p.id }, { rankingScore: score.toFixed(2) });
+    const result = await this.ds.query(
+      `
+      WITH scored AS (
+        SELECT
+          id,
+          ROUND(
+            (
+              20
+              + (CASE WHEN is_verified THEN 10 ELSE 0 END)
+              + 20 * (
+                (
+                    (CASE WHEN COALESCE(full_name, '') <> '' THEN 1 ELSE 0 END)
+                  + (CASE WHEN COALESCE(city, '') <> '' THEN 1 ELSE 0 END)
+                  + (CASE WHEN COALESCE(LENGTH(bio), 0) >= 40 THEN 1.5 ELSE 0 END)
+                  + (CASE WHEN languages IS NOT NULL AND array_length(languages, 1) > 0 THEN 1 ELSE 0 END)
+                  + (CASE WHEN experience_years IS NOT NULL AND experience_years > 0 THEN 1 ELSE 0 END)
+                  + (CASE WHEN COALESCE(pan_s3_key, '') <> '' THEN 1 ELSE 0 END)
+                  + (CASE WHEN COALESCE(selfie_s3_key, '') <> '' THEN 1 ELSE 0 END)
+                ) / 7.5
+              )
+              + (CASE WHEN COALESCE(rating_avg, 0) > 0
+                      THEN LEAST(20.0, (COALESCE(rating_avg, 0) / 5.0) * 20.0)
+                      ELSE 0 END)
+              + (CASE WHEN COALESCE(rating_count, 0) > 0
+                      THEN LEAST(15.0, LOG(10, COALESCE(rating_count, 0) + 1) * 5.0)
+                      ELSE 0 END)
+              + (CASE WHEN COALESCE(completed_bookings_count, 0) > 0
+                      THEN LEAST(25.0, LOG(10, COALESCE(completed_bookings_count, 0) + 1) * 5.0)
+                      ELSE 0 END)
+              + (CASE WHEN is_online THEN 5 ELSE 0 END)
+              + 5 * (
+                CASE WHEN last_activity_at IS NULL THEN 0
+                     ELSE GREATEST(0.0,
+                       POWER(0.5, EXTRACT(EPOCH FROM (NOW() - last_activity_at)) / 3600.0 / 24.0)
+                     )
+                END
+              )
+              + (CASE WHEN COALESCE(experience_years, 0) > 0
+                      THEN (LEAST(20, experience_years)::numeric / 20.0) * 15.0
+                      ELSE 0 END)
+            )::numeric, 2
+          ) AS new_score
+        FROM providers
+        WHERE status = 'approved'
+      )
+      UPDATE providers p
+      SET ranking_score = s.new_score
+      FROM scored s
+      WHERE p.id = s.id
+      `,
+    );
+    // `result` shape varies by driver; TypeORM postgres driver returns
+    // [rows, affectedRows]. Fall back to a count query if the shape differs.
+    let updated = 0;
+    if (Array.isArray(result) && typeof result[1] === 'number') {
+      updated = result[1];
+    } else if (result && typeof (result as any).affected === 'number') {
+      updated = (result as any).affected;
+    } else {
+      updated = await this.providers.count({ where: { status: ProviderStatus.Approved } });
     }
     const ms = Date.now() - started;
-    this.logger.log(`recomputeAll: updated ${rows.length} providers in ${ms}ms`);
-    return { updated: rows.length, ms };
+    this.logger.log(`recomputeAll: updated ${updated} providers in ${ms}ms (single-statement)`);
+    return { updated, ms };
   }
 
   /** The score formula. Pure — takes a snapshot of the row, returns a number. */

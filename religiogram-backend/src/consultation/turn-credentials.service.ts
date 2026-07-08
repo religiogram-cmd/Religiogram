@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac } from 'crypto';
 
@@ -48,6 +48,20 @@ export class TurnCredentialsService {
         credential,
       });
     } else {
+      const env = this.config.get<string>('app.env', process.env.NODE_ENV ?? 'development');
+      if (env === 'production') {
+        // Fail LOUD in prod — silently returning STUN-only meant ~30% of
+        // real-world users (symmetric NAT on carrier / hotel wifi) lost
+        // their call with no diagnostic. Better to reject the call so the
+        // user sees a clear error and support can triage.
+        this.logger.error(
+          'TURN_HOST / TURN_SHARED_SECRET not configured in production — refusing to issue ICE credentials.',
+        );
+        throw new ServiceUnavailableException({
+          code: 'TURN_NOT_CONFIGURED',
+          message: 'Voice/video calling is temporarily unavailable — please try again in a few minutes.',
+        });
+      }
       this.logger.warn('TURN not configured — public STUN only. Calls behind symmetric NAT will fail.');
     }
 

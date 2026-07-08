@@ -43,6 +43,9 @@ import { RankingService } from '../service-providers/ranking.service';
 import { encodeCursor, decodeCursor } from '../common/pagination/cursor';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
+import { AccountStatus, User } from '../users/entities/user.entity';
+import { TokenService } from '../auth/services/token.service';
+import { RedisService } from '../redis/redis.service';
 
 class ModerateProviderDto {
   @IsEnum(['approve', 'reject', 'suspend', 'ban'], {
@@ -138,9 +141,13 @@ export class AdminProvidersController {
   constructor(
     @InjectRepository(ProviderEntity)
     private readonly providerRepo: Repository<ProviderEntity>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly audit: AdminAuditService,
     private readonly bookingsSvc: BookingsService,
     private readonly ranking: RankingService,
+    private readonly tokens: TokenService,
+    private readonly redis: RedisService,
   ) {}
 
   /**
@@ -292,6 +299,42 @@ export class AdminProvidersController {
     if (dto.action === 'suspend' || dto.action === 'ban') {
       const cancelled = await this.bookingsSvc.cancelBookingsByProvider(id, `provider_${dto.action}`);
       this.logger.log({ providerId: id, cancelled }, `Auto-cancelled ${cancelled} bookings on provider ${dto.action}`);
+
+      /* ─── Cascade to user account.
+       * Previously suspending/banning a provider left their user account
+       * ACTIVE, so their sessions kept minting new access tokens and they
+       * could still log in / DM / post socially. Match the behaviour of
+       * admin-users.controller::updateStatus: flip accountStatus, revoke
+       * refresh tokens, stamp minIat so any live JWT is rejected on next
+       * request, and let the socket gateways hang up via the pub/sub. */
+      const newAccountStatus =
+        dto.action === 'ban' ? AccountStatus.BANNED : AccountStatus.SUSPENDED;
+      const userId = provider.userId;
+      if (userId) {
+        try {
+          await this.userRepo.update({ id: userId }, { accountStatus: newAccountStatus });
+        } catch (e) {
+          this.logger.warn(`user status cascade failed for ${userId}: ${(e as Error).message}`);
+        }
+        const nowSec = Math.floor(Date.now() / 1000);
+        await Promise.all([
+          this.tokens.revokeAllForUser(userId).catch((e) =>
+            this.logger.warn(`revokeAllForUser failed for ${userId}: ${(e as Error).message}`),
+          ),
+          this.redis.getClient().set(`user:${userId}:minIat`, String(nowSec)).catch((e) =>
+            this.logger.warn(`minIat stamp failed for ${userId}: ${(e as Error).message}`),
+          ),
+        ]);
+        // Second audit row so the user-level cascade is discoverable in the
+        // admin log even when searching by target_type='user'.
+        await this.audit.log({
+          adminId: me.id,
+          actionType: `user.status.${newAccountStatus}`,
+          targetType: 'user',
+          targetId: userId,
+          justification: `Cascaded from provider ${dto.action}: ${dto.reason ?? ''}`,
+        }).catch(() => {});
+      }
     }
 
     return { success: true, providerId: id, newStatus: update.status };

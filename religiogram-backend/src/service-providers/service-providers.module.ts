@@ -25,6 +25,7 @@ import {
 import { AdminRankingController } from './admin-ranking.controller';
 import { RankingService } from './ranking.service';
 import { ProviderOnboardingService } from './service-providers.service';
+import { BankVerificationService } from './bank-verification.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UploadsModule } from '../uploads/uploads.module';
 
@@ -56,7 +57,7 @@ import { UploadsModule } from '../uploads/uploads.module';
     AdminSpecialisationsController,
     AdminRankingController,
   ],
-  providers: [ProviderOnboardingService, RankingService],
-  exports: [ProviderOnboardingService, RankingService, TypeOrmModule],
+  providers: [ProviderOnboardingService, RankingService, BankVerificationService],
+  exports: [ProviderOnboardingService, RankingService, BankVerificationService, TypeOrmModule],
 })
 export class ServiceProvidersModule {}

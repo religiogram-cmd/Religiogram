@@ -53,6 +53,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { UploadsService } from '../uploads/uploads.service';
 import { EncryptionService } from '../common/encryption/encryption.service';
+import { BankVerificationService } from './bank-verification.service';
 
 /* ─────────── DTOs ─────────── */
 
@@ -272,6 +273,7 @@ export class ProviderOnboardingV2Controller {
     private readonly notifs: NotificationsService,
     private readonly uploads: UploadsService,
     private readonly encryption: EncryptionService,
+    private readonly bankVerification: BankVerificationService,
   ) {}
 
   /* ── helpers ── */
@@ -708,6 +710,13 @@ export class ProviderOnboardingV2Controller {
       const upiHandle = dto.upiId!.split('@')[0] || '';
       masked = `${upiHandle.slice(0, 2)}***@${dto.upiId!.split('@')[1] || 'upi'}`;
     }
+
+    /* Kick off RazorpayX penny-drop verification asynchronously.
+     * Fire-and-forget: verifyBankAccount() catches all errors and never
+     * throws, so onboarding is never blocked by RazorpayX being down or
+     * unconfigured. When RAZORPAYX creds are missing the service marks
+     * the row as SKIPPED and returns fast. */
+    this.bankVerification.verifyBankAccount(provider.id).catch(() => {});
 
     return { ok: true, masked };
   }

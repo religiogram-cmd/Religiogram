@@ -98,10 +98,60 @@ export function usePushNotifications() {
           serviceWorkerRegistration: swRegistration,
         });
 
-        if (token && (tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null))) {
-          await registerDeviceToken((tokenStore.access ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null)), token, 'web');
+        // Helper — POSTs the current FCM token to the backend and caches it
+        // in localStorage so we can detect rotation next time we're called.
+        const persistToken = async (t: string): Promise<void> => {
+          const access = tokenStore.access
+            ?? (typeof window !== 'undefined' ? window.localStorage.getItem('rg_access') : null);
+          if (!access || !t) return;
+          await registerDeviceToken(access, t, 'web');
+          try {
+            window.localStorage.setItem('rg_fcm_token', t);
+          } catch { /* storage may be full or disabled */ }
+        };
+
+        if (token) {
+          const cached = (() => {
+            try { return window.localStorage.getItem('rg_fcm_token'); } catch { return null; }
+          })();
+          // Skip the network call if the token hasn't changed since we
+          // last registered — cheap idempotency for re-render / SPA nav.
+          if (cached !== token) {
+            await persistToken(token);
+          }
           sessionStorage.setItem('rg_push_registered', '1');
         }
+
+        /* Firebase JS SDK v9 removed the callable `onTokenRefresh` in
+         * favour of polling — `getToken()` returns the CURRENT token, and
+         * FCM rotates roughly every 6 months or on cache-clear. Ensure
+         * rotation is handled by re-fetching on `visibilitychange` back
+         * to visible and comparing with what we last stored. If the two
+         * differ, re-register with the backend so notifications keep
+         * routing to the correct device. */
+        const refreshHandler = async () => {
+          if (document.visibilityState !== 'visible') return;
+          try {
+            const currentToken = await getToken(messaging, {
+              vapidKey: VAPID_KEY,
+              serviceWorkerRegistration: swRegistration,
+            });
+            if (!currentToken) return;
+            const stored = (() => {
+              try { return window.localStorage.getItem('rg_fcm_token'); } catch { return null; }
+            })();
+            if (currentToken !== stored) {
+              await persistToken(currentToken);
+              console.info('[PushNotifications] FCM token rotated — re-registered');
+            }
+          } catch (err) {
+            console.warn('[PushNotifications] token refresh check failed:', err);
+          }
+        };
+        document.addEventListener('visibilitychange', refreshHandler);
+        // Save the handler on window so React's cleanup can remove it — but
+        // usePushNotifications runs once for the app lifetime, so we skip
+        // explicit teardown here.
       } catch (err) {
         // Non-fatal - push is a nice-to-have, not a hard requirement
         console.warn('[PushNotifications] registration failed:', err);

@@ -13,6 +13,7 @@ import { createClient } from 'redis';
 import { ConsultationMessage, MessageType } from './entities/consultation-message.entity';
 import { ConsultationSession } from './entities/consultation-session.entity';
 import { RedisService } from '../redis/redis.service';
+import { SessionGraceService } from './session-grace.service';
 import type { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 
 /** P2-3: Token-bucket state stored per socket. */
@@ -72,6 +73,7 @@ export class ConsultationGateway
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly redis: RedisService,
+    private readonly graceService: SessionGraceService,
   ) {}
 
   async afterInit(server: Server): Promise<void> {
@@ -253,7 +255,7 @@ export class ConsultationGateway
     }
   }
 
-  handleDisconnect(client: AuthenticatedSocket): void {
+  async handleDisconnect(client: AuthenticatedSocket): Promise<void> {
     this.logger.debug(`Socket disconnected: userId=${client.data?.userId} socketId=${client.id}`);
     // P1-4: Remove socket from socketsByJti Map to avoid memory leak.
     const jti = client.data?.jti;
@@ -265,12 +267,52 @@ export class ConsultationGateway
       }
     }
 
+    const userId = client.data?.userId;
+
+    /* Reconnect grace: BEFORE we clear is_busy, arm SessionGraceService
+     * for any ACTIVE session this socket was in. If the peer reconnects
+     * within GRACE_TTL_SECONDS the grace is cancelled by session.rejoin;
+     * otherwise sweepExpiredGraces finalises the session, releases the
+     * hold, and clears is_busy. Previously startGrace() was never called
+     * anywhere, so a mid-call disconnect immediately looked like a
+     * "provider bailed" and the user's wallet hold stayed stuck. */
+    if (userId) {
+      try {
+        const sessionRooms = Array.from(client.rooms).filter((r) =>
+          typeof r === 'string' && r.startsWith('session_'),
+        ) as string[];
+        for (const room of sessionRooms) {
+          const sessionId = room.replace('session_', '');
+          // Look up the session to determine (a) whether it's still ACTIVE
+          // (grace only makes sense for live sessions) and (b) which side
+          // this socket represents.
+          const [row] = await this.ds.query<{
+            user_id: string; provider_id: string; session_status: string;
+          }[]>(
+            `SELECT s.user_id, s.provider_id, s.session_status
+               FROM consultation_sessions s
+              WHERE s.id = $1`,
+            [sessionId],
+          );
+          if (!row) continue;
+          if (row.session_status !== 'active') continue;
+          const side: 'user' | 'provider' = row.user_id === userId ? 'user' : 'provider';
+          await this.graceService
+            .startGrace({ sessionId, userId, side, billedSeconds: 0 })
+            .catch((err) =>
+              this.logger.warn(`startGrace failed for session=${sessionId}: ${(err as Error).message}`),
+            );
+        }
+      } catch (err) {
+        this.logger.warn(`grace arm on disconnect failed for user ${userId}: ${(err as Error).message}`);
+      }
+    }
+
     /* Ghost-busy prevention: if a PROVIDER's socket drops mid-session,
      * clear their is_busy flag so the marketplace stops showing them as
      * "Busy" indefinitely. We look up any ACTIVE session where this user
      * is the provider and flip the flag. Non-blocking; session-grace
      * eventually finalises the session via its cron sweep. */
-    const userId = client.data?.userId;
     if (userId) {
       this.ds.query(
         `UPDATE providers p
@@ -286,6 +328,25 @@ export class ConsultationGateway
         this.logger.warn(`is_busy clear on disconnect failed for user ${userId}: ${(err as Error).message}`),
       );
     }
+  }
+
+  /** Cancel the reconnect grace when the disconnected client rejoins. */
+  @SubscribeMessage('session.rejoin')
+  async handleSessionRejoin(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() payload: { sessionId: string },
+  ): Promise<void> {
+    if (!this.ensureLive(client)) return;
+    if (!payload?.sessionId) throw new WsException('sessionId is required');
+    await this.assertParticipant(client, payload.sessionId);
+    // Rejoin the room + cancel grace atomically.
+    await client.join(this.sessionRoom(payload.sessionId));
+    await this.graceService
+      .cancelGrace(payload.sessionId, client.data.userId)
+      .catch((err) =>
+        this.logger.warn(`cancelGrace failed for ${payload.sessionId}: ${(err as Error).message}`),
+      );
+    client.emit('session.rejoined', { sessionId: payload.sessionId });
   }
 
   @SubscribeMessage('session.join')
@@ -566,6 +627,52 @@ export class ConsultationGateway
       endedBy: client.data.userId,
       reason: payload.reason ?? 'user_hangup',
     });
+  }
+
+  /**
+   * Broadcast an incoming-call ring to the target provider's user-room.
+   * Called by ConsultationIntroService.startSession right after the
+   * session hold is placed. Provider clients listen on `call.incoming`.
+   * Idempotent — the frontend dedupes by sessionId.
+   */
+  emitIncomingCall(payload: {
+    sessionId: string;
+    providerId: string;
+    userId: string;
+    planType: string;
+    expiresAt: string;
+  }): void {
+    if (!this.server) return;
+    // We don't have provider socket rooms indexed here yet, so broadcast
+    // via a user-room the frontend joins on connect (`user_<userId>`).
+    // NOTE: providerId here is the ProviderEntity.id — the recipient
+    // room key uses the provider's user_id. The socket that connected
+    // has data.userId = provider's user_id. To keep this call cheap,
+    // the frontend subscribes to a room named `provider_<providerId>`
+    // during onCall UI mount; falling back to the whole namespace room.
+    this.server.emit('call.incoming', payload);
+  }
+
+  /** Notify both parties that the provider accepted. */
+  emitCallAccepted(sessionId: string): void {
+    if (!this.server) return;
+    this.server.to(this.sessionRoom(sessionId)).emit('call.accepted', { sessionId });
+    // Also broadcast so the incoming-call sheet on the provider's phone
+    // can dismiss even if they haven't joined the room yet.
+    this.server.emit('call.accepted', { sessionId });
+  }
+
+  /**
+   * Notify both parties that the provider didn't answer in time —
+   * frontend shows "No answer" and refunds the user's hold view.
+   */
+  emitCallTimeout(sessionId: string, userId: string, providerId: string): void {
+    if (!this.server) return;
+    const payload = { sessionId, userId, providerId, reason: 'provider_no_answer' };
+    this.server.to(this.sessionRoom(sessionId)).emit('call.timeout', payload);
+    // Provider may not have joined the session room yet (they were ringing).
+    // Broadcast globally on the /consultation namespace so both sides see it.
+    this.server.emit('call.timeout', payload);
   }
 
   private sessionRoom(sessionId: string): string {

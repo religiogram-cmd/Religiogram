@@ -45,6 +45,11 @@ import { QUEUE } from '../common/queues/queue.constants';
   ],
   controllers: [ConsultationController],
   providers: [
+    // ConsultationGateway ↔ ConsultationIntroService is a mutual dep — the
+    // gateway calls the service on session.rejoin (indirectly via
+    // SessionGraceService) and the service calls back into the gateway to
+    // emit the ring / timeout events. `forwardRef` on the service-side
+    // Inject() breaks the cycle at DI resolution time.
     ConsultationGateway,
     ConsultationBillingService,
     ConsultationIntroService,

@@ -4,6 +4,8 @@ import {
   Injectable,
   Logger,
   NotFoundException, ForbiddenException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -16,6 +18,7 @@ import { NotificationType } from '../notifications/entities/notification.entity'
 import { randomUUID } from 'crypto';
 import { ConsultationBillingService } from './consultation-billing.service';
 import { RedisService } from '../redis/redis.service';
+import { ConsultationGateway } from './consultation.gateway';
 
 export enum PlanType {
   INTRO_5    = 'intro_5',
@@ -41,9 +44,20 @@ const PLAN_MINUTES: Record<PlanType, number> = {
 const CASHBACK_PAISE    = 5_000; // INR 50
 const CASHBACK_MAX_SESSIONS = 2; // first 2 sessions eligible
 
+/**
+ * Provider must accept a REQUESTED session within this window (seconds).
+ * If they don't, the session is auto-transitioned to ENDED with
+ * `provider_no_answer` and the wallet hold is released. Matches the
+ * ring-and-drop UX of a phone call.
+ */
+const PROVIDER_ANSWER_TIMEOUT_MS = 30_000;
+
 @Injectable()
 export class ConsultationIntroService {
   private readonly logger = new Logger(ConsultationIntroService.name);
+
+  /** Active timeout handles keyed by sessionId so accept can cancel them. */
+  private readonly answerTimeouts = new Map<string, NodeJS.Timeout>();
 
   constructor(
     @InjectRepository(ConsultationSession)
@@ -57,6 +71,8 @@ export class ConsultationIntroService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly billingService: ConsultationBillingService,
     private readonly redis: RedisService,
+    @Inject(forwardRef(() => ConsultationGateway))
+    private readonly gateway: ConsultationGateway,
   ) {}
 
   /* ─── POST /v1/consultations/start ─── */
@@ -155,7 +171,44 @@ export class ConsultationIntroService {
         ),
       );
 
-    // 7. Check cashback eligibility (< CASHBACK_MAX_SESSIONS completed sessions)
+    // 7. Ring the provider — WebSocket incoming-call event + FCM push.
+    //    Non-fatal: if either channel is down, the call still exists in
+    //    REQUESTED state and the frontend polling fallback will surface it.
+    const expiresAt = new Date(Date.now() + PROVIDER_ANSWER_TIMEOUT_MS).toISOString();
+    try {
+      this.gateway.emitIncomingCall({
+        sessionId,
+        providerId,
+        userId,
+        planType: String(planType),
+        expiresAt,
+      });
+    } catch (err) {
+      this.logger.warn(`emitIncomingCall failed for ${sessionId}: ${(err as Error).message}`);
+    }
+    // FCM push — target the PROVIDER's user_id (which is provider.userId,
+    // not providerId) so the notification reaches the right device.
+    try {
+      const providerUserId = (provider as any).userId as string;
+      if (providerUserId) {
+        this.notifs.send(
+          providerUserId,
+          NotificationType.SYSTEM,
+          'Incoming call',
+          'A user is calling you — tap to answer.',
+          { sessionId, kind: 'call.incoming', expiresAt },
+          `call.incoming:${sessionId}`,
+        ).catch(() => {});
+      }
+    } catch { /* non-fatal */ }
+
+    // 8. Arm the auto-timeout — if the provider doesn't accept within
+    //    PROVIDER_ANSWER_TIMEOUT_MS, we end the session, release the hold,
+    //    and clear is_busy so the marketplace unlocks. The timeout is
+    //    cancelled from acceptSession().
+    this.armAnswerTimeout(sessionId, providerId, userId);
+
+    // 9. Check cashback eligibility (< CASHBACK_MAX_SESSIONS completed sessions)
     const cashbackEligible = await this.isCashbackEligible(userId);
 
     return {
@@ -166,6 +219,74 @@ export class ConsultationIntroService {
       introMinutes,
       cashbackEligible,
     };
+  }
+
+  /**
+   * Provider accepts the incoming call. Cancels the answer-timeout and
+   * flips the session to ACTIVE so billing ticks can start counting.
+   * Called from POST /v1/consultation/:id/accept.
+   */
+  async acceptSession(sessionId: string, providerUserId: string): Promise<{ ok: true; sessionId: string; status: string }> {
+    const session = await this.sessions.findOne({ where: { id: sessionId } });
+    if (!session) throw new NotFoundException('Session not found');
+    // Authorise: must be the provider on this session.
+    const provider = await this.providers.findOne({ where: { id: session.providerId } });
+    if (!provider || (provider as any).userId !== providerUserId) {
+      throw new ForbiddenException('Only the target provider can accept this call');
+    }
+    if (session.sessionStatus !== SessionStatus.REQUESTED) {
+      // Already accepted / ended / timed out — idempotent success.
+      return { ok: true, sessionId, status: String(session.sessionStatus) };
+    }
+    this.cancelAnswerTimeout(sessionId);
+    await this.sessions.update(
+      { id: sessionId },
+      { sessionStatus: SessionStatus.ACTIVE, startedAt: new Date() },
+    );
+    try { this.gateway.emitCallAccepted(sessionId); } catch { /* non-fatal */ }
+    return { ok: true, sessionId, status: 'active' };
+  }
+
+  /* ── private: answer-timeout timer bookkeeping ── */
+  private armAnswerTimeout(sessionId: string, providerId: string, userId: string): void {
+    // Never leak a prior timer for the same session (defensive; startSession
+    // guards against duplicate REQUESTED already but retries could race).
+    this.cancelAnswerTimeout(sessionId);
+    const t = setTimeout(async () => {
+      this.answerTimeouts.delete(sessionId);
+      try {
+        // Only fire if the session is STILL requested — user or provider
+        // may have ended it manually in the meantime.
+        const fresh = await this.sessions.findOne({ where: { id: sessionId } });
+        if (!fresh || fresh.sessionStatus !== SessionStatus.REQUESTED) return;
+
+        await this.sessions.update(
+          { id: sessionId },
+          {
+            sessionStatus: SessionStatus.ENDED,
+            disconnectReason: 'provider_no_answer',
+            endedAt: new Date(),
+          } as any,
+        );
+        await this.wallet.releaseHoldByReference(sessionId).catch((err: Error) =>
+          this.logger.warn(`release hold on no-answer failed for ${sessionId}: ${err.message}`),
+        );
+        await this.providers.update({ id: providerId }, { isBusy: false } as any).catch(() => {});
+        try { this.gateway.emitCallTimeout(sessionId, userId, providerId); } catch { /* non-fatal */ }
+        this.logger.log(`Session ${sessionId} auto-ended: provider_no_answer`);
+      } catch (err) {
+        this.logger.error(`answer-timeout handler failed for ${sessionId}: ${(err as Error).message}`);
+      }
+    }, PROVIDER_ANSWER_TIMEOUT_MS);
+    this.answerTimeouts.set(sessionId, t);
+  }
+
+  private cancelAnswerTimeout(sessionId: string): void {
+    const t = this.answerTimeouts.get(sessionId);
+    if (t) {
+      clearTimeout(t);
+      this.answerTimeouts.delete(sessionId);
+    }
   }
 
   /* ─── POST /v1/consultations/:id/end ─── */
