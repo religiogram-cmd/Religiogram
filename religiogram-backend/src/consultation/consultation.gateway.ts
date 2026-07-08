@@ -665,6 +665,52 @@ export class ConsultationGateway
     this.server.to(`user_${payload.providerUserId}`).emit('call.incoming', payload);
   }
 
+  /**
+   * Insert a `system` role message into the session's transcript and broadcast it
+   * to any connected participants. Used by ConsultationIntroService to post
+   * welcome messages when a session opens and when the provider joins.
+   *
+   * Emits both `message.new` (canonical) and `message` (legacy client compat)
+   * with dual-key `content` + `text` so any client version can render it.
+   * Non-fatal to the caller: throwing is up to them, this only returns void.
+   */
+  async postSystemMessage(sessionId: string, content: string): Promise<void> {
+    if (!this.server) return;
+    if (!sessionId || !content) return;
+    const seqKey = `consultation:seq:${sessionId}`;
+    const seq = await this.redis.incr(seqKey);
+    if (seq === 1) {
+      await this.redis.expire(seqKey, 86400);
+    }
+    // sender_id is a zeroed UUID sentinel — the DB column is NOT NULL and
+    // no real user "sends" a system message. Consumers use sender_role=system
+    // to detect these.
+    const SYSTEM_SENDER_ID = '00000000-0000-0000-0000-000000000000';
+    const rows = await this.ds.query<any[]>(
+      `INSERT INTO consultation_messages
+         (id, session_id, sender_id, sender_role, message_type, content, seq, is_read, created_at)
+       VALUES (gen_random_uuid(), $1, $2, 'system', 'system', $3, $4, false, now())
+       RETURNING id, session_id, sender_id, sender_role, message_type, content, seq, is_read, created_at`,
+      [sessionId, SYSTEM_SENDER_ID, content, seq],
+    );
+    const saved = rows[0];
+    const serialized = {
+      id:          saved.id,
+      sessionId:   saved.session_id,
+      senderId:    saved.sender_id,
+      senderRole:  saved.sender_role,
+      messageType: saved.message_type,
+      content:     saved.content,
+      text:        saved.content,
+      seq:         saved.seq,
+      isRead:      saved.is_read,
+      createdAt:   saved.created_at,
+    };
+    const room = this.sessionRoom(sessionId);
+    this.server.to(room).emit('message.new', serialized);
+    this.server.to(room).emit('message', serialized);
+  }
+
   /** Notify both parties that the provider accepted. */
   emitCallAccepted(sessionId: string): void {
     if (!this.server) return;

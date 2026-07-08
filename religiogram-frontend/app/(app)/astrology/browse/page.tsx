@@ -28,6 +28,7 @@ import FiltersSheet, {
   SESSION_KEY,
   type SheetFilters,
 } from '@/components/astrology/FiltersSheet';
+import WalletBadge from '@/components/wallet/WalletBadge';
 
 const NAVY   = '#0F2452';
 const GOLD   = '#C8920A';
@@ -219,6 +220,10 @@ export default function BrowsePage() {
           }}>
             Talk to Astrologer
           </h1>
+          {/* Wallet balance chip — tap-to-topup shortcut so users don't
+              have to hunt for the wallet button when they realise they're
+              short on funds mid-browse. */}
+          <WalletBadge />
         </div>
 
         {/* Search + Topic chip row (AstroTalk-style pinned scroller).
@@ -621,3 +626,4 @@ function ChanIcon({ icon, enabled }: { icon: string; enabled: boolean }) {
     </div>
   );
 }
+

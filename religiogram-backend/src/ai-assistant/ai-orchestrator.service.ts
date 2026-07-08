@@ -575,9 +575,26 @@ export class AiOrchestratorService implements OnModuleInit {
     return { saved: true, profileId: profile.id };
   }
 
-  /** Return the saved birth profile for a user (null if none). */
+  /** Return the saved birth profile for a user (null if none).
+   *  fullName / birthDate / birthTime are AES-256-GCM encrypted at rest —
+   *  we decrypt them before returning so the frontend can pre-fill forms
+   *  and display them without leaking ciphertext to the UI. Individual
+   *  decryption failures fall back to the raw value so one bad field
+   *  doesn't blank the whole card. */
   async getBirthProfile(userId: string): Promise<AiBirthProfile | null> {
-    return this.profileRepo.findOne({ where: { userId } }) ?? null;
+    const row = await this.profileRepo.findOne({ where: { userId } });
+    if (!row) return null;
+    const safeDec = (v: string | undefined): string | undefined => {
+      if (!v) return v;
+      try { return this.encryption.decrypt(v, 'BIRTH_PROFILE_ENCRYPTION_KEY'); }
+      catch { return v; }
+    };
+    return {
+      ...row,
+      fullName:  safeDec(row.fullName)  ?? row.fullName,
+      birthDate: safeDec(row.birthDate) ?? row.birthDate,
+      birthTime: row.birthTime ? safeDec(row.birthTime) : row.birthTime,
+    } as AiBirthProfile;
   }
 
   /** List all conversation stubs for a user (newest first). */

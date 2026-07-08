@@ -29,13 +29,15 @@ export interface SessionSummary {
 
 interface ChatMessage {
   id: string;
-  sender: 'user' | 'consultant';
+  sender: 'user' | 'consultant' | 'system';
   text: string;
 }
 
 interface SocketMessage {
   id?: string;
   senderId?: string;
+  senderRole?: string;   // 'user' | 'provider' | 'system'
+  sender_role?: string;  // snake_case legacy alias
   text?: string;
   content?: string;   // dual-key compat: backend may emit `content` instead of `text`
   message?: string;
@@ -125,7 +127,7 @@ function GoldCircularTimer({
           stroke="rgba(200,146,10,0.18)"
           strokeWidth={STROKE}
         />
-        {/* Arc */}
+        {/* Arc — countdown / progress marker */}
         <circle
           cx={SIZE / 2}
           cy={SIZE / 2}
@@ -227,7 +229,12 @@ export default function ActiveSessionScreen({
 
     const raw = socket.raw;
     if (raw) {
-      raw.on('connect', () => raw.emit('session.join', { sessionId }));
+      raw.on('connect', () => {
+        raw.emit('session.join', { sessionId });
+        // Pull any transcript that already exists (system welcome + birth
+        // details messages are posted before the user's socket joins).
+        raw.emit('message.history', { sessionId, limit: 100 });
+      });
 
       /* Backend gateway event contract (kept in sync via a single names-
        * map here). The backend emits:
@@ -246,14 +253,30 @@ export default function ActiveSessionScreen({
         // `text` entirely.
         const text = payload.content ?? payload.text ?? payload.message ?? '';
         const senderId = payload.senderId ?? payload.from ?? '';
+        const senderRole = payload.senderRole ?? payload.sender_role ?? '';
         if (!text) return;
-        setMessages((prev) => [
-          ...prev,
-          { id: payload.id ?? `sock-${Date.now()}`, sender: senderId === 'user' ? 'user' : 'consultant', text },
-        ]);
+        // Backend now posts sender_role='system' lifecycle messages
+        // (welcome, birth-details brief, provider-joined). Render them as a
+        // centered info pill rather than a chat bubble.
+        const sender: ChatMessage['sender'] =
+          senderRole === 'system' ? 'system'
+          : senderId === 'user'    ? 'user'
+          : 'consultant';
+        setMessages((prev) => {
+          const id = payload.id ?? `sock-${Date.now()}`;
+          // Guard against dupes when both `message.new` and `message` fire.
+          if (prev.some((m) => m.id === id)) return prev;
+          return [...prev, { id, sender, text }];
+        });
       };
       raw.on('message.new', onMessage);
       raw.on('message',     onMessage);   // legacy
+
+      // Server response to the message.history emit (fired on connect).
+      raw.on('message.history', (payload: { sessionId?: string; messages?: SocketMessage[] }) => {
+        if (!payload?.messages) return;
+        for (const m of payload.messages) onMessage(m);
+      });
 
       const onBillingTick = (payload: BillingTick) => {
         if (payload.secondsElapsed !== undefined) setSeconds(payload.secondsElapsed);
@@ -573,22 +596,46 @@ export default function ActiveSessionScreen({
         padding: '16px 16px 8px',
         display: 'flex', flexDirection: 'column', gap: 10,
       }}>
-        {messages.map((msg) => (
-          <div key={msg.id} style={{ display: 'flex', justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start' }}>
-            <div style={{
-              maxWidth: '75%',
-              backgroundColor: msg.sender === 'user' ? GOLD : '#fff',
-              color: msg.sender === 'user' ? '#fff' : '#1f2937',
-              borderRadius: msg.sender === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-              padding: '10px 14px',
-              fontSize: 14, lineHeight: 1.5,
-              boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-              border: msg.sender === 'consultant' ? '1px solid #e5e7eb' : 'none',
-            }}>
-              {msg.text}
+        {messages.map((msg) => {
+          if (msg.sender === 'system') {
+            // Centered pill — gold border on cream so it reads as
+            // "session info" rather than a message from either party.
+            return (
+              <div key={msg.id} style={{ display: 'flex', justifyContent: 'center' }}>
+                <div style={{
+                  maxWidth: '90%',
+                  background: `${PARCHMENT}`,
+                  color: '#4A3010',
+                  border: `1px solid ${GOLD}55`,
+                  borderRadius: 10,
+                  padding: '8px 12px',
+                  fontSize: 12,
+                  lineHeight: 1.45,
+                  whiteSpace: 'pre-line',
+                  textAlign: 'center',
+                }}>
+                  {msg.text}
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div key={msg.id} style={{ display: 'flex', justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start' }}>
+              <div style={{
+                maxWidth: '75%',
+                backgroundColor: msg.sender === 'user' ? GOLD : '#fff',
+                color: msg.sender === 'user' ? '#fff' : '#1f2937',
+                borderRadius: msg.sender === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                padding: '10px 14px',
+                fontSize: 14, lineHeight: 1.5,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+                border: msg.sender === 'consultant' ? '1px solid #e5e7eb' : 'none',
+              }}>
+                {msg.text}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
 
@@ -928,7 +975,7 @@ export default function ActiveSessionScreen({
       {showEndConfirm && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 500,
-          backgroundColor: 'rgba(0,0,0,0.5)',
+          backgroundColor: 'rgba(0,0,0,0.55)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: '0 24px',
         }}>

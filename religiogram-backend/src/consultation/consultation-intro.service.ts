@@ -20,6 +20,7 @@ import { randomUUID } from 'crypto';
 import { ConsultationBillingService } from './consultation-billing.service';
 import { RedisService } from '../redis/redis.service';
 import { ConsultationGateway } from './consultation.gateway';
+import { EncryptionService } from '../common/encryption/encryption.service';
 
 export enum PlanType {
   INTRO_5    = 'intro_5',
@@ -74,6 +75,7 @@ export class ConsultationIntroService {
     private readonly redis: RedisService,
     @Inject(forwardRef(() => ConsultationGateway))
     private readonly gateway: ConsultationGateway,
+    private readonly encryption: EncryptionService,
   ) {}
 
   /* ─── POST /v1/consultations/start ─── */
@@ -144,6 +146,25 @@ export class ConsultationIntroService {
       );
       throw saveErr;
     }
+
+    /* Post the "welcome" system messages so the session transcript is not
+     * empty on connect. Message A is user-facing ("astrologer will connect
+     * shortly, share your question"); message B carries the user's birth
+     * details for the astrologer's eyes only (still a system message — the
+     * frontend renders it as a centered info pill visible to both parties,
+     * which is what the astrologer needs anyway).
+     * Errors are absorbed inside postSystemMessage — the session must still
+     * function if the transcript insert or emit fails. */
+    const providerName = (provider as any).fullName ?? 'The astrologer';
+    await this.postSystemMessage(
+      sessionId,
+      `Astrologer ${providerName} will connect with you shortly. Meanwhile, please write your question below.`,
+    );
+    const birthContext = await this.fetchUserBirthContext(userId);
+    await this.postSystemMessage(
+      sessionId,
+      birthContext ?? 'User has not provided birth details yet.',
+    );
 
     /* Flip the provider row to is_busy=true so the marketplace hides
      * "available now" and shows amber "Busy" indicators. AWAITED so
@@ -247,7 +268,89 @@ export class ConsultationIntroService {
       { sessionStatus: SessionStatus.ACTIVE, startedAt: new Date() },
     );
     try { this.gateway.emitCallAccepted(sessionId); } catch { /* non-fatal */ }
+    // Post a transcript entry so both parties see the join in-chat. Non-fatal.
+    const providerName = (provider as any).fullName ?? 'The astrologer';
+    await this.postSystemMessage(
+      sessionId,
+      `${providerName} has joined the session.`,
+    );
     return { ok: true, sessionId, status: 'active' };
+  }
+
+  /**
+   * Insert a `sender_role='system'` message into the session's transcript
+   * and broadcast it to any live listeners. Errors are logged and swallowed
+   * — a failure here must never abort a session lifecycle transition.
+   */
+  private async postSystemMessage(sessionId: string, content: string): Promise<void> {
+    try {
+      await this.gateway.postSystemMessage(sessionId, content);
+    } catch (err) {
+      this.logger.warn(
+        `postSystemMessage failed for session=${sessionId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Fetch the user's saved birth profile and format it as an astrologer-
+   * facing brief. Returns null if no profile row exists; falls back to
+   * ciphertext-as-raw-text if decryption fails so we still show something
+   * useful. The upstream call (postSystemMessage) treats null as "user has
+   * not provided birth details yet".
+   *
+   * The `full_name` / `birth_date` / `birth_time` columns are AES-256-GCM
+   * encrypted at rest (see AiOrchestratorService.saveBirthProfile) so we
+   * decrypt each in isolation — one field's ciphertext going bad shouldn't
+   * blank the whole card.
+   */
+  private async fetchUserBirthContext(userId: string): Promise<string | null> {
+    try {
+      const rows = await this.dataSource.query<Array<{
+        full_name: string | null;
+        birth_date: string | null;
+        birth_time: string | null;
+        birth_city: string | null;
+        rashi: string | null;
+        nakshatra: string | null;
+      }>>(
+        `SELECT full_name, birth_date, birth_time, birth_city, rashi, nakshatra
+           FROM ai_birth_profiles
+          WHERE user_id = $1
+          LIMIT 1`,
+        [userId],
+      );
+      if (!rows || rows.length === 0) return null;
+      const r = rows[0];
+      const safeDecrypt = (v: string | null): string => {
+        if (!v) return '';
+        try {
+          return this.encryption.decrypt(v, 'BIRTH_PROFILE_ENCRYPTION_KEY');
+        } catch {
+          // Value pre-dates encryption or ciphertext is malformed; fall back
+          // to raw so we still show *something* rather than a blank line.
+          return typeof v === 'string' ? v : '';
+        }
+      };
+      const fullName  = safeDecrypt(r.full_name);
+      const birthDate = safeDecrypt(r.birth_date);
+      const birthTime = safeDecrypt(r.birth_time);
+      const parts: string[] = ['User details:'];
+      if (fullName)  parts.push(`Name: ${fullName}`);
+      if (birthDate) parts.push(`DOB: ${birthDate}`);
+      if (birthTime) parts.push(`Time: ${birthTime}`);
+      if (r.birth_city) parts.push(`Place: ${r.birth_city}`);
+      if (r.rashi)      parts.push(`Rashi: ${r.rashi}`);
+      if (r.nakshatra)  parts.push(`Nakshatra: ${r.nakshatra}`);
+      // If nothing survived (all fields blank + decryption failed silently),
+      // treat as "no profile" so the fallback message shows.
+      return parts.length > 1 ? parts.join('\n') : null;
+    } catch (err) {
+      this.logger.warn(
+        `fetchUserBirthContext failed for user=${userId}: ${(err as Error).message}`,
+      );
+      return null;
+    }
   }
 
   /* ── private: answer-timeout timer bookkeeping ── */

@@ -2,8 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { tokenStore } from '@/lib/api';
-import { formatRupees, formatPerMinute } from '@/lib/format-currency';
+import { formatPerMinute } from '@/lib/format-currency';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001';
 
@@ -183,119 +182,14 @@ function AstrologerCard({ a, onChat, onCall }: { a: Astrologer; onChat: () => vo
   );
 }
 
-function ConnectModal({ astrologer, mode, onClose }: { astrologer: Astrologer; mode: 'chat' | 'call'; onClose: () => void }) {
-  const router = useRouter();
-  const [starting, setStarting] = useState(false);
-  const [err, setErr] = useState('');
-
-  const handleStart = async () => {
-    setStarting(true);
-    setErr('');
-    try {
-      const token = tokenStore.access ?? '';
-      const res = await fetch(`${API_BASE}/bookings`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          providerId: String(astrologer.id),
-          serviceName: mode === 'chat' ? 'Online Chat Consultation' : 'Online Call Consultation',
-          type: 'online',
-          scheduledAt: new Date().toISOString(),
-          durationMinutes: 5,
-          amountPaise: astrologer.pricePerMin * 5 * 100,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.message ?? 'Could not start session');
-      const bookingId: string = json?.data?.id ?? json?.id;
-      if (!bookingId) throw new Error('No session ID returned');
-      onClose();
-      router.push(`/consultation/${bookingId}`);
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to start session');
-      setStarting(false);
-    }
-  };
-
-  return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex', alignItems: 'flex-end',
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          width: '100%', background: '#fff', borderRadius: '20px 20px 0 0',
-          padding: '24px 20px 36px', maxWidth: 480, margin: '0 auto',
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
-          <div style={{
-            width: 52, height: 52, borderRadius: '50%', background: astrologer.color,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 18, fontWeight: 800, color: '#fff', border: `2px solid ${GOLD}`,
-          }}>{astrologer.initials}</div>
-          <div>
-            <p style={{ margin: 0, fontWeight: 700, color: NAVY, fontSize: 15 }}>{astrologer.name}</p>
-            <p style={{ margin: 0, color: '#64748b', fontSize: 12 }}>{astrologer.specialties.join(', ')}</p>
-          </div>
-        </div>
-
-        <div style={{
-          background: '#F0F4FF', borderRadius: 10, padding: '12px 14px', marginBottom: 20,
-        }}>
-          <p style={{ margin: 0, fontSize: 13, color: NAVY, fontWeight: 600 }}>
-            {mode === 'chat' ? '💬 Chat Session' : '📞 Call Session'}
-          </p>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748b' }}>
-            Rate: <strong>{formatPerMinute(astrologer.pricePerMin * 100)}</strong> · Minimum 5 minutes
-          </p>
-          <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-            Minimum charge: <strong>{formatRupees(astrologer.pricePerMin * 5)}</strong>
-          </p>
-        </div>
-
-        {err && (
-          <p style={{ fontSize: 12.5, color: '#dc2626', marginBottom: 12, textAlign: 'center' }}>{err}</p>
-        )}
-
-        <button
-          disabled={starting}
-          style={{
-            width: '100%', height: 48, borderRadius: 12,
-            background: starting ? '#94a3b8' : `linear-gradient(135deg, ${NAVY}, #0F2452)`,
-            color: '#fff', border: 'none', fontSize: 15, fontWeight: 700,
-            cursor: starting ? 'not-allowed' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          }}
-          onClick={handleStart}
-        >
-          {starting
-            ? <><span style={{ width: 18, height: 18, border: '2.5px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.8s linear infinite' }} /> Connecting…</>
-            : (mode === 'chat' ? `Start Chat — ${formatRupees(astrologer.pricePerMin * 5)} min` : `Start Call — ${formatRupees(astrologer.pricePerMin * 5)} min`)
-          }
-        </button>
-        <button
-          style={{
-            width: '100%', marginTop: 10, height: 40, borderRadius: 10,
-            background: 'transparent', color: '#94a3b8', border: 'none', fontSize: 14, cursor: 'pointer',
-          }}
-          onClick={onClose}
-        >Cancel</button>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
-    </div>
-  );
-}
+/* ConnectModal deleted — the /consult/[providerId] route hosts the real
+ * PreSessionDialog with wallet-balance gating and "Add Money" CTA. Cards
+ * push straight to that route now. */
 
 export default function AstrologersTab() {
+  const router = useRouter();
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
-  const [modal, setModal] = useState<{ astrologer: Astrologer; mode: 'chat' | 'call' } | null>(null);
   const [showOnlineOnly, setShowOnlineOnly] = useState(false);
   const [astrologers, setAstrologers] = useState<Astrologer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -455,21 +349,12 @@ export default function AstrologersTab() {
             <AstrologerCard
               key={a.id}
               a={a}
-              onChat={() => a.online && setModal({ astrologer: a, mode: 'chat' })}
-              onCall={() => a.online && setModal({ astrologer: a, mode: 'call' })}
+              onChat={() => a.online && router.push(`/consult/${a.id}?mode=chat&channel=chat`)}
+              onCall={() => a.online && router.push(`/consult/${a.id}?mode=call&channel=voice`)}
             />
           ))}
         </div>
       ) : null}
-
-      {/* Connect modal */}
-      {modal && (
-        <ConnectModal
-          astrologer={modal.astrologer}
-          mode={modal.mode}
-          onClose={() => setModal(null)}
-        />
-      )}
     </div>
   );
 }

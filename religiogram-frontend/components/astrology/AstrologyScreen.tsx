@@ -1,7 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import WalletBadge from '@/components/wallet/WalletBadge';
+import BirthDetailsModal from './BirthDetailsModal';
+import { birthProfile } from '@/lib/astrology-api';
+import { walletApi } from '@/lib/wallet-api';
 
 const AstrologersTab = dynamic(() => import('./AstrologersTab'), { ssr: false });
 const HoroscopeTab   = dynamic(() => import('./HoroscopeTab'),  { ssr: false });
@@ -50,8 +55,93 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   // the assistant now.
 ];
 
+/** Balance below which we show the "Recharge to consult" prompt.
+ *  ₹50 = 5000 paise. Anything higher is enough for at least a couple minutes
+ *  even on the priciest providers, so the nudge would be annoying. */
+const LOW_BALANCE_PAISE = 5_000;
+
 export default function AstrologyScreen() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>('astrologers');
+
+  /* First-visit birth-details capture + wallet-recharge nudge state.
+   * Both live at this level because they mount BETWEEN the sticky header
+   * and the tab content and need to coordinate: the wallet prompt only
+   * appears after the modal is dismissed so we never stack two overlays. */
+  const [showBirthModal, setShowBirthModal] = useState(false);
+  const [birthChecked, setBirthChecked] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletPromptDismissed, setWalletPromptDismissed] = useState(false);
+
+  // Load "did the user dismiss the wallet nudge this session?" from
+  // sessionStorage on mount so a page reload within the session honours it.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (window.sessionStorage.getItem('rg_astro_wallet_prompt_dismissed') === '1') {
+        setWalletPromptDismissed(true);
+      }
+    } catch { /* SSR / private mode — ignore */ }
+  }, []);
+
+  // Check for a saved birth profile on first paint. Missing profile + no
+  // prior "skip" → show the modal. Errors fall through silently so a
+  // transient network failure never blocks the marketplace.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const skipped = typeof window !== 'undefined'
+          ? window.localStorage.getItem('rg_astro_birth_skipped') === '1'
+          : false;
+        const p = await birthProfile.get();
+        if (cancelled) return;
+        const hasProfile = !!(p && p.fullName && p.birthDate && p.birthCity);
+        if (!hasProfile && !skipped) setShowBirthModal(true);
+      } catch { /* non-fatal — never block the screen */ }
+      finally { if (!cancelled) setBirthChecked(true); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Fetch wallet balance for the recharge nudge. WalletBadge fetches its own
+  // copy for display; this second fetch drives the prompt gate so we know
+  // whether to render the card. Cheap enough to duplicate at first paint.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const b = await walletApi.balance();
+        if (cancelled) return;
+        setWalletBalance((b.availablePaise ?? 0) + (b.promoCreditsPaise ?? 0));
+      } catch { /* non-fatal — prompt stays hidden */ }
+    };
+    void load();
+    const onRefresh = () => void load();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('wallet:refresh', onRefresh);
+    }
+    return () => {
+      cancelled = true;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('wallet:refresh', onRefresh);
+      }
+    };
+  }, []);
+
+  const dismissWalletPrompt = () => {
+    setWalletPromptDismissed(true);
+    if (typeof window !== 'undefined') {
+      try { window.sessionStorage.setItem('rg_astro_wallet_prompt_dismissed', '1'); } catch { /* ignore */ }
+    }
+  };
+
+  const showWalletPrompt =
+    birthChecked
+    && !showBirthModal
+    && !walletPromptDismissed
+    && walletBalance !== null
+    && walletBalance < LOW_BALANCE_PAISE;
 
   function handleTabClick(id: Tab) {
     if (id === 'ai') {
@@ -98,7 +188,9 @@ export default function AstrologyScreen() {
               }}>✦</span>
             </h1>
           </div>
-          {/* Header AI Chat button removed per user request. */}
+          {/* Right side — wallet badge lets users see their balance and
+              tap through to /wallet without leaving the astrology home. */}
+          <WalletBadge />
         </div>
 
         {/* Tab bar */}
@@ -130,12 +222,77 @@ export default function AstrologyScreen() {
         </div>
       </div>
 
+      {/* ── Wallet-recharge nudge ──
+          Sits between the sticky header and the tab content so it's the
+          first thing users see when their balance is too low to actually
+          buy a session. Session-scoped dismissal via sessionStorage. */}
+      {showWalletPrompt && (
+        <div style={{
+          margin: '10px 14px 4px',
+          padding: '12px 14px',
+          background: 'linear-gradient(135deg, #FFFAEC, #FDF3D5)',
+          border: `1px solid ${GOLD}55`,
+          borderRadius: 12,
+          display: 'flex', alignItems: 'center', gap: 12,
+          boxShadow: '0 2px 10px rgba(200,147,42,0.12)',
+        }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10,
+            background: `linear-gradient(135deg, ${GOLD}, #9A6F15)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontSize: 20, fontWeight: 800, flexShrink: 0,
+          }}>
+            ₹
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: NAVY, lineHeight: 1.25 }}>
+              Add money to start consulting
+            </p>
+            <p style={{ margin: '2px 0 0', fontSize: 11.5, color: '#4A3010', lineHeight: 1.35 }}>
+              Your wallet has ₹{Math.round((walletBalance ?? 0) / 100)}. Recharge to unlock chat &amp; call with astrologers.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => router.push('/wallet')}
+            style={{
+              flexShrink: 0,
+              padding: '8px 14px', borderRadius: 999,
+              background: `linear-gradient(135deg, ${GOLD}, #9A6F15)`,
+              border: 'none', color: '#fff',
+              fontSize: 12, fontWeight: 800, cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >Add Money</button>
+          <button
+            type="button"
+            onClick={dismissWalletPrompt}
+            aria-label="Dismiss"
+            style={{
+              flexShrink: 0,
+              width: 24, height: 24, borderRadius: 999,
+              background: 'transparent', border: 'none',
+              color: '#94a3b8', fontSize: 18, cursor: 'pointer',
+              lineHeight: 1,
+            }}
+          >×</button>
+        </div>
+      )}
+
       {/* ── Tab content ── */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {activeTab === 'astrologers' && <AstrologersTab />}
         {activeTab === 'horoscope'   && <HoroscopeTab />}
         {activeTab === 'kundli'      && <KundliTab />}
       </div>
+
+      {/* First-visit birth-details capture. Renders nothing when open=false.
+          Uses localStorage to remember "Skip" across sessions so we don't
+          nag on every visit. */}
+      <BirthDetailsModal
+        open={showBirthModal}
+        onClose={() => setShowBirthModal(false)}
+      />
     </div>
   );
 }

@@ -430,3 +430,66 @@ function pickDeterministic<T>(list: T[], seed: string): T {
 export function formatRupees(paise: number): string {
   return `₹${Math.round(paise / 100)}`;
 }
+
+/* ────────────────────────  Birth profile API  ───────────────────────
+ * Thin client for the existing backend endpoints:
+ *   GET  /v1/ai/birth-profile
+ *   POST /v1/ai/birth-profile
+ *
+ * Response is the raw AiBirthProfile row (encrypted fields decrypted
+ * server-side before returning — see AiOrchestratorService). The GET
+ * returns null when the user has no profile yet so the caller can drive
+ * the first-visit modal cleanly. */
+
+export interface BirthProfile {
+  id?: string;
+  userId?: string;
+  fullName?: string;
+  birthDate?: string;
+  birthTime?: string;
+  birthCity?: string;
+  birthLat?: number | null;
+  birthLng?: number | null;
+  timezone?: string | null;
+  rashi?: string | null;
+  nakshatra?: string | null;
+  lagna?: string | null;
+}
+
+export interface BirthProfileInput {
+  fullName: string;
+  birthDate: string;   // YYYY-MM-DD
+  birthTime?: string;  // HH:mm (optional)
+  birthCity: string;
+  placeLat?: number;
+  placeLon?: number;
+  timezone?: string;
+}
+
+export const birthProfile = {
+  /** Returns null if the backend responds 404 (no profile yet). */
+  async get(): Promise<BirthProfile | null> {
+    try {
+      const data = await apiFetch<BirthProfile | null>('/ai/birth-profile', { method: 'GET' });
+      // Backend returns null when no row exists — mirror that.
+      if (!data || typeof data !== 'object') return null;
+      // If key fields are all blank treat as "no profile".
+      const p = data as BirthProfile;
+      if (!p.fullName && !p.birthDate && !p.birthCity) return null;
+      return p;
+    } catch (err: unknown) {
+      const anyErr = err as { status?: number };
+      if (anyErr?.status === 404) return null;
+      // Other failures — surface as null so the caller can decide to show
+      // the modal instead of blocking on a transient error.
+      return null;
+    }
+  },
+  async save(dto: BirthProfileInput): Promise<{ saved: boolean; profileId?: string }> {
+    // Backend returns { saved: true, profileId } — see AiOrchestratorService.
+    return apiFetch<{ saved: boolean; profileId?: string }>('/ai/birth-profile', {
+      method: 'POST',
+      body: dto,
+    });
+  },
+};
