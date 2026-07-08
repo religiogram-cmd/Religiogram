@@ -19,6 +19,7 @@ import { walletApi } from '@/lib/wallet-api';
 const NAVY = '#0F2452';
 const GOLD = '#C8932A';
 const GOLD_L = '#E0A92F';
+// (GOLD used only in the border/gradient now — the "+" pill was removed.)
 
 interface Props {
   /** Auto-refresh interval in ms. Defaults to 60s. */
@@ -67,12 +68,12 @@ export default function WalletBadge({ refreshMs = 60_000 }: Props) {
     <button
       type="button"
       onClick={() => router.push('/wallet')}
-      aria-label="Wallet balance — tap to add money"
+      aria-label="Wallet balance — tap to open wallet"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        padding: '5px 10px 5px 8px',
+        padding: '5px 12px 5px 10px',
         background: `linear-gradient(135deg, ${GOLD_L}15, ${GOLD}20)`,
         border: `1.5px solid ${GOLD}`,
         borderRadius: 999,
@@ -96,18 +97,6 @@ export default function WalletBadge({ refreshMs = 60_000 }: Props) {
         <circle cx="17.5" cy="12" r="1" fill={NAVY} />
       </svg>
       <span>{display}</span>
-      <span
-        aria-hidden
-        style={{
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 16, height: 16, borderRadius: 999,
-          background: GOLD,
-          color: '#fff',
-          fontWeight: 800, fontSize: 12, lineHeight: 1,
-        }}
-      >
-        +
-      </span>
     </button>
   );
 }
