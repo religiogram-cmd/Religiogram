@@ -13,6 +13,17 @@ const TEXT   = '#1A0800';
 const TEXT2  = '#4A3010';
 const TEXT3  = '#8B6B35';
 
+/* Faith cards mirrored on Home (same design language as the old
+ * /priests landing) — one full-width card per row, tapping deep-links
+ * to /priests?faith=<key> so the Priests screen skips its own landing.
+ * See PriestsScreen.tsx for the source of these strings.               */
+const FAITH_CARDS = [
+  { key: 'hindu',     label: 'Hindu',     image: '/priests/hindu-hero.jpg',     desc: 'Pujas, rituals, havans & ceremonies',        verified: 'Verified & Experienced Pandits' },
+  { key: 'muslim',    label: 'Muslim',    image: '/priests/muslim-hero.jpg',    desc: 'Namaz services, dua, Nikah & other rituals', verified: 'Verified & Experienced Imams' },
+  { key: 'sikh',      label: 'Sikh',      image: '/priests/sikh-hero.jpg',      desc: 'Gurbani, path, kirtan & Sikh ceremonies',    verified: 'Verified & Experienced Granthis' },
+  { key: 'christian', label: 'Christian', image: '/priests/christian-hero.jpg', desc: 'Mass, prayers, sacraments & life events',     verified: 'Verified & Experienced Priests' },
+];
+
 const FAQS = [
   { q: 'What is ReligioGram?', a: 'ReligioGram is a community platform connecting devotees with verified places of worship, spiritual guides, and religious services for all faiths across India.' },
   { q: 'How do I find places of worship near me?', a: 'Tap Holy Places in the bottom nav, choose your faith, and the app will show temples, mosques, churches, gurudwaras and more near your location.' },
@@ -486,6 +497,55 @@ export default function HomeScreen() {
         }}>
           Explore Now
         </Link>
+      </div>
+
+      {/* ── RITUALS & SERVICES (faith cards, one per row) ─────────────────
+       * Moved here from /priests landing. Deep-links to /priests?faith=<key>
+       * so the Priests screen renders that faith's detail page directly.
+       * Full-width vertical stack matches the "line by line" spec.       */}
+      <div style={{ margin: '22px 16px 0' }}>
+        <span style={{ fontSize: 17, fontWeight: 800, color: TEXT, fontFamily: '"Playfair Display",Georgia,serif', display: 'block', marginBottom: 12 }}>
+          Rituals &amp; Services
+        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {FAITH_CARDS.map(fc => (
+            <Link
+              key={fc.key}
+              href={`/priests?faith=${fc.key}`}
+              style={{
+                position: 'relative', overflow: 'hidden', borderRadius: 18,
+                display: 'block', minHeight: 190, background: '#0A0A0A',
+                boxShadow: '0 6px 20px rgba(0,0,0,0.28)',
+                textDecoration: 'none',
+              }}
+            >
+              <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${fc.image})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0.60) 62%, rgba(0,0,0,0.92) 100%)' }} />
+              <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', minHeight: 190, padding: '14px 16px' }}>
+                <p style={{ color: GOLD_L, fontSize: 22, fontWeight: 900, margin: '0 0 4px', fontFamily: '"Playfair Display",Georgia,serif', textShadow: '0 2px 6px rgba(0,0,0,0.9)', letterSpacing: '-0.01em' }}>
+                  {fc.label}
+                </p>
+                <p style={{ color: 'rgba(255,255,255,0.90)', fontSize: 12, margin: '0 0 4px', fontFamily: '"Plus Jakarta Sans",sans-serif', lineHeight: 1.4 }}>
+                  {fc.desc}
+                </p>
+                <p style={{ color: GOLD_L, fontSize: 11, fontWeight: 600, margin: '0 0 10px', fontFamily: '"Plus Jakarta Sans",sans-serif' }}>
+                  &#x2713; {fc.verified}
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                  <span style={{
+                    background: GOLD_L, borderRadius: 100, padding: '8px 22px',
+                    display: 'inline-block', boxShadow: '0 2px 8px rgba(232,168,0,0.35)',
+                    minHeight: 32,
+                  }}>
+                    <span style={{ color: NAVY, fontSize: 12, fontWeight: 800, fontFamily: '"Plus Jakarta Sans",sans-serif', letterSpacing: '0.02em' }}>
+                      Explore &#x2192;
+                    </span>
+                  </span>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
       </div>
 
       {/* ── FAQ ────────────────────────────────────────────────────────────── */}

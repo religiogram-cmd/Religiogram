@@ -18,6 +18,35 @@ export default function CommunityMessagesTab({ me }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  /* Suggested people (moved here from Discover) — shown below the DM list
+   * so users can start a fresh conversation without going hunting.
+   * Uses the same 5-min sessionStorage cache Discover used, so switching
+   * between tabs doesn't spam the API. */
+  const [suggestedUsers, setSuggestedUsers] = useState<UserSearchResult[]>([]);
+
+  useEffect(() => {
+    try {
+      const cached = sessionStorage.getItem('rg_suggested_users');
+      const cachedAt = Number(sessionStorage.getItem('rg_suggested_users_at') || 0);
+      const FIVE_MIN = 5 * 60 * 1000;
+      if (cached && Date.now() - cachedAt < FIVE_MIN) {
+        setSuggestedUsers(JSON.parse(cached));
+        return;
+      }
+    } catch { /* ignore */ }
+    community.users.suggested()
+      .then((r: any) => {
+        const arr = Array.isArray(r) ? r : Array.isArray(r?.data) ? r.data : [];
+        const slice = arr.slice(0, 5);
+        setSuggestedUsers(slice);
+        try {
+          sessionStorage.setItem('rg_suggested_users', JSON.stringify(slice));
+          sessionStorage.setItem('rg_suggested_users_at', String(Date.now()));
+        } catch { /* ignore */ }
+      })
+      .catch(() => setSuggestedUsers([]));
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     community.dms.threads()
@@ -108,6 +137,55 @@ export default function CommunityMessagesTab({ me }: Props) {
           </button>
         ))}
       </div>
+
+      {/* ── Suggested people (moved from Discover) ──
+       * Renders below the DM list so users can start a new conversation
+       * without opening the search sheet. Tapping a card opens the DM
+       * thread with that peer immediately (same as picking from search). */}
+      {suggestedUsers.length > 0 && (
+        <section style={{ padding: '18px 12px 24px' }}>
+          <h2 style={{
+            fontFamily: '"Playfair Display",Georgia,serif',
+            fontSize: 16, color: TEXT, margin: '0 0 10px 4px', fontWeight: 800,
+          }}>
+            Suggested people
+          </h2>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {suggestedUsers.map(u => (
+              <button
+                key={u.id}
+                onClick={() => setOpenPeer(u)}
+                style={{
+                  background: '#fff', borderRadius: 12, padding: '10px 12px',
+                  border: '1px solid rgba(200,146,10,0.18)',
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  cursor: 'pointer', width: '100%', textAlign: 'left',
+                  minHeight: 44,
+                }}
+              >
+                {u.avatarUrl ? (
+                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: `center/cover url('${u.avatarUrl}')`, flexShrink: 0 }} />
+                ) : (
+                  <div style={initialsAvatarStyle(40)}>{getInitials(u.name, u.username)}</div>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: TEXT, lineHeight: 1.1 }}>
+                      {u.name || ('@' + u.username)}
+                    </span>
+                    {u.accountType && u.accountType !== 'user' && (
+                      <span style={{ fontSize: 9, fontWeight: 800, color: NAVY, background: GOLD_L + '33', padding: '1px 5px', borderRadius: 8 }}>
+                        {(u.accountType || '').toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: TEXT3, marginTop: 2 }}>@{u.username}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

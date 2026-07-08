@@ -17,9 +17,13 @@ import { useProviderOnboarding, rupeesToPaise } from '@/lib/provider-onboarding-
 import { providerOnboardingApi } from '@/lib/provider-onboarding-api';
 import type { FlowConfig } from './FlowConfig';
 
-/** Rupees-per-minute suggested band by years of experience. */
-function suggestedBandRupees(exp: number | undefined): { min: number; max: number; label: string } {
-  const e = typeof exp === 'number' ? exp : 0;
+/** Rupees-per-minute suggested band by years of experience.
+ *  Coerces the input to a number — Step 2 sometimes writes experienceYears
+ *  as a string (from a controlled `<input>`), which was making `typeof
+ *  exp === 'number'` false and defaulting every applicant to the 0–3 band. */
+function suggestedBandRupees(exp: unknown): { min: number; max: number; label: string } {
+  const raw = typeof exp === 'string' ? Number(exp) : exp;
+  const e = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
   if (e >= 20) return { min: 50, max: 300, label: '20+ years' };
   if (e >= 15) return { min: 30, max: 150, label: '15–20 years' };
   if (e >= 10) return { min: 20, max: 100, label: '10–15 years' };

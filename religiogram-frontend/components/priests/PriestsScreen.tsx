@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useReligion } from '@/lib/useReligion';
@@ -9,7 +9,6 @@ const GOLD   = '#C8920A';
 const GOLD2  = '#E8A020';
 const NAVY   = '#0A1628';
 const PARCH  = '#F5E6C0';
-const PARCH2 = '#EDD89A';
 
 /* ── Faith config ─────────────────────────────────────────────── */
 const FAITHS: Record<string, {
@@ -63,60 +62,9 @@ const FAITHS: Record<string, {
   },
 };
 
-/* ── Religion picker modal data ──────────────────────────────── */
-const RELIGION_MODAL_OPTIONS = [
-  { key: 'hindu',     label: 'Hindu',     emoji: '🕉️' },
-  { key: 'muslim',    label: 'Muslim',    emoji: '☪️' },
-  { key: 'sikh',      label: 'Sikh',      emoji: '🪯' },
-  { key: 'christian', label: 'Christian', emoji: '✝️' },
-];
-
-/* ── Religion Picker Bottom Sheet ───────────────────────────── */
-function ReligionPickerModal({ onSelect, onSkip }: { onSelect: (r: string) => void; onSkip: () => void }) {
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-      {/* Backdrop */}
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(10,22,40,0.55)', backdropFilter: 'blur(3px)' }} onClick={onSkip} />
-      {/* Sheet */}
-      <div style={{ position: 'relative', background: PARCH, borderRadius: '22px 22px 0 0', padding: '24px 20px 36px', boxShadow: '0 -8px 40px rgba(10,22,40,0.25)' }}>
-        {/* Handle */}
-        <div style={{ width: 40, height: 4, borderRadius: 2, background: 'rgba(10,22,40,0.2)', margin: '0 auto 20px' }} />
-        {/* Title */}
-        <p style={{ fontSize: 17, fontWeight: 800, color: NAVY, fontFamily: '"Playfair Display",Georgia,serif', textAlign: 'center', margin: '0 0 6px' }}>
-          Choose your faith
-        </p>
-        <p style={{ fontSize: 12, color: 'rgba(10,22,40,0.55)', textAlign: 'center', margin: '0 0 20px', fontFamily: '"Plus Jakarta Sans",sans-serif' }}>
-          For a personalised experience
-        </p>
-        {/* Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
-          {RELIGION_MODAL_OPTIONS.map(opt => (
-            <button
-              key={opt.key}
-              onClick={() => onSelect(opt.key)}
-              style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                padding: '16px 10px', borderRadius: 16, cursor: 'pointer',
-                background: '#fff', border: `1.5px solid rgba(200,146,10,0.3)`,
-                boxShadow: '0 2px 10px rgba(10,22,40,0.08)', transition: 'all 0.15s',
-              }}
-            >
-              <span style={{ fontSize: 28 }}>{opt.emoji}</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: NAVY, fontFamily: '"Plus Jakarta Sans",sans-serif' }}>{opt.label}</span>
-            </button>
-          ))}
-        </div>
-        {/* Skip link */}
-        <button
-          onClick={onSkip}
-          style={{ display: 'block', width: '100%', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'rgba(10,22,40,0.45)', fontFamily: '"Plus Jakarta Sans",sans-serif', padding: '6px 0', textAlign: 'center' }}
-        >
-          Skip / View All
-        </button>
-      </div>
-    </div>
-  );
-}
+/* Religion picker bottom-sheet + faith-symbol badges were only ever used
+ * by the old LandingPage. They now live nowhere else, so removed to
+ * keep this file focused on the FaithDetailPage flow.                  */
 
 /* category icon SVG */
 function CatIcon({ type }: { type: string }) {
@@ -142,61 +90,31 @@ function CatIcon({ type }: { type: string }) {
   );
 }
 
-/* faith symbol for landing cards */
-function FaithSymbol({ faithKey }: { faithKey: string }) {
-  const size = 60;
-  const base: React.CSSProperties = {
-    width: size, height: size, borderRadius: '50%',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    boxShadow: '0 6px 20px rgba(0,0,0,0.55)',
-    border: '2.5px solid rgba(200,146,10,0.35)', flexShrink: 0,
-  };
-  const sym: React.CSSProperties = { color: GOLD, lineHeight: 1, userSelect: 'none' };
-  if (faithKey === 'hindu')    return <div style={{ ...base, background: '#0A1628' }}><span style={{ ...sym, fontSize: 29, fontFamily: 'serif' }}>&#x950;</span></div>;
-  if (faithKey === 'muslim')   return <div style={{ ...base, background: '#0C3320' }}><span style={{ ...sym, fontSize: 28 }}>&#x262a;</span></div>;
-  if (faithKey === 'sikh')     return <div style={{ ...base, background: '#1A0C00' }}><span style={{ ...sym, fontSize: 27 }}>&#x262c;</span></div>;
-  return                              <div style={{ ...base, background: '#2A1060' }}><span style={{ ...sym, fontSize: 28 }}>&#x271d;</span></div>;
-}
+/* Landing removed — the 4 religion cards now live on /home (see
+ * components/home/HomeScreen.tsx). Users reach a specific faith either
+ * from Home (?faith=X deep-link) or from their stored religion preference. */
 
-const FAITH_CARDS = [
-  { key: 'hindu',     label: 'Hindu',     image: '/priests/hindu-hero.jpg',     desc: 'Pujas, rituals, havans & ceremonies',        verified: 'Verified & Experienced Pandits' },
-  { key: 'muslim',    label: 'Muslim',    image: '/priests/muslim-hero.jpg',    desc: 'Namaz services, dua, Nikah & other rituals', verified: 'Verified & Experienced Imams' },
-  { key: 'sikh',      label: 'Sikh',      image: '/priests/sikh-hero.jpg',      desc: 'Gurbani, path, kirtan & Sikh ceremonies',    verified: 'Verified & Experienced Granthis' },
-  { key: 'christian', label: 'Christian', image: '/priests/christian-hero.jpg', desc: 'Mass, prayers, sacraments & life events',     verified: 'Verified & Experienced Priests' },
-];
-
-/* ── Landing ──────────────────────────────────────────────────── */
-function LandingPage({ onFaith }: { onFaith: (f: string) => void }) {
+/* ── Pick-your-faith fallback ─────────────────────────────────────
+ * If we somehow land on /priests with religion='all' and no ?faith=X,
+ * we default to Hindu but also hint the user they can change it in
+ * Profile → Settings. This is a rare edge-case, since Home now
+ * always sets ?faith and the picker is compulsory on first visit. */
+function PickYourFaithFallback() {
   return (
     <div style={{ minHeight: '100svh', background: PARCH, display: 'flex', flexDirection: 'column' }}>
       <div style={{ background: NAVY, paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 14, paddingLeft: 20, paddingRight: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 12px rgba(10,22,40,0.3)' }}>
         <h1 style={{ color: GOLD, fontSize: 20, fontWeight: 800, margin: 0, fontFamily: '"Playfair Display",Georgia,serif', letterSpacing: '0.01em', paddingTop: 14 }}>Priests</h1>
       </div>
-      <div style={{ flex: 1, padding: '22px 16px 0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-          <div style={{ flex: 1, height: 1.5, background: `linear-gradient(90deg, transparent, ${GOLD}70)` }} />
-          <p style={{ fontSize: 13, fontWeight: 700, color: NAVY, margin: 0, fontFamily: '"Plus Jakarta Sans",sans-serif', whiteSpace: 'nowrap' }}>Choose your faith to get started</p>
-          <div style={{ flex: 1, height: 1.5, background: `linear-gradient(90deg, ${GOLD}70, transparent)` }} />
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 100 }}>
-          {FAITH_CARDS.map(fc => (
-            <button key={fc.key} onClick={() => onFaith(fc.key)} style={{ position: 'relative', overflow: 'hidden', borderRadius: 18, border: 'none', cursor: 'pointer', padding: 0, display: 'flex', flexDirection: 'column', minHeight: 270, background: '#0A0A0A', boxShadow: '0 6px 20px rgba(0,0,0,0.28)' }}>
-              <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${fc.image})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 28%, rgba(0,0,0,0.65) 58%, rgba(0,0,0,0.92) 100%)' }} />
-              <div style={{ flex: 1 }} />
-              <div style={{ position: 'relative', padding: '0 12px 6px', textAlign: 'left' }}>
-                <p style={{ color: GOLD2, fontSize: 20, fontWeight: 900, margin: '0 0 3px', fontFamily: '"Playfair Display",Georgia,serif', textShadow: '0 2px 6px rgba(0,0,0,0.9)', letterSpacing: '-0.01em' }}>{fc.label}</p>
-                <p style={{ color: 'rgba(255,255,255,0.88)', fontSize: 10.5, margin: '0 0 3px', fontFamily: '"Plus Jakarta Sans",sans-serif', lineHeight: 1.35 }}>{fc.desc}</p>
-                <p style={{ color: GOLD2, fontSize: 10, fontWeight: 600, margin: 0, fontFamily: '"Plus Jakarta Sans",sans-serif' }}>&#x2713; {fc.verified}</p>
-              </div>
-              <div style={{ position: 'relative', padding: '4px 12px 10px', display: 'flex', justifyContent: 'center' }}>
-                <div style={{ background: GOLD2, borderRadius: 100, padding: '6px 24px', display: 'inline-block', boxShadow: '0 2px 8px rgba(232,160,32,0.3)' }}>
-                  <span style={{ color: NAVY, fontSize: 11, fontWeight: 800, fontFamily: '"Plus Jakarta Sans",sans-serif', letterSpacing: '0.02em' }}>Explore &#x2192;</span>
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
+      <div style={{ flex: 1, padding: '40px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+        <p style={{ fontSize: 17, fontWeight: 800, color: NAVY, margin: '0 0 10px', fontFamily: '"Playfair Display",Georgia,serif' }}>
+          Pick your faith
+        </p>
+        <p style={{ fontSize: 13, color: 'rgba(10,22,40,0.65)', margin: '0 0 22px', lineHeight: 1.55, maxWidth: 320, fontFamily: '"Plus Jakarta Sans",sans-serif' }}>
+          Choose a religion from Home, or set your preferred faith in Profile &rarr; Settings to personalise Priests.
+        </p>
+        <Link href="/home" style={{ background: GOLD2, borderRadius: 100, padding: '11px 28px', textDecoration: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center' }}>
+          <span style={{ color: NAVY, fontSize: 13, fontWeight: 800, fontFamily: '"Plus Jakarta Sans",sans-serif', letterSpacing: '0.02em' }}>Go to Home</span>
+        </Link>
       </div>
     </div>
   );
@@ -307,10 +225,6 @@ function PriestsInner() {
     }
   }, [loaded, religion, faithParam, router]);
 
-  const handleFaithSelect = (f: string) => {
-    router.push(`/priests?faith=${f}`);
-  };
-
   /* Loading state (first paint, before useReligion has resolved). */
   if (!loaded) {
     return (
@@ -328,11 +242,18 @@ function PriestsInner() {
 
   /* Deep-link to a specific faith takes priority over the stored preference. */
   if (faithParam && FAITHS[faithParam]) {
-    return <FaithDetailPage faithKey={faithParam} onBack={() => router.push('/priests')} />;
+    return <FaithDetailPage faithKey={faithParam} onBack={() => router.push('/home')} />;
   }
 
-  /* 'all' or no matching faith → landing that lists all faiths. */
-  return <LandingPage onFaith={handleFaithSelect} />;
+  /* 'all' — landing no longer exists (moved to /home). Default to Hindu so
+   * users don't hit a dead end; the fallback screen also directs them to
+   * Home / Profile → Settings to change their preference. */
+  if (religion === 'all') {
+    return <FaithDetailPage faithKey="hindu" onBack={() => router.push('/home')} />;
+  }
+
+  /* Truly unknown state — no religion, no faith param, but 'loaded'. */
+  return <PickYourFaithFallback />;
 }
 
 /* ── Export ──────────────────────────────────────────────────── */

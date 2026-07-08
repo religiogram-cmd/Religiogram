@@ -181,17 +181,30 @@ export default function PriestInviteBookingScreen() {
   const [priestsLoading, setPriestsLoading] = useState(false);
   const matchedPriests = allPriests; // legacy alias for the old render block
 
+  /* Top-level provider toggle: Astrologers vs Pandits.
+   * Pandits filter by the user's religion; astrologers are cross-religion
+   * (an astrologer can serve any faith). Switching tabs invalidates the
+   * cached list so we always show data matching the current selection. */
+  const [providerTab, setProviderTab] = useState<'astrologer' | 'priest'>('priest');
+  const providerLabel = providerTab === 'astrologer' ? 'Astrologer' : cfg.role;
+
   useEffect(() => {
     if (step !== 'select' && step !== 'priests') return;
-    if (allPriests.length > 0) return; // already loaded, don't refetch on tab switch
     const tok = tokenStore.access ?? '';
     setPriestsLoading(true);
+    // Reset any previously-selected provider when the tab flips — a picked
+    // astrologer shouldn't survive a switch back to priests, or vice versa.
+    setSelectedPriest(null);
+    setAllPriests([]);
     const religionParam = faith === 'muslim' ? 'islam' : faith;
     const headers: Record<string, string> = {};
     if (tok) headers['Authorization'] = 'Bearer ' + tok;
-    /* Public directory endpoint — filters by religion + category='priest' so
-     * we only surface priest-flow providers (not astrologers). */
-    fetch(`${API_BASE}/providers?category=priest&religion=${religionParam}&limit=50`, { headers })
+    /* Public directory endpoint. For priests we filter by religion; for
+     * astrologers we drop religion since they're cross-faith. */
+    const url = providerTab === 'astrologer'
+      ? `${API_BASE}/providers?category=astrologer&limit=50`
+      : `${API_BASE}/providers?category=priest&religion=${religionParam}&limit=50`;
+    fetch(url, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         const raw: any[] = Array.isArray(j) ? j : (j?.items ?? j?.data ?? []);
@@ -214,7 +227,7 @@ export default function PriestInviteBookingScreen() {
       .catch(() => setAllPriests([]))
       .finally(() => setPriestsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, faith]);
+  }, [step, faith, providerTab]);
 
   /* Local/Global tabs. Local = same city as the user's stored city (from
    * localStorage, populated during profile setup / provider onboarding).
@@ -482,7 +495,10 @@ export default function PriestInviteBookingScreen() {
   const STEPS: Step[] = ['select','ceremony','when','where','contact','review'];
   const stepIdx = STEPS.indexOf(step);
   const TOTAL = STEPS.length;
-  const showProgress = step !== 'success' && step !== 'confirm';
+  /* Progress bar hides on the picker (select) step — it's a browse view,
+   * not a form step, so a "STEP 1 OF 6" label was distracting. Also hidden
+   * on success + confirm which have their own layouts. */
+  const showProgress = step !== 'success' && step !== 'confirm' && step !== 'select';
 
   return (
     <div style={{ minHeight: '100svh', background: CREAM, fontFamily: '"Plus Jakarta Sans",sans-serif', paddingBottom: 24 }}>
@@ -539,6 +555,50 @@ export default function PriestInviteBookingScreen() {
 
         {step === 'select' && (
           <div>
+            {/* ── Top-level Astrologers / Pandits segmented control ──
+             * Sits ABOVE the golden marketplace panel. Same navy-active
+             * pill visual language as the Nearby/Global sub-tabs below,
+             * but rendered on the cream page background so it reads as a
+             * separate top-level filter, not part of the golden panel.
+             * Switching invalidates the fetch cache (see effect above). */}
+            <div style={{
+              display: 'flex',
+              background: 'rgba(10,22,40,0.08)',
+              borderRadius: 999,
+              padding: 4,
+              marginBottom: 14,
+              border: '1px solid rgba(10,22,40,0.15)',
+            }}>
+              <button
+                type="button"
+                onClick={() => setProviderTab('astrologer')}
+                style={{
+                  flex: 1, padding: '11px 0', borderRadius: 999, border: 'none',
+                  background: providerTab === 'astrologer' ? NAVY : 'transparent',
+                  color: providerTab === 'astrologer' ? CREAM : NAVY,
+                  fontSize: 14, fontWeight: 800, cursor: 'pointer',
+                  boxShadow: providerTab === 'astrologer' ? '0 3px 8px rgba(10,22,40,0.25)' : 'none',
+                  fontFamily: '"Playfair Display",Georgia,serif',
+                  transition: 'background 0.15s',
+                  minHeight: 44,
+                }}
+              >Astrologers</button>
+              <button
+                type="button"
+                onClick={() => setProviderTab('priest')}
+                style={{
+                  flex: 1, padding: '11px 0', borderRadius: 999, border: 'none',
+                  background: providerTab === 'priest' ? NAVY : 'transparent',
+                  color: providerTab === 'priest' ? CREAM : NAVY,
+                  fontSize: 14, fontWeight: 800, cursor: 'pointer',
+                  boxShadow: providerTab === 'priest' ? '0 3px 8px rgba(10,22,40,0.25)' : 'none',
+                  fontFamily: '"Playfair Display",Georgia,serif',
+                  transition: 'background 0.15s',
+                  minHeight: 44,
+                }}
+              >Pandits</button>
+            </div>
+
             {/* ── Golden card panel — Local / Global tabs + priest cards ──
              * Layout matches the reference mockup exactly:
              *   - Ornate top/bottom borders on the panel
@@ -565,7 +625,7 @@ export default function PriestInviteBookingScreen() {
                 fontFamily: '"Playfair Display",Georgia,serif',
                 letterSpacing: '0.01em',
                 marginBottom: 4,
-              }}>Available {cfg.role}s</div>
+              }}>Available {providerLabel}s</div>
               <div style={{
                 textAlign: 'center', marginBottom: 14,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -598,7 +658,7 @@ export default function PriestInviteBookingScreen() {
                     fontFamily: '"Playfair Display",Georgia,serif',
                     transition: 'background 0.15s',
                   }}
-                >Local</button>
+                >Nearby</button>
                 <button
                   type="button"
                   onClick={() => setPriestTab('global')}
@@ -633,10 +693,10 @@ export default function PriestInviteBookingScreen() {
                   fontSize: 13, color: '#2D1500', lineHeight: 1.5, fontWeight: 600,
                 }}>
                   {priestTab === 'local' && !userCity
-                    ? 'Set your city in Profile to see local priests.'
+                    ? `Set your city in Profile to see nearby ${providerLabel.toLowerCase()}s.`
                     : priestTab === 'local'
-                      ? `No verified ${cfg.role}s in your city yet. Try Global.`
-                      : `No verified ${cfg.role}s available right now.`}
+                      ? `No verified ${providerLabel}s in your city yet. Try Global.`
+                      : `No verified ${providerLabel}s available right now.`}
                 </div>
               )}
 
@@ -655,7 +715,7 @@ export default function PriestInviteBookingScreen() {
                           marginBottom: 6, paddingLeft: 4,
                         }}>
                           <span style={{ fontSize: 13 }}>{isLocal ? '📍' : '🌐'}</span>
-                          <span>{isLocal ? 'Local' : 'Global'}</span>
+                          <span>{isLocal ? 'Nearby' : 'Global'}</span>
                         </div>
 
                         <button
@@ -770,7 +830,7 @@ export default function PriestInviteBookingScreen() {
               onClick={() => setStep(prefillCeremony ? 'when' : 'ceremony')}
               label={selectedPriest
                 ? `Continue with ${selectedPriest.name.split(' ').slice(0,2).join(' ')}`
-                : `Pick a ${cfg.role} to continue`}
+                : `Pick a ${providerLabel} to continue`}
             />
           </div>
         )}
