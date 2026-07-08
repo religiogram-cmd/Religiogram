@@ -194,7 +194,11 @@ export default () => ({
     ENABLE_CONSULTATION:  process.env.FF_ENABLE_CONSULTATION  ?? 'true',
     ENABLE_DONATIONS:     process.env.FF_ENABLE_DONATIONS     ?? 'true',
     ENABLE_WALLET_TOPUP:  process.env.FF_ENABLE_WALLET_TOPUP  ?? 'true',
-    ENABLE_ASYNC_FANOUT:  process.env.FF_ENABLE_ASYNC_FANOUT  ?? 'false',
+    // Post-audit-#5: default to ON. Small deployments still work (BullMQ is
+    // already wired everywhere) and large deployments get the queue path
+    // automatically. Set FF_ENABLE_ASYNC_FANOUT=false to force the inline
+    // path (e.g. for a local dev instance without a running worker).
+    ENABLE_ASYNC_FANOUT:  process.env.FF_ENABLE_ASYNC_FANOUT  ?? 'true',
   },
 
   // v9 (P0-3 fix): WebRTC + voice/video gating.

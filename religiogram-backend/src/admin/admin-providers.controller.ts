@@ -28,8 +28,8 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import {
   ConsultationChannel,
   ProviderCategory,
@@ -148,6 +148,7 @@ export class AdminProvidersController {
     private readonly ranking: RankingService,
     private readonly tokens: TokenService,
     private readonly redis: RedisService,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -284,7 +285,28 @@ export class AdminProvidersController {
       approvedAt: dto.action === 'approve' ? new Date() : undefined,
     };
 
-    await this.providerRepo.update(id, update);
+    /* Wrap the state-critical writes (provider status flip + optional
+     * user account cascade) in a single DB transaction so a crash between
+     * them can't leave the provider banned while the underlying user is
+     * still ACTIVE. Token revoke, Redis minIat stamp, booking auto-cancel
+     * and audit log entries deliberately stay OUTSIDE the transaction —
+     * they're best-effort side effects where over-revoking (or an extra
+     * audit row) is strictly safer than under-revoking. */
+    const isCascade = dto.action === 'suspend' || dto.action === 'ban';
+    const newAccountStatus = isCascade
+      ? (dto.action === 'ban' ? AccountStatus.BANNED : AccountStatus.SUSPENDED)
+      : null;
+    const cascadeUserId = isCascade ? provider.userId : null;
+
+    await this.dataSource.transaction(async (em) => {
+      await em.getRepository(ProviderEntity).update({ id }, update);
+      if (cascadeUserId && newAccountStatus) {
+        await em.getRepository(User).update(
+          { id: cascadeUserId },
+          { accountStatus: newAccountStatus },
+        );
+      }
+    });
 
     await this.audit.log({
       adminId: me.id,
@@ -296,33 +318,23 @@ export class AdminProvidersController {
 
     // Auto-cancel pending/confirmed bookings when provider is suspended or banned.
     // This prevents users from showing up to a booking with a suspended provider.
-    if (dto.action === 'suspend' || dto.action === 'ban') {
+    if (isCascade) {
       const cancelled = await this.bookingsSvc.cancelBookingsByProvider(id, `provider_${dto.action}`);
       this.logger.log({ providerId: id, cancelled }, `Auto-cancelled ${cancelled} bookings on provider ${dto.action}`);
 
-      /* ─── Cascade to user account.
-       * Previously suspending/banning a provider left their user account
-       * ACTIVE, so their sessions kept minting new access tokens and they
-       * could still log in / DM / post socially. Match the behaviour of
-       * admin-users.controller::updateStatus: flip accountStatus, revoke
-       * refresh tokens, stamp minIat so any live JWT is rejected on next
-       * request, and let the socket gateways hang up via the pub/sub. */
-      const newAccountStatus =
-        dto.action === 'ban' ? AccountStatus.BANNED : AccountStatus.SUSPENDED;
-      const userId = provider.userId;
-      if (userId) {
-        try {
-          await this.userRepo.update({ id: userId }, { accountStatus: newAccountStatus });
-        } catch (e) {
-          this.logger.warn(`user status cascade failed for ${userId}: ${(e as Error).message}`);
-        }
+      /* ─── Cascade to user account: token revoke + minIat stamp.
+       * The DB accountStatus flip already happened inside the transaction
+       * above; here we only handle the best-effort side effects that
+       * hang up live sessions. Match the behaviour of
+       * admin-users.controller::updateStatus. */
+      if (cascadeUserId && newAccountStatus) {
         const nowSec = Math.floor(Date.now() / 1000);
         await Promise.all([
-          this.tokens.revokeAllForUser(userId).catch((e) =>
-            this.logger.warn(`revokeAllForUser failed for ${userId}: ${(e as Error).message}`),
+          this.tokens.revokeAllForUser(cascadeUserId).catch((e) =>
+            this.logger.warn(`revokeAllForUser failed for ${cascadeUserId}: ${(e as Error).message}`),
           ),
-          this.redis.getClient().set(`user:${userId}:minIat`, String(nowSec)).catch((e) =>
-            this.logger.warn(`minIat stamp failed for ${userId}: ${(e as Error).message}`),
+          this.redis.getClient().set(`user:${cascadeUserId}:minIat`, String(nowSec)).catch((e) =>
+            this.logger.warn(`minIat stamp failed for ${cascadeUserId}: ${(e as Error).message}`),
           ),
         ]);
         // Second audit row so the user-level cascade is discoverable in the
@@ -331,7 +343,7 @@ export class AdminProvidersController {
           adminId: me.id,
           actionType: `user.status.${newAccountStatus}`,
           targetType: 'user',
-          targetId: userId,
+          targetId: cascadeUserId,
           justification: `Cascaded from provider ${dto.action}: ${dto.reason ?? ''}`,
         }).catch(() => {});
       }

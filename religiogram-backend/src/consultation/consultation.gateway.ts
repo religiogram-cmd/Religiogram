@@ -240,6 +240,12 @@ export class ConsultationGateway
       client.data.exp    = payload.exp;
       this.logger.debug(`Socket connected: userId=${payload.sub} role=${payload.role} socketId=${client.id}`);
 
+      // Post-audit-#5: join a per-user room so `call.incoming` can be
+      // targeted to the intended provider only, instead of broadcasting to
+      // every connected socket on the /consultation namespace and ringing
+      // every provider's phone on every call.
+      try { await client.join(`user_${payload.sub}`); } catch { /* non-fatal */ }
+
       // P1-4: Register socket in socketsByJti Map for O(1) revocation lookup.
       // The single Redis subscription in afterInit() will use this Map instead
       // of creating a new subscriber for every connection.
@@ -630,27 +636,33 @@ export class ConsultationGateway
   }
 
   /**
-   * Broadcast an incoming-call ring to the target provider's user-room.
+   * Ring the target provider's device(s) for an incoming call.
    * Called by ConsultationIntroService.startSession right after the
    * session hold is placed. Provider clients listen on `call.incoming`.
    * Idempotent — the frontend dedupes by sessionId.
+   *
+   * Post-audit-#5: previously `this.server.emit()` broadcast to EVERY
+   * socket on the /consultation namespace, so every online provider's
+   * phone rang on every call. We now emit only to the target provider's
+   * `user_<providerUserId>` room (joined in handleConnection).
    */
   emitIncomingCall(payload: {
     sessionId: string;
     providerId: string;
+    providerUserId: string;
     userId: string;
     planType: string;
     expiresAt: string;
   }): void {
     if (!this.server) return;
-    // We don't have provider socket rooms indexed here yet, so broadcast
-    // via a user-room the frontend joins on connect (`user_<userId>`).
-    // NOTE: providerId here is the ProviderEntity.id — the recipient
-    // room key uses the provider's user_id. The socket that connected
-    // has data.userId = provider's user_id. To keep this call cheap,
-    // the frontend subscribes to a room named `provider_<providerId>`
-    // during onCall UI mount; falling back to the whole namespace room.
-    this.server.emit('call.incoming', payload);
+    if (!payload.providerUserId) {
+      this.logger.warn(
+        `emitIncomingCall: missing providerUserId for session=${payload.sessionId} — falling back to /consultation broadcast`,
+      );
+      this.server.emit('call.incoming', payload);
+      return;
+    }
+    this.server.to(`user_${payload.providerUserId}`).emit('call.incoming', payload);
   }
 
   /** Notify both parties that the provider accepted. */

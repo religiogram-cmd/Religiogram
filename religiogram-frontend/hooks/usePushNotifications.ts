@@ -33,6 +33,11 @@ export function usePushNotifications() {
     // Only ask if not yet decided
     if (Notification.permission === 'denied') return;
 
+    // Track the handler so the effect cleanup can remove it. Previously the
+    // visibilitychange listener was added but never torn down — in fast
+    // navigation this leaked, and the useEffect had no cleanup path.
+    let refreshHandler: (() => Promise<void>) | null = null;
+
     const register = async () => {
       try {
         const permission = Notification.permission === 'granted'
@@ -129,7 +134,7 @@ export function usePushNotifications() {
          * to visible and comparing with what we last stored. If the two
          * differ, re-register with the backend so notifications keep
          * routing to the correct device. */
-        const refreshHandler = async () => {
+        refreshHandler = async () => {
           if (document.visibilityState !== 'visible') return;
           try {
             const currentToken = await getToken(messaging, {
@@ -149,9 +154,6 @@ export function usePushNotifications() {
           }
         };
         document.addEventListener('visibilitychange', refreshHandler);
-        // Save the handler on window so React's cleanup can remove it — but
-        // usePushNotifications runs once for the app lifetime, so we skip
-        // explicit teardown here.
       } catch (err) {
         // Non-fatal - push is a nice-to-have, not a hard requirement
         console.warn('[PushNotifications] registration failed:', err);
@@ -160,6 +162,12 @@ export function usePushNotifications() {
 
     // Delay to not compete with the auth bootstrap
     const timer = setTimeout(register, 3000);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (refreshHandler) {
+        document.removeEventListener('visibilitychange', refreshHandler);
+        refreshHandler = null;
+      }
+    };
   }, []);
 }

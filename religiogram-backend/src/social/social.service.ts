@@ -136,11 +136,14 @@ export class SocialService {
         { followerId: requesterId },
       ).catch(() => {});
     } catch { /* non-fatal */ }
-    // Backfill the follower's feed with the followed user's recent posts
+    // Backfill the follower's feed with the followed user's recent posts.
+    // feed_items schema is (viewer_id, post_id, author_id, post_created_at) —
+    // the earlier user_id/inserted_at spelling matched no real columns and
+    // the INSERT threw; every follow silently skipped the backfill.
     try {
       await this.ds.query(
-        `INSERT INTO feed_items (user_id, post_id, inserted_at)
-         SELECT $1, p.id, p.created_at
+        `INSERT INTO feed_items (viewer_id, post_id, author_id, post_created_at)
+         SELECT $1, p.id, p.author_id, p.created_at
            FROM social_posts p
           WHERE p.author_id = $2 AND p.is_deleted = false
           ORDER BY p.created_at DESC
@@ -148,7 +151,11 @@ export class SocialService {
          ON CONFLICT DO NOTHING`,
         [requesterId, addresseeId],
       );
-    } catch { /* non-fatal */ }
+    } catch (err) {
+      this.logger.error(
+        `feed_items backfill failed on follow (viewer=${requesterId} author=${addresseeId}): ${(err as Error).message}`,
+      );
+    }
     // Notify addressee about new friend request
     const requester = await this.users.findOne({ where: { id: requesterId } });
     const name = requester?.name || requester?.username || 'Someone';
@@ -450,17 +457,21 @@ export class SocialService {
   }
 
   async getFeed(userId: string, cursor?: string, limit = 20) {
-    // P1-1 / FIX-9: Keyset pagination on (inserted_at DESC, post_id DESC)
-    // cursor = base64url({ d: inserted_at ISO, i: post_id })
+    // P1-1 / FIX-9: Keyset pagination on (post_created_at DESC, post_id DESC).
+    // cursor = base64url({ d: post_created_at ISO, i: post_id }).
+    // Post-audit-#5 fix: feed_items columns are viewer_id / post_created_at
+    // (see feed-item.entity.ts). Old code referenced fi.user_id / fi.inserted_at
+    // which do not exist — the query threw and the catch fell back to a
+    // "recent global posts" scan, so users never saw fanned-out follow content.
     const safeLimit = Math.min(100, Math.max(1, limit));
 
-    let whereClause = 'WHERE fi.user_id = $1';
+    let whereClause = 'WHERE fi.viewer_id = $1';
     const params: (string | number)[] = [userId];
 
     if (cursor) {
       try {
         const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as { d: string; i: string };
-        whereClause += ` AND (fi.inserted_at < $${params.length + 1} OR (fi.inserted_at = $${params.length + 1} AND fi.post_id < $${params.length + 2}))`;
+        whereClause += ` AND (fi.post_created_at < $${params.length + 1} OR (fi.post_created_at = $${params.length + 1} AND fi.post_id < $${params.length + 2}))`;
         params.push(decoded.d, decoded.i);
       } catch {
         // ignore bad cursor — start from top
@@ -468,14 +479,13 @@ export class SocialService {
     }
 
     params.push(safeLimit + 1);
-    let feedRows: Array<{ post_id: string; inserted_at: Date }> = [];
+    let feedRows: Array<{ post_id: string; post_created_at: Date }> = [];
     try {
       // FIX C: exclude posts authored by users the viewer has blocked. The
-      // join is on social_posts.author_id (this legacy feed_items schema
-      // doesn't carry author_id) — cheap because feed_items is already
-      // keyed on post_id and social_posts.id is PK.
+      // join is on social_posts.author_id (feed_items carries author_id
+      // denormalized but we still join sp to be safe against drift).
       feedRows = await this.ds.query(
-        `SELECT fi.post_id, fi.inserted_at
+        `SELECT fi.post_id, fi.post_created_at
          FROM feed_items fi
          JOIN social_posts sp ON sp.id = fi.post_id
          ${whereClause}
@@ -483,31 +493,28 @@ export class SocialService {
              SELECT 1 FROM user_blocks ub
               WHERE ub.blocker_id = $1 AND ub.blocked_id = sp.author_id
            )
-         ORDER BY fi.inserted_at DESC, fi.post_id DESC
+         ORDER BY fi.post_created_at DESC, fi.post_id DESC
          LIMIT $${params.length}`,
         params,
       );
     } catch (err) {
-      // feed_items table may not exist yet OR schema drift — fall back to recent global posts
-      const safePosts = await this.posts
-        .createQueryBuilder('p')
-        .leftJoinAndSelect('p.author', 'author')
-        .where('p.is_deleted = false')
-        .orderBy('p.created_at', 'DESC')
-        .take(safeLimit)
-        .getMany();
-      return {
-        items: safePosts.map((p) => this.formatPost(p, false)),
-        hasMore: false,
-        nextCursor: null,
-      };
+      // Primary query failed — this is unexpected on a healthy DB. Log at
+      // ERROR severity so it shows up in prod logs (previously swallowed
+      // silently) and return an empty page rather than silently dropping
+      // the user into an unrelated "recent global posts" fallback that
+      // masks the real problem.
+      this.logger.error(
+        `getFeed query failed for user=${userId}: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+      return { items: [], hasMore: false, nextCursor: null };
     }
 
     const hasMore = feedRows.length > safeLimit;
     const rows = hasMore ? feedRows.slice(0, safeLimit) : feedRows;
     const postIds = rows.map((r) => r.post_id);
     const nextCursor = hasMore && rows.length > 0
-      ? Buffer.from(JSON.stringify({ d: rows[rows.length - 1].inserted_at, i: rows[rows.length - 1].post_id })).toString('base64url')
+      ? Buffer.from(JSON.stringify({ d: rows[rows.length - 1].post_created_at, i: rows[rows.length - 1].post_id })).toString('base64url')
       : null;
 
     if (postIds.length === 0) return { items: [], hasMore: false, nextCursor: null };

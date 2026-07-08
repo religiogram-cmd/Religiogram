@@ -175,30 +175,67 @@ export class BankVerificationService {
    * Minimal fetch-based POST — kept in-service to avoid pulling in axios
    * for a scaffold. Node 18+ ships global `fetch`. 8 s timeout so a
    * Razorpay hiccup can't stall onboarding.
+   *
+   * Post-audit-#5: added exponential-backoff retry for transient upstream
+   * errors (429 rate-limit + 5xx). Client errors (4xx that are not 429)
+   * are NOT retried — those mean bad input, retrying won't help. Fire-and-
+   * forget from the onboarding path is unchanged: the whole method is
+   * wrapped in a try/catch by the caller and never blocks the wizard.
    */
+  private static readonly RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+  private static readonly BACKOFF_MS = [500, 2_000, 8_000] as const;
+
   private async postJson(url: string, body: unknown, authHeader: string): Promise<unknown> {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8_000);
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: authHeader,
-        },
-        body: JSON.stringify(body),
-        signal: ctrl.signal,
-      });
-      const text = await res.text();
-      const parsed = text ? JSON.parse(text) : {};
-      if (!res.ok) {
-        throw new Error(
-          `Razorpay ${res.status}: ${(parsed as any)?.error?.description ?? text.slice(0, 200)}`,
+    const MAX_ATTEMPTS = 3;
+    let lastErr: Error | undefined;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8_000);
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: authHeader,
+          },
+          body: JSON.stringify(body),
+          signal: ctrl.signal,
+        });
+        const text = await res.text();
+        const parsed = text ? JSON.parse(text) : {};
+        if (res.ok) return parsed;
+
+        const isRetryable = BankVerificationService.RETRYABLE_STATUS.has(res.status);
+        const errMsg = `Razorpay ${res.status}: ${(parsed as any)?.error?.description ?? text.slice(0, 200)}`;
+        lastErr = new Error(errMsg);
+        if (!isRetryable || attempt === MAX_ATTEMPTS) {
+          // 4xx (except 429) or out of attempts — surface immediately.
+          throw lastErr;
+        }
+        const delay = BankVerificationService.BACKOFF_MS[attempt - 1] ?? 8_000;
+        this.logger.warn(
+          `RazorpayX ${res.status} on ${url} (attempt ${attempt}/${MAX_ATTEMPTS}) — retrying in ${delay}ms`,
         );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      } catch (err) {
+        // AbortError / network error → treat as retryable.
+        const isAbort = (err as Error)?.name === 'AbortError';
+        const isKnownHttpErr = lastErr && err === lastErr; // rethrown above
+        if (isKnownHttpErr) throw err;
+        lastErr = err as Error;
+        if (attempt === MAX_ATTEMPTS) throw lastErr;
+        const delay = BankVerificationService.BACKOFF_MS[attempt - 1] ?? 8_000;
+        this.logger.warn(
+          `RazorpayX ${isAbort ? 'timeout' : 'network err'} on ${url} (attempt ${attempt}/${MAX_ATTEMPTS}): ${lastErr.message} — retrying in ${delay}ms`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      } finally {
+        clearTimeout(timer);
       }
-      return parsed;
-    } finally {
-      clearTimeout(timer);
     }
+    // Unreachable — the loop either returns or throws.
+    throw lastErr ?? new Error('Razorpay retry loop exited unexpectedly');
   }
 }

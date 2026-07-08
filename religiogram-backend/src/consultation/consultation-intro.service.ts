@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { Cron } from '@nestjs/schedule';
 import { ConsultationSession, SessionStatus, SessionType } from './entities/consultation-session.entity';
 import { SessionBillingTick } from './entities/session-billing-tick.entity';
 import { ProviderEntity, ProviderStatus } from '../service-providers/entities/provider.entity';
@@ -175,10 +176,12 @@ export class ConsultationIntroService {
     //    Non-fatal: if either channel is down, the call still exists in
     //    REQUESTED state and the frontend polling fallback will surface it.
     const expiresAt = new Date(Date.now() + PROVIDER_ANSWER_TIMEOUT_MS).toISOString();
+    const providerUserIdForRing = (provider as any).userId as string | undefined;
     try {
       this.gateway.emitIncomingCall({
         sessionId,
         providerId,
+        providerUserId: providerUserIdForRing ?? '',
         userId,
         planType: String(planType),
         expiresAt,
@@ -592,6 +595,92 @@ export class ConsultationIntroService {
       cashbackIssued: false,
       createdAt: session.createdAt,
     };
+  }
+
+  /**
+   * Post-restart safety net for REQUESTED sessions.
+   *
+   * The in-process `answerTimeouts` map is lost across restarts / deploys —
+   * a session that was ringing when the pod died would sit REQUESTED forever,
+   * the user's wallet hold would stay stuck, and the provider row would stay
+   * is_busy=true. This cron re-runs the same end-session logic that the
+   * per-session setTimeout would have run, for any REQUESTED session older
+   * than 60 seconds.
+   *
+   * Redis lease (5s TTL, matches session-grace sweeper pattern) ensures
+   * only one pod runs the sweep on any given tick even across a horizontally
+   * scaled deployment.
+   */
+  @Cron('*/1 * * * *', { name: 'requested-session-sweeper' })
+  async sweepStaleRequestedSessions(): Promise<void> {
+    const lease = await this.redis.setIfNotExists(
+      'session:sweeper:lease',
+      String(Date.now()),
+      5,
+    );
+    if (!lease) return;
+
+    let rows: Array<{ id: string; user_id: string; provider_id: string }> = [];
+    try {
+      rows = await this.dataSource.query(
+        `SELECT id, user_id, provider_id
+           FROM consultation_sessions
+          WHERE session_status = 'requested'
+            AND created_at < NOW() - INTERVAL '60 seconds'
+          LIMIT 100`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `stale-requested sweeper query failed: ${(err as Error).message}`,
+      );
+      return;
+    }
+    if (rows.length === 0) return;
+
+    for (const row of rows) {
+      const { id: sessionId, user_id: userId, provider_id: providerId } = row;
+      try {
+        // Clear any in-process timer that may still be armed on this pod so it
+        // doesn't double-fire behind us.
+        this.cancelAnswerTimeout(sessionId);
+
+        // Guarded UPDATE — only flips rows still in REQUESTED to avoid racing
+        // against a late acceptSession() on another pod. RETURNING makes the
+        // "did we actually own this transition?" check trivial: 0 rows back
+        // means another pod won, and we skip the follow-up side effects.
+        const upd: Array<{ id: string }> = await this.dataSource.query(
+          `UPDATE consultation_sessions
+              SET session_status    = 'ended',
+                  disconnect_reason = 'sweeper_stale_request',
+                  ended_at          = now()
+            WHERE id = $1 AND session_status = 'requested'
+           RETURNING id`,
+          [sessionId],
+        );
+        if (!upd || upd.length === 0) {
+          continue;
+        }
+
+        await this.wallet.releaseHoldByReference(sessionId).catch((err: Error) =>
+          this.logger.warn(
+            `sweeper release-hold failed for ${sessionId}: ${err.message}`,
+          ),
+        );
+        await this.providers
+          .update({ id: providerId }, { isBusy: false } as any)
+          .catch(() => {});
+        try {
+          this.gateway.emitCallTimeout(sessionId, userId, providerId);
+        } catch { /* sockets may already be gone — non-fatal */ }
+        this.logger.log(
+          `Sweeper auto-ended stale REQUESTED session=${sessionId} (>60s old)`,
+        );
+      } catch (err) {
+        this.logger.error(
+          `sweeper handler failed for session=${sessionId}: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
 }
