@@ -220,30 +220,6 @@ export default function BrowsePage() {
           }}>
             Talk to Astrologer
           </h1>
-          {/* Pandits escape hatch — Hindu users are auto-routed here from
-              /priests, so give them a one-tap way back to the Pandits
-              marketplace. `?view=pandit` bypasses the auto-redirect in
-              FaithDetailPage so we don't ping-pong. */}
-          <Link
-            href="/priests?view=pandit"
-            style={{
-              textDecoration: 'none',
-              padding: '6px 12px',
-              borderRadius: 999,
-              background: 'transparent',
-              border: `1.5px solid ${NAVY}`,
-              color: NAVY,
-              fontSize: 12.5,
-              fontWeight: 800,
-              fontFamily: '"Plus Jakarta Sans", sans-serif',
-              lineHeight: 1,
-              display: 'inline-flex',
-              alignItems: 'center',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Pandits
-          </Link>
           {/* Wallet balance chip — tap-to-topup shortcut so users don't
               have to hunt for the wallet button when they realise they're
               short on funds mid-browse. */}
