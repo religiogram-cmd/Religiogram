@@ -122,7 +122,14 @@ const ROLE_BY_FAITH: Record<string, string> = {
 function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () => void }) {
   const faith = FAITHS[faithKey];
   const roleLabel = ROLE_BY_FAITH[faithKey] ?? 'Pandit';
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const isHindu = faithKey === 'hindu';
+  /* An escape hatch so Hindu users can still reach the Pandits marketplace
+   * even though their default landing is /astrology/browse. The astrology
+   * browse page links back here with ?view=pandit which suppresses the
+   * auto-redirect below. */
+  const forcePandit = (searchParams?.get('view') ?? '').toLowerCase() === 'pandit';
 
   /* Bottom-sheet state — set when a user taps a provider card. Modal shows
    * up to 3 action buttons (Invite, Ask via Chat, Voice/Video Call) whose
@@ -135,7 +142,17 @@ function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () =>
     ? (window.localStorage.getItem('rg_user_city') ?? '').trim().toLowerCase()
     : '';
 
+  /* Hindu users' primary experience is astrology → bounce them to
+   * /astrology/browse on mount instead of landing here. The `forcePandit`
+   * escape hatch (?view=pandit) lets the astrology browse page link back
+   * to the Pandits marketplace without triggering the redirect loop.
+   * Non-Hindu faiths render the priest panel below without the toggle. */
+  useEffect(() => {
+    if (isHindu && !forcePandit) router.replace('/astrology/browse');
+  }, [isHindu, forcePandit, router]);
+
   if (!faith) return null;
+  if (isHindu && !forcePandit) return null;
 
   return (
     <div style={{ minHeight: '100svh', background: CREAM, paddingBottom: 96 }}>
@@ -161,17 +178,12 @@ function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () =>
           userCity={userCity}
           onProviderTap={(p) => setActionModalProvider(p)}
           priestRoleLabel={roleLabel}
-          /* Hindu: keep the Astrologers/Pandits toggle AND default to
-           * the Astrologers tab so users land on astrology first (they
-           * can still tap Pandits to switch). Tapping Astrologers again
-           * routes to /astrology/browse for the richer marketplace.
-           *
-           * Non-Hindu: hide the toggle entirely — users see only the
-           * priest marketplace panel titled "Available Imams / Granthis
-           * / Priests". */
-          hideAstrologerToggle={!isHindu}
-          initialProviderTab={isHindu ? 'astrologer' : 'priest'}
-          astrologerHref={isHindu ? '/astrology/browse' : undefined}
+          /* Every render that reaches this point (non-Hindu OR Hindu
+           * with ?view=pandit) wants the priest panel only, titled
+           * "Available Pandits / Imams / Granthis / Priests". Hindu
+           * users who want astrology have already been redirected to
+           * /astrology/browse above. */
+          hideAstrologerToggle
         />
       </div>
 
