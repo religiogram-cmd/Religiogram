@@ -60,7 +60,19 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
  *  even on the priciest providers, so the nudge would be annoying. */
 const LOW_BALANCE_PAISE = 5_000;
 
-export default function AstrologyScreen() {
+interface AstrologyScreenProps {
+  /**
+   * When true, hides the top "Astrology ✦" title + "ReligioGram" eyebrow
+   * so the screen can be embedded inside another shell that already
+   * provides its own title (e.g. the Priests screen mounts this under
+   * an Astrologers/Pandits toggle for Hindu users). The WalletBadge and
+   * the sub-tab bar (Astrologers / Horoscope / Kundli) still render so
+   * the full astrology experience is preserved.
+   */
+  embedded?: boolean;
+}
+
+export default function AstrologyScreen({ embedded = false }: AstrologyScreenProps = {}) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>('astrologers');
 
@@ -187,32 +199,45 @@ export default function AstrologyScreen() {
         borderBottom: '1px solid rgba(15,36,82,0.08)',
         flexShrink: 0,
       }}>
-        {/* Top bar */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '14px 20px 12px',
-        }}>
-          <div>
-            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#94A3B8' }}>
-              ReligioGram
-            </p>
-            <h1 style={{
-              margin: '2px 0 0',
-              fontFamily: '"Playfair Display", Georgia, serif',
-              fontSize: 22, fontWeight: 700, color: NAVY,
-              letterSpacing: '-0.02em', lineHeight: 1.2,
-            }}>
-              Astrology{' '}
-              <span style={{
-                background: `linear-gradient(135deg, #D4A335 0%, ${GOLD} 50%, #9A6F15 100%)`,
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-              }}>✦</span>
-            </h1>
+        {/* Top bar — hidden when embedded because the outer host (e.g.
+            Priests > Astrologers tab for Hindu) already renders its own
+            title bar. Wallet badge floats on the right of the tab row
+            instead. */}
+        {!embedded && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '14px 20px 12px',
+          }}>
+            <div>
+              <p style={{ margin: 0, fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#94A3B8' }}>
+                ReligioGram
+              </p>
+              <h1 style={{
+                margin: '2px 0 0',
+                fontFamily: '"Playfair Display", Georgia, serif',
+                fontSize: 22, fontWeight: 700, color: NAVY,
+                letterSpacing: '-0.02em', lineHeight: 1.2,
+              }}>
+                Astrology{' '}
+                <span style={{
+                  background: `linear-gradient(135deg, #D4A335 0%, ${GOLD} 50%, #9A6F15 100%)`,
+                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+                }}>✦</span>
+              </h1>
+            </div>
+            {/* Right side — wallet badge lets users see their balance and
+                tap through to /wallet without leaving the astrology home. */}
+            <WalletBadge />
           </div>
-          {/* Right side — wallet badge lets users see their balance and
-              tap through to /wallet without leaving the astrology home. */}
-          <WalletBadge />
-        </div>
+        )}
+        {embedded && (
+          /* Compact wallet badge row when embedded — takes the place of
+             the omitted top bar so users still see their balance without
+             having to scroll away from the sub-tabs. */
+          <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 20px 4px' }}>
+            <WalletBadge />
+          </div>
+        )}
 
         {/* Tab bar */}
         <div style={{ display: 'flex', padding: '0 20px', gap: 0 }}>

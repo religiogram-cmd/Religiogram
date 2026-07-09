@@ -8,6 +8,7 @@ import ProviderMarketplace, {
   type Faith as MarketplaceFaith,
   type ProviderRecord,
 } from '@/components/priests/ProviderMarketplace';
+import AstrologyScreen from '@/components/astrology/AstrologyScreen';
 
 const GOLD    = '#C8920A';
 const GOLD2   = '#E8A020';
@@ -124,6 +125,13 @@ function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () =>
   const roleLabel = ROLE_BY_FAITH[faithKey] ?? 'Pandit';
   const isHindu = faithKey === 'hindu';
 
+  /* Hindu-only segmented toggle. Astrologers is the default landing tab —
+   * users see the full astrology experience (birth-details modal, wallet
+   * badge, Kundli/Horoscope/Astrologers sub-tabs) rendered via
+   * <AstrologyScreen embedded />. Tapping "Pandits" swaps to the priest
+   * marketplace panel. Non-Hindu faiths ignore this state entirely. */
+  const [hinduTab, setHinduTab] = useState<'astrologer' | 'priest'>('astrologer');
+
   /* Bottom-sheet state — set when a user taps a provider card. Modal shows
    * up to 3 action buttons (Invite, Ask via Chat, Voice/Video Call) whose
    * availability depends on the provider's consultationChannels. */
@@ -148,32 +156,84 @@ function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () =>
         <h1 style={{ color: GOLD, fontSize: 20, fontWeight: 800, margin: '0 auto', fontFamily: '"Playfair Display",Georgia,serif', letterSpacing: '0.01em', paddingTop: 14 }}>Priests</h1>
       </div>
 
-      {/* Marketplace layout — same component the invite flow's `select`
-       * step uses. Differences here: Pandits tab is the default, tapping
-       * a card opens the 3-button action sheet (Invite / Ask via Chat /
-       * Voice-Video Call) instead of advancing a booking wizard, and the
-       * Astrologers tab NAVIGATES to /astrology/browse (which has the
-       * richer hero + search + topic chips + full filter sheet) instead
-       * of showing the golden marketplace panel for astrologers. */}
-      <div style={{ padding: '14px 14px 0' }}>
-        <ProviderMarketplace
-          faith={faithKey as MarketplaceFaith}
-          userCity={userCity}
-          onProviderTap={(p) => setActionModalProvider(p)}
-          priestRoleLabel={roleLabel}
-          /* Hindu: keep the Astrologers/Pandits toggle AND default to
-           * the Astrologers tab so the golden panel opens as
-           * "Available Astrologers". Tab stays local (no astrologerHref)
-           * — users can flip to Pandits at any time and back. This
-           * matches the designed segmented layout.
-           *
-           * Non-Hindu: hide the toggle entirely — the panel is titled
-           * "Available Imams / Granthis / Priests" with no astrology
-           * surface. */
-          hideAstrologerToggle={!isHindu}
-          initialProviderTab={isHindu ? 'astrologer' : 'priest'}
-        />
-      </div>
+      {/* Body — Hindu gets the segmented Astrologers/Pandits switch on
+       * top; each side renders a completely different experience:
+       *   Astrologers → full <AstrologyScreen embedded /> (birth-details
+       *                 modal + wallet badge + Astrologers/Horoscope/
+       *                 Kundli sub-tabs).
+       *   Pandits     → the priest marketplace panel with Nearby/Global.
+       * Non-Hindu faiths bypass the toggle entirely — just the priest
+       * panel titled "Available Imams/Granthis/Priests". */}
+      {isHindu ? (
+        <>
+          {/* Hindu-only Astrologers / Pandits switch */}
+          <div style={{ padding: '14px 14px 0' }}>
+            <div style={{
+              display: 'flex',
+              background: 'rgba(10,22,40,0.08)',
+              borderRadius: 999,
+              padding: 4,
+              marginBottom: 14,
+              border: '1px solid rgba(10,22,40,0.15)',
+            }}>
+              <button
+                type="button"
+                onClick={() => setHinduTab('astrologer')}
+                style={{
+                  flex: 1, padding: '11px 0', borderRadius: 999, border: 'none',
+                  background: hinduTab === 'astrologer' ? NAVY : 'transparent',
+                  color: hinduTab === 'astrologer' ? CREAM : NAVY,
+                  fontSize: 14, fontWeight: 800, cursor: 'pointer',
+                  boxShadow: hinduTab === 'astrologer' ? '0 3px 8px rgba(10,22,40,0.25)' : 'none',
+                  fontFamily: '"Playfair Display",Georgia,serif',
+                  transition: 'background 0.15s', minHeight: 44,
+                }}
+              >Astrologers</button>
+              <button
+                type="button"
+                onClick={() => setHinduTab('priest')}
+                style={{
+                  flex: 1, padding: '11px 0', borderRadius: 999, border: 'none',
+                  background: hinduTab === 'priest' ? NAVY : 'transparent',
+                  color: hinduTab === 'priest' ? CREAM : NAVY,
+                  fontSize: 14, fontWeight: 800, cursor: 'pointer',
+                  boxShadow: hinduTab === 'priest' ? '0 3px 8px rgba(10,22,40,0.25)' : 'none',
+                  fontFamily: '"Playfair Display",Georgia,serif',
+                  transition: 'background 0.15s', minHeight: 44,
+                }}
+              >Pandits</button>
+            </div>
+          </div>
+
+          {hinduTab === 'astrologer' ? (
+            /* Full astrology experience embedded here — birth-details
+             * modal on first visit, wallet badge, Astrologers/Horoscope/
+             * Kundli sub-tabs, everything. `embedded` hides its own
+             * outer title so we don't stack two headers. */
+            <AstrologyScreen embedded />
+          ) : (
+            <div style={{ padding: '0 14px' }}>
+              <ProviderMarketplace
+                faith={faithKey as MarketplaceFaith}
+                userCity={userCity}
+                onProviderTap={(p) => setActionModalProvider(p)}
+                priestRoleLabel={roleLabel}
+                hideAstrologerToggle
+              />
+            </div>
+          )}
+        </>
+      ) : (
+        <div style={{ padding: '14px 14px 0' }}>
+          <ProviderMarketplace
+            faith={faithKey as MarketplaceFaith}
+            userCity={userCity}
+            onProviderTap={(p) => setActionModalProvider(p)}
+            priestRoleLabel={roleLabel}
+            hideAstrologerToggle
+          />
+        </div>
+      )}
 
       {/* Bottom-sheet action modal */}
       {actionModalProvider && (
