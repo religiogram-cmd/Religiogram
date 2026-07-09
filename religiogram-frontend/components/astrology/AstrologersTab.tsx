@@ -8,7 +8,25 @@ import { listAstrologers } from '@/lib/astrology-api';
 // (Dead constant removed — listAstrologers() from astrology-api handles the
 // URL internally so both this tab and /astrology/browse now share one path.)
 
-const FILTERS = ['All', 'Love', 'Career', 'Marriage', 'Health', 'Wealth', 'Legal', 'Tarot', 'Vedic', 'KP', 'Numerology', 'Education'];
+/* Topic chips shown above the astrologer list. Each entry pairs the
+ * filter label used to match a provider's specialisation with a small
+ * emoji glyph rendered before the label — matches the AstroTalk-style
+ * chip strip. Keep glyphs single-code-point so line-height stays even
+ * across chips. */
+const FILTERS: { label: string; icon: string }[] = [
+  { label: 'All',        icon: '✨' /* ✨ */ },
+  { label: 'Love',       icon: '❤️' /* ❤️ */ },
+  { label: 'Career',     icon: '💼' /* 💼 */ },
+  { label: 'Marriage',   icon: '💍' /* 💍 */ },
+  { label: 'Health',     icon: '🩺' /* 🩺 */ },
+  { label: 'Wealth',     icon: '💰' /* 💰 */ },
+  { label: 'Legal',      icon: '⚖️' /* ⚖️ */ },
+  { label: 'Tarot',      icon: '🔮' /* 🔮 */ },
+  { label: 'Vedic',      icon: '🕉️' /* 🕉️ */ },
+  { label: 'KP',         icon: '🪐' /* 🪐 */ },
+  { label: 'Numerology', icon: '🔢' /* 🔢 */ },
+  { label: 'Education',  icon: '🎓' /* 🎓 */ },
+];
 const NAVY = '#0F2452';
 const GOLD = '#C8932A';
 
@@ -306,16 +324,20 @@ export default function AstrologersTab() {
           </button>
           {FILTERS.map(f => (
             <button
-              key={f}
-              onClick={() => setActiveFilter(f)}
+              key={f.label}
+              onClick={() => setActiveFilter(f.label)}
               style={{
                 flexShrink: 0, height: 30, paddingInline: 12, borderRadius: 8,
-                border: `1.5px solid ${activeFilter === f ? NAVY : '#e2e8f0'}`,
-                background: activeFilter === f ? NAVY : '#fff',
-                color: activeFilter === f ? '#fff' : '#64748b',
+                border: `1.5px solid ${activeFilter === f.label ? NAVY : '#e2e8f0'}`,
+                background: activeFilter === f.label ? NAVY : '#fff',
+                color: activeFilter === f.label ? '#fff' : '#64748b',
                 fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 5,
               }}
-            >{f}</button>
+            >
+              <span aria-hidden style={{ fontSize: 12, lineHeight: 1 }}>{f.icon}</span>
+              {f.label}
+            </button>
           ))}
         </div>
       </div>
