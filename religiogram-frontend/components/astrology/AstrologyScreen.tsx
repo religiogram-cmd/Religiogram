@@ -133,8 +133,22 @@ export default function AstrologyScreen({ embedded = false }: AstrologyScreenPro
         setHasProfile(found);
         if (!found && !skipped) setShowBirthModal(true);
       } catch {
-        // Non-fatal — never block the screen. Leave hasProfile as null so
-        // a retry can still populate it later without spuriously gating.
+        // Backend error (500 / network glitch). We can't confirm whether
+        // the user has a profile or not — but the point of this modal is
+        // to collect details, and blocking the prompt behind a flaky API
+        // means users who genuinely don't have a profile stay stuck. So
+        // treat "unknown" as "missing" and open the modal (unless the
+        // user has skipped for this session). Better to over-ask once
+        // than to hide the feature entirely.
+        if (cancelled) return;
+        setHasProfile(false);
+        try {
+          const w = typeof window !== 'undefined' ? window : null;
+          const skipped =
+            (w?.sessionStorage.getItem('rg_astro_birth_skipped') === '1') ||
+            (w?.localStorage.getItem('rg_astro_birth_skipped') === '1');
+          if (!skipped) setShowBirthModal(true);
+        } catch { /* ignore */ }
       }
       finally { if (!cancelled) setBirthChecked(true); }
     })();
