@@ -122,6 +122,8 @@ const ROLE_BY_FAITH: Record<string, string> = {
 function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () => void }) {
   const faith = FAITHS[faithKey];
   const roleLabel = ROLE_BY_FAITH[faithKey] ?? 'Pandit';
+  const router = useRouter();
+  const isHindu = faithKey === 'hindu';
 
   /* Bottom-sheet state — set when a user taps a provider card. Modal shows
    * up to 3 action buttons (Invite, Ask via Chat, Voice/Video Call) whose
@@ -134,7 +136,20 @@ function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () =>
     ? (window.localStorage.getItem('rg_user_city') ?? '').trim().toLowerCase()
     : '';
 
+  /* Hindu users' primary experience is astrology, so bounce them to
+   * /astrology/browse immediately on mount instead of landing on the
+   * Pandits marketplace. Non-Hindu faiths render the priest panel below
+   * with no astrology toggle — see `hideAstrologerToggle` on the
+   * ProviderMarketplace prop below. */
+  useEffect(() => {
+    if (isHindu) router.replace('/astrology/browse');
+  }, [isHindu, router]);
+
   if (!faith) return null;
+
+  /* While the Hindu redirect is in flight we render nothing — avoids
+   * a brief flash of the Pandits marketplace before the router kicks in. */
+  if (isHindu) return null;
 
   return (
     <div style={{ minHeight: '100svh', background: CREAM, paddingBottom: 96 }}>
@@ -160,7 +175,10 @@ function FaithDetailPage({ faithKey, onBack }: { faithKey: string; onBack: () =>
           userCity={userCity}
           onProviderTap={(p) => setActionModalProvider(p)}
           priestRoleLabel={roleLabel}
-          astrologerHref="/astrology/browse"
+          /* Non-Hindu faiths: no astrology toggle at all. The header title
+           * becomes "Available <RoleLabel>s" (Imams / Granthis / Priests)
+           * and users see only the priest marketplace panel. */
+          hideAstrologerToggle
         />
       </div>
 

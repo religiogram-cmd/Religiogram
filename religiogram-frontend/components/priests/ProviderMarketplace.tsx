@@ -54,6 +54,12 @@ interface Props {
    *  marketplace (hero + search + topic chips + filters). The invite flow
    *  leaves this unset — tab toggle stays local. */
   astrologerHref?: string;
+  /** When true, the top-level Astrologers / Pandits segmented control is
+   *  not rendered at all — only the priest marketplace panel below.
+   *  Used by non-Hindu faiths (Muslim/Sikh/Christian) where astrology
+   *  isn't part of the offering; users just see "Available Imams",
+   *  "Available Granthis", or "Available Priests" directly. */
+  hideAstrologerToggle?: boolean;
   /** Optional server-side filters, forwarded as query params to
    *  GET /v1/providers. Keeps the marketplace's default view fast and
    *  scales with backend indexes rather than 50-row client-side scans. */
@@ -85,6 +91,7 @@ export default function ProviderMarketplace({
   priestRoleLabel = 'Pandit',
   astrologerHref,
   filters,
+  hideAstrologerToggle = false,
 }: Props) {
   const router = useRouter();
   const [providerTab, setProviderTab] = useState<'astrologer' | 'priest'>(initialProviderTab);
@@ -185,44 +192,49 @@ export default function ProviderMarketplace({
 
   return (
     <div>
-      {/* Top-level Astrologers / Pandits segmented control */}
-      <div style={{
-        display: 'flex',
-        background: 'rgba(10,22,40,0.08)',
-        borderRadius: 999,
-        padding: 4,
-        marginBottom: 14,
-        border: '1px solid rgba(10,22,40,0.15)',
-      }}>
-        <button
-          type="button"
-          onClick={handleAstrologerTap}
-          style={{
-            flex: 1, padding: '11px 0', borderRadius: 999, border: 'none',
-            background: providerTab === 'astrologer' ? NAVY : 'transparent',
-            color: providerTab === 'astrologer' ? CREAM : NAVY,
-            fontSize: 14, fontWeight: 800, cursor: 'pointer',
-            boxShadow: providerTab === 'astrologer' ? '0 3px 8px rgba(10,22,40,0.25)' : 'none',
-            fontFamily: '"Playfair Display",Georgia,serif',
-            transition: 'background 0.15s',
-            minHeight: 44,
-          }}
-        >Astrologers</button>
-        <button
-          type="button"
-          onClick={() => setProviderTab('priest')}
-          style={{
-            flex: 1, padding: '11px 0', borderRadius: 999, border: 'none',
-            background: providerTab === 'priest' ? NAVY : 'transparent',
-            color: providerTab === 'priest' ? CREAM : NAVY,
-            fontSize: 14, fontWeight: 800, cursor: 'pointer',
-            boxShadow: providerTab === 'priest' ? '0 3px 8px rgba(10,22,40,0.25)' : 'none',
-            fontFamily: '"Playfair Display",Georgia,serif',
-            transition: 'background 0.15s',
-            minHeight: 44,
-          }}
-        >Pandits</button>
-      </div>
+      {/* Top-level Astrologers / Pandits segmented control — rendered only
+       * when the caller opts in. Muslim/Sikh/Christian faiths pass
+       * `hideAstrologerToggle` because astrology isn't part of their
+       * offering, and the user just sees the priest panel directly. */}
+      {!hideAstrologerToggle && (
+        <div style={{
+          display: 'flex',
+          background: 'rgba(10,22,40,0.08)',
+          borderRadius: 999,
+          padding: 4,
+          marginBottom: 14,
+          border: '1px solid rgba(10,22,40,0.15)',
+        }}>
+          <button
+            type="button"
+            onClick={handleAstrologerTap}
+            style={{
+              flex: 1, padding: '11px 0', borderRadius: 999, border: 'none',
+              background: providerTab === 'astrologer' ? NAVY : 'transparent',
+              color: providerTab === 'astrologer' ? CREAM : NAVY,
+              fontSize: 14, fontWeight: 800, cursor: 'pointer',
+              boxShadow: providerTab === 'astrologer' ? '0 3px 8px rgba(10,22,40,0.25)' : 'none',
+              fontFamily: '"Playfair Display",Georgia,serif',
+              transition: 'background 0.15s',
+              minHeight: 44,
+            }}
+          >Astrologers</button>
+          <button
+            type="button"
+            onClick={() => setProviderTab('priest')}
+            style={{
+              flex: 1, padding: '11px 0', borderRadius: 999, border: 'none',
+              background: providerTab === 'priest' ? NAVY : 'transparent',
+              color: providerTab === 'priest' ? CREAM : NAVY,
+              fontSize: 14, fontWeight: 800, cursor: 'pointer',
+              boxShadow: providerTab === 'priest' ? '0 3px 8px rgba(10,22,40,0.25)' : 'none',
+              fontFamily: '"Playfair Display",Georgia,serif',
+              transition: 'background 0.15s',
+              minHeight: 44,
+            }}
+          >Pandits</button>
+        </div>
+      )}
 
       {/* Golden card panel */}
       <div style={{
