@@ -4,8 +4,9 @@
  * BirthDetailsModal — first-visit birth-profile capture.
  *
  * Rendered by AstrologyScreen when the user has no saved birth profile and
- * hasn't tapped Skip in a previous session (localStorage key
- * `rg_astro_birth_skipped`). Submits directly to /v1/ai/birth-profile —
+ * hasn't tapped Skip in the current session (sessionStorage key
+ * `rg_astro_birth_skipped` — session-only so a fresh browser session
+ * re-prompts). Submits directly to /v1/ai/birth-profile —
  * NOT the fake KundliTab flow, which the same code path used to double
  * as before this refactor.
  *
@@ -72,7 +73,9 @@ export default function BirthDetailsModal({ open, onClose, onSaved }: Props) {
   const handleSkip = () => {
     try {
       if (typeof window !== 'undefined') {
-        window.localStorage.setItem('rg_astro_birth_skipped', '1');
+        // Session-scoped so the modal reappears on next fresh session.
+        // "Skip" now means "not right now" instead of "never ask again".
+        window.sessionStorage.setItem('rg_astro_birth_skipped', '1');
       }
     } catch { /* private-mode / SSR — non-fatal */ }
     onClose();

@@ -105,13 +105,28 @@ export default function AstrologyScreen({ embedded = false }: AstrologyScreenPro
   // Check for a saved birth profile on first paint. Missing profile + no
   // prior "skip" → show the modal. Errors fall through silently so a
   // transient network failure never blocks the marketplace.
+  //
+  // "Skip" is stored in sessionStorage rather than localStorage so a user
+  // who dismisses the prompt today gets asked again in a fresh browser
+  // session. Also honour the legacy localStorage flag one last time so
+  // existing dismissals aren't rudely reversed within the same visit —
+  // clear it so from the next session onward we use sessionStorage only.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const skipped = typeof window !== 'undefined'
-          ? window.localStorage.getItem('rg_astro_birth_skipped') === '1'
-          : false;
+        const w = typeof window !== 'undefined' ? window : null;
+        const legacySkipped = w?.localStorage.getItem('rg_astro_birth_skipped') === '1';
+        const sessionSkipped = w?.sessionStorage.getItem('rg_astro_birth_skipped') === '1';
+        if (w && legacySkipped) {
+          // Migrate the sticky localStorage flag into a one-session
+          // sessionStorage flag so next fresh session prompts again.
+          try {
+            w.localStorage.removeItem('rg_astro_birth_skipped');
+            w.sessionStorage.setItem('rg_astro_birth_skipped', '1');
+          } catch { /* private mode — ignore */ }
+        }
+        const skipped = legacySkipped || sessionSkipped;
         const p = await birthProfile.get();
         if (cancelled) return;
         const found = !!(p && p.fullName && p.birthDate && p.birthCity);
