@@ -231,10 +231,34 @@ export default function AstrologyScreen({ embedded = false }: AstrologyScreenPro
           </div>
         )}
         {embedded && (
-          /* Compact wallet badge row when embedded — takes the place of
-             the omitted top bar so users still see their balance without
-             having to scroll away from the sub-tabs. */
-          <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 20px 4px' }}>
+          /* Compact header row when embedded — takes the place of the
+             omitted top bar. Left side gets a small tagline so the row
+             doesn't feel empty next to the wallet badge on the right. */
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 12, padding: '10px 20px 4px',
+          }}>
+            <div style={{ minWidth: 0 }}>
+              <p style={{
+                margin: 0, fontSize: 15, fontWeight: 800, color: NAVY,
+                fontFamily: '"Playfair Display", Georgia, serif',
+                letterSpacing: '-0.01em', lineHeight: 1.15,
+              }}>
+                Talk to Astrologers
+                <span style={{
+                  marginLeft: 6,
+                  background: `linear-gradient(135deg, #D4A335 0%, ${GOLD} 50%, #9A6F15 100%)`,
+                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+                  fontSize: 14,
+                }}>✦</span>
+              </p>
+              <p style={{
+                margin: '2px 0 0', fontSize: 11, fontWeight: 600, color: '#7A6650',
+                lineHeight: 1.2,
+              }}>
+                Chat &amp; call with verified experts
+              </p>
+            </div>
             <WalletBadge />
           </div>
         )}
