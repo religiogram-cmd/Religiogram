@@ -239,33 +239,38 @@ export default function AstrologyScreen({ embedded = false }: AstrologyScreenPro
           </div>
         )}
 
-        {/* Tab bar */}
-        <div style={{ display: 'flex', padding: '0 20px', gap: 0 }}>
-          {TABS.map(tab => {
-            const isActive = activeTab === tab.id && tab.id !== 'ai';
-            return (
-              <button
-                key={tab.id}
-                onClick={() => handleTabClick(tab.id)}
-                style={{
-                  flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  gap: 3, paddingBlock: 9, paddingInline: 4,
-                  border: 'none', background: 'transparent', cursor: 'pointer',
-                  borderBottom: isActive ? `2.5px solid ${GOLD}` : '2.5px solid transparent',
-                  transition: 'all 0.15s',
-                  color: isActive ? NAVY : tab.id === 'ai' ? '#7C3AED' : '#94A3B8',
-                }}
-              >
-                <span style={{ opacity: isActive ? 1 : tab.id === 'ai' ? 0.85 : 0.6 }}>{tab.icon}</span>
-                <span style={{
-                  fontSize: 10, fontWeight: isActive ? 700 : 500,
-                  fontFamily: '"Plus Jakarta Sans", sans-serif',
-                  letterSpacing: '-0.01em',
-                }}>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
+        {/* Tab bar — hidden when embedded because the host screen (Priests
+            > Astrologers) only wants the astrologer catalog, not the
+            Horoscope/Kundli sub-tabs. Standalone /astrology still shows
+            the full sub-tab strip. */}
+        {!embedded && (
+          <div style={{ display: 'flex', padding: '0 20px', gap: 0 }}>
+            {TABS.map(tab => {
+              const isActive = activeTab === tab.id && tab.id !== 'ai';
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => handleTabClick(tab.id)}
+                  style={{
+                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    gap: 3, paddingBlock: 9, paddingInline: 4,
+                    border: 'none', background: 'transparent', cursor: 'pointer',
+                    borderBottom: isActive ? `2.5px solid ${GOLD}` : '2.5px solid transparent',
+                    transition: 'all 0.15s',
+                    color: isActive ? NAVY : tab.id === 'ai' ? '#7C3AED' : '#94A3B8',
+                  }}
+                >
+                  <span style={{ opacity: isActive ? 1 : tab.id === 'ai' ? 0.85 : 0.6 }}>{tab.icon}</span>
+                  <span style={{
+                    fontSize: 10, fontWeight: isActive ? 700 : 500,
+                    fontFamily: '"Plus Jakarta Sans", sans-serif',
+                    letterSpacing: '-0.01em',
+                  }}>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── Wallet-recharge nudge ──
