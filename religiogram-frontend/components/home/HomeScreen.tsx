@@ -3,11 +3,13 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useReligion } from '@/lib/useReligion';
 
-// (Explore Priests / Explore Holy Places rails removed per product
-//  decision — useReligion, tokenStore + API_BASE are no longer read
-//  here. Both sections still exist as standalone routes reached via
-//  the bottom nav.)
+/* Explore Priests / Explore Holy Places rails were removed per product
+ * decision, but useReligion is still consumed here to filter the
+ * "Rituals & Services" faith-cards section — if a user has picked a
+ * specific religion (via the Priests / Holy Places first-visit picker),
+ * we show only their faith's ritual card on Home rather than all four. */
 
 const GOLD   = '#C8920A';
 const GOLD_L = '#E8A800';
@@ -86,6 +88,23 @@ export default function HomeScreen() {
   const [openFaq, setOpenFaq]   = useState<number | null>(null);
   const [inspIdx, setInspIdx]   = useState(0);
   const timerRef                = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  /* User's picked religion from the shared preference (same one the
+   * Priests / Holy Places screens use). We filter the Rituals & Services
+   * faith cards to just their pick — an all-4 grid on Home was confusing
+   * for a user who has already declared their faith. Fallback rules:
+   *   - religion === null → picker not yet resolved → show all 4 (safe
+   *     default; also handles fresh visitors who haven't picked yet).
+   *   - religion === 'all' → show all 4 (user explicitly chose "all").
+   *   - specific faith → show only that card.
+   * `loaded` isn't gated because we never want to blank the Home for a
+   * fraction of a second waiting on the hook. */
+  const { religion } = useReligion();
+  const visibleFaithCards = (() => {
+    if (!religion || religion === 'all') return FAITH_CARDS;
+    const match = FAITH_CARDS.filter(fc => fc.key === religion);
+    return match.length ? match : FAITH_CARDS;
+  })();
 
   // FIX 5: First-time welcome banner (dismissed via sessionStorage)
   const [showWelcome, setShowWelcome] = useState(() => {
@@ -512,7 +531,7 @@ export default function HomeScreen() {
           Rituals &amp; Services
         </span>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {FAITH_CARDS.map(fc => (
+          {visibleFaithCards.map(fc => (
             <Link
               key={fc.key}
               href={`/rituals?faith=${fc.key}`}
