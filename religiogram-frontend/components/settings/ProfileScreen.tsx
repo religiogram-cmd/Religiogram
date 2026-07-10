@@ -694,6 +694,93 @@ export default function ProfileScreen() {
       {/* ── Sections ── */}
       <div style={{ padding:'8px 16px 120px' }}>
 
+        {/* ── Featured: Become a Service Provider (or manage if already one) ──
+         * Highlighted hero card pinned to the top of the profile so this
+         * revenue-facing CTA is the first thing every user sees. Uses the
+         * gold-gradient / navy theme instead of the neutral row style. */}
+        <div style={{ marginBottom: 18 }}>
+          {isProvider ? (
+            <button
+              type="button"
+              onClick={() => router.push('/provider-onboarding')}
+              style={{
+                width: '100%', textAlign: 'left', cursor: 'pointer',
+                background: `linear-gradient(135deg, ${NAVY} 0%, #1A3168 100%)`,
+                border: `1.5px solid rgba(200,147,42,0.55)`,
+                borderRadius: 18,
+                padding: '16px 18px',
+                display: 'flex', alignItems: 'center', gap: 14,
+                boxShadow: '0 6px 20px rgba(15,36,82,0.28)',
+                color: '#fff',
+                fontFamily: '"Plus Jakarta Sans", sans-serif',
+              }}
+            >
+              <div style={{
+                width: 46, height: 46, borderRadius: 14, flexShrink: 0,
+                background: `linear-gradient(135deg, ${GOLD}, #9A6F15)`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', boxShadow: '0 4px 12px rgba(200,147,42,0.35)',
+              }}>
+                <ProviderIcon />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-0.01em' }}>
+                  Manage Provider Profile
+                </div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.72)', marginTop: 3, lineHeight: 1.35 }}>
+                  Update services, pricing &amp; availability
+                </div>
+              </div>
+              <span style={{
+                background: 'rgba(200,147,42,0.22)', color: '#F5D988',
+                border: '1px solid rgba(200,147,42,0.5)',
+                borderRadius: 999, padding: '3px 10px',
+                fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', flexShrink: 0,
+              }}>PROVIDER</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => router.push('/provider-onboarding')}
+              style={{
+                width: '100%', textAlign: 'left', cursor: 'pointer',
+                background: `linear-gradient(135deg, ${GOLD} 0%, #E8A800 50%, #9A6F15 100%)`,
+                border: '1.5px solid rgba(154,111,21,0.55)',
+                borderRadius: 18,
+                padding: '16px 18px',
+                display: 'flex', alignItems: 'center', gap: 14,
+                boxShadow: '0 6px 20px rgba(200,147,42,0.35)',
+                color: '#1A0800',
+                fontFamily: '"Plus Jakarta Sans", sans-serif',
+                position: 'relative',
+              }}
+            >
+              <div style={{
+                width: 46, height: 46, borderRadius: 14, flexShrink: 0,
+                background: NAVY,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: GOLD, boxShadow: '0 4px 12px rgba(15,36,82,0.30)',
+              }}>
+                <ProviderIcon />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#1A0800', letterSpacing: '-0.01em' }}>
+                  Become a Service Provider
+                </div>
+                <div style={{ fontSize: 12, color: 'rgba(26,8,0,0.75)', marginTop: 3, lineHeight: 1.35 }}>
+                  List your services, set pricing, get bookings
+                </div>
+              </div>
+              <span style={{
+                background: NAVY, color: GOLD,
+                borderRadius: 999, padding: '3px 10px',
+                fontSize: 10, fontWeight: 800, letterSpacing: '0.08em',
+                flexShrink: 0, boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+              }}>NEW</span>
+            </button>
+          )}
+        </div>
+
         <Section title="Preferences">
           <Row icon={<FaithIcon />}  iconBg="#C8920A"  label="My Faith / Religion" sublabel={religion ? FAITH_OPTIONS.find(f=>f.key===religion)?.label ?? 'All Faiths' : 'Not set'} onClick={() => setShowFaithSheet(true)} />
           <Row icon={<MapPinIcon />} iconBg={NAVY}     label="Default City"    sublabel="Set your home city for local services" onClick={() => {}} />
@@ -723,46 +810,15 @@ export default function ProfileScreen() {
           <Divider />
           <Row icon={<CardIcon />}    iconBg="#6B7280"  label="Payment Methods" sublabel="Add or manage payment options"       onClick={() => {}} />
           <Divider />
-          {/* ── Become / Manage Service Provider ── */}
-          {isProvider ? (
-            <>
-              <Row
-                icon={<ProviderIcon />}
-                iconBg="#D97706"
-                label="Manage Provider Profile"
-                sublabel="Update services, pricing & availability"
-                badge="PROVIDER"
-                onClick={() => router.push('/provider-onboarding')}
-              />
-              <Divider />
-              <Row
-                icon={<ProviderIcon />}
-                iconBg="#2563eb"
-                label="My Provider Status"
-                sublabel="View KYC & verification progress"
-                onClick={() => router.push('/provider-status')}
-              />
-            </>
-          ) : (
-            <>
-              <Row
-                icon={<ProviderIcon />}
-                iconBg={GOLD}
-                label="Become a Service Provider"
-                sublabel="List your services, set pricing, get bookings"
-                badge="NEW"
-                onClick={() => router.push('/provider-onboarding')}
-              />
-              <Divider />
-              <Row
-                icon={<ProviderIcon />}
-                iconBg="#6b7280"
-                label="Check Application Status"
-                sublabel="See your KYC & onboarding progress"
-                onClick={() => router.push('/provider-status')}
-              />
-            </>
-          )}
+          {/* Primary "Become a Service Provider" CTA lives at the top of
+           * the profile now — this row is the secondary status check. */}
+          <Row
+            icon={<ProviderIcon />}
+            iconBg={isProvider ? '#2563eb' : '#6b7280'}
+            label={isProvider ? 'My Provider Status' : 'Check Application Status'}
+            sublabel={isProvider ? 'View KYC & verification progress' : 'See your KYC & onboarding progress'}
+            onClick={() => router.push('/provider-status')}
+          />
         </Section>
 
         <Section title="Support">
