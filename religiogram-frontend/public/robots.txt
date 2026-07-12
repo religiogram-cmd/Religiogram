@@ -1,0 +1,119 @@
+# robots.txt for https://www.religiogram.com
+# Public pages are indexable. Authenticated / dashboard / API routes are
+# not — they're per-user and never serve unique public content.
+
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/
+Disallow: /_next/
+Disallow: /provider-onboarding
+Disallow: /provider-dashboard
+Disallow: /provider-status
+Disallow: /verify-otp
+Disallow: /profile-setup
+Disallow: /onboarding
+Disallow: /permissions
+Disallow: /consult/
+Disallow: /consultation/
+Disallow: /bookings
+Disallow: /wallet
+Disallow: /notifications
+Disallow: /favorites
+Disallow: /profile
+Disallow: /u/
+Disallow: /delete-account
+
+# LLM / answer-engine crawlers — explicit welcome for the public surface.
+# They still honour the disallow list above.
+
+User-agent: GPTBot
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/
+Disallow: /_next/
+Disallow: /provider-onboarding
+Disallow: /provider-dashboard
+Disallow: /provider-status
+Disallow: /verify-otp
+Disallow: /profile-setup
+Disallow: /onboarding
+Disallow: /permissions
+Disallow: /consult/
+Disallow: /consultation/
+Disallow: /bookings
+Disallow: /wallet
+Disallow: /notifications
+Disallow: /favorites
+Disallow: /profile
+Disallow: /u/
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/
+Disallow: /_next/
+Disallow: /provider-onboarding
+Disallow: /provider-dashboard
+Disallow: /provider-status
+Disallow: /verify-otp
+Disallow: /profile-setup
+Disallow: /onboarding
+Disallow: /permissions
+Disallow: /consult/
+Disallow: /consultation/
+Disallow: /bookings
+Disallow: /wallet
+Disallow: /notifications
+Disallow: /favorites
+Disallow: /profile
+Disallow: /u/
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/
+Disallow: /_next/
+Disallow: /provider-onboarding
+Disallow: /provider-dashboard
+Disallow: /provider-status
+Disallow: /verify-otp
+Disallow: /profile-setup
+Disallow: /onboarding
+Disallow: /permissions
+Disallow: /consult/
+Disallow: /consultation/
+Disallow: /bookings
+Disallow: /wallet
+Disallow: /notifications
+Disallow: /favorites
+Disallow: /profile
+Disallow: /u/
+
+User-agent: Googlebot
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/
+Disallow: /_next/
+Disallow: /provider-onboarding
+Disallow: /provider-dashboard
+Disallow: /provider-status
+Disallow: /verify-otp
+Disallow: /profile-setup
+Disallow: /onboarding
+Disallow: /permissions
+Disallow: /consult/
+Disallow: /consultation/
+Disallow: /bookings
+Disallow: /wallet
+Disallow: /notifications
+Disallow: /favorites
+Disallow: /profile
+Disallow: /u/
+
+Sitemap: https://www.religiogram.com/sitemap.xml

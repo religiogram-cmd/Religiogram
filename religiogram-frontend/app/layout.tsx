@@ -25,8 +25,67 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: 'ReligioGram — Book Spiritual Services',
-  description: 'Connect with pandits, priests and spiritual guides. Book puja, rituals and consultations.',
+  metadataBase: new URL('https://www.religiogram.com'),
+  title: {
+    default: 'ReligioGram — Book Verified Pandits, Priests & Astrologers Online in India',
+    template: '%s | ReligioGram',
+  },
+  // 159 chars — trimmed from the long-form draft to keep Google's SERP snippet
+  // intact (155–165 char budget). Full long-form copy lives in llms.txt.
+  description:
+    "India's trusted multi-faith spiritual marketplace. Book verified Pandits, Imams, Granthis & Christian Priests. Live astrology, holy places, kundli & horoscope.",
+  keywords: [
+    'book pandit online',
+    'astrologer online india',
+    'verified priest booking',
+    'hindu wedding pandit',
+    'holy places near me',
+    'nikah imam booking',
+    'kundli matching',
+    'satyanarayan katha pandit',
+    'astrology consultation',
+    'religious ceremonies india',
+  ],
+  authors: [{ name: 'ReligioGram', url: 'https://www.religiogram.com' }],
+  category: 'lifestyle',
+  alternates: { canonical: '/' },
+  openGraph: {
+    title:
+      'ReligioGram — Book Verified Pandits, Priests & Astrologers Online in India',
+    description:
+      "India's trusted multi-faith spiritual marketplace. Book verified Pandits, Imams, Granthis & Christian Priests. Live astrology, holy places, kundli & horoscope.",
+    url: 'https://www.religiogram.com',
+    siteName: 'ReligioGram',
+    images: [
+      {
+        url: '/og-image.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'ReligioGram — Book Verified Pandits, Priests & Astrologers',
+      },
+    ],
+    locale: 'en_IN',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title:
+      'ReligioGram — Book Verified Pandits, Priests & Astrologers Online in India',
+    description:
+      "India's trusted multi-faith spiritual marketplace. Book verified Pandits, Imams, Granthis & Christian Priests. Live astrology, holy places, kundli & horoscope.",
+    images: ['/og-image.jpg'],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
+    },
+  },
   manifest: '/manifest.json',
   icons: {
     icon: [

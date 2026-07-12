@@ -1,0 +1,37 @@
+# ReligioGram
+
+> India's trusted multi-faith spiritual services marketplace. Users book verified Pandits, Imams, Granthis, and Christian Priests for pujas, ceremonies, and religious events. Live chat and video consultations with astrologers. Directory of holy places (temples, mosques, gurudwaras, churches) across India.
+
+## About
+- Founded: 2026
+- HQ: India
+- Serving: Hindu, Muslim, Sikh, Christian communities
+- Cities: Pan-India, focus on top 30 metros
+- Website: https://www.religiogram.com
+- Support: support@religiogram.com
+
+## Key services
+- **Book Pandits / Priests / Imams / Granthis**: verified religious guides for pujas, weddings, funerals, and life ceremonies at your home or venue
+- **Live Astrology Consultation**: chat / voice / video sessions with verified astrologers; pay per minute via wallet
+- **Kundli & Horoscope**: automated birth-chart generation and daily horoscope predictions
+- **Holy Places Directory**: temples, mosques, gurudwaras, and churches with reviews and directions
+- **Community Feed**: devotees share posts, prayers, and celebrations across faiths
+- **Wallet**: secure top-up via Razorpay, refundable holds, transparent per-minute billing
+
+## Key facts
+- Verification: every Pandit / Imam / Granthi / Priest is KYC-verified before appearing in search
+- Multi-faith: single app covers Hindu, Muslim, Sikh, and Christian services
+- Payment: Razorpay integration, INR only, wallet-based
+- Consultation billing: per-minute with a 30-second answer timeout, real-time chat with delivery receipts
+
+## Pricing
+- App download: free
+- Wallet minimum top-up: ₹10
+- Consultation rates: ₹10-₹100 per minute (set by each provider)
+- Priest ceremony booking: ₹500-₹21,000 (varies by ritual)
+- Horoscope, Kundli, community feed: free
+
+## Documentation
+- [Privacy Policy](https://www.religiogram.com/privacy)
+- [Terms of Service](https://www.religiogram.com/terms)
+- [Data Deletion](https://www.religiogram.com/delete-account)
