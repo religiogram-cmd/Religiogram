@@ -3,6 +3,9 @@
   "target": {
     "namespace": "android_app",
     "package_name": "com.religiogram.app",
-    "sha256_cert_fingerprints": ["1F:C4:77:F9:50:19:B9:81:DD:7C:C9:59:0C:75:CA:6C:52:88:3A:6E:25:41:1A:AE:6C:EE:3E:29:DE:08:9C:C3"]
+    "sha256_cert_fingerprints": [
+      "1F:C4:77:F9:50:19:B9:81:DD:7C:C9:59:0C:75:CA:6C:52:88:3A:6E:25:41:1A:AE:6C:EE:3E:29:DE:08:9C:C3",
+      "38:25:21:AD:C2:A2:AF:18:68:45:0D:31:CD:7B:F4:EB:EE:0D:C1:28:45:21:90:0A:23:66:FF:4E:C2:43:99:8F"
+    ]
   }
 }]
