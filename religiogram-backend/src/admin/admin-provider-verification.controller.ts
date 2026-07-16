@@ -111,27 +111,38 @@ export class AdminProviderVerificationController {
     @Query('status') status = 'pending_review',
     @Query('limit') limit = '50',
     @Query('offset') offset = '0',
+    @Query('q') q?: string,
   ) {
     const take = Math.min(200, parseInt(limit, 10) || 50);
     const skip = parseInt(offset, 10) || 0;
 
-    const [items, total] = await this.providers.findAndCount({
-      where: { status: status as ProviderStatus },
-      order: { updatedAt: 'ASC' },
-      skip,
-      take,
-      select: [
-        'id',
-        'userId',
-        'fullName',
-        'religion',
-        'city',
-        'status',
-        'updatedAt',
-        'createdAt',
-      ],
-    });
+    const qb = this.providers.createQueryBuilder('p')
+      .where('p.status = :status', { status })
+      .orderBy('p.updatedAt', 'ASC')
+      .select([
+        'p.id',
+        'p.userId',
+        'p.fullName',
+        'p.religion',
+        'p.city',
+        'p.status',
+        'p.updatedAt',
+        'p.createdAt',
+      ])
+      .skip(skip)
+      .take(take);
 
+    if (q && q.trim().length > 0) {
+      // Sanitize LIKE metacharacters so operator-typed search stays literal.
+      const safe = q.trim().toLowerCase().replace(/[\\%_]/g, (m) => `\\${m}`);
+      const like = `%${safe}%`;
+      qb.andWhere(
+        '(LOWER(p.fullName) LIKE :like OR LOWER(p.religion) LIKE :like OR LOWER(p.city) LIKE :like)',
+        { like },
+      );
+    }
+
+    const [items, total] = await qb.getManyAndCount();
     return { items, total };
   }
 

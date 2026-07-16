@@ -17,6 +17,7 @@ import Link from 'next/link';
 import {
   adminWalletApi,
   type AdminLedgerRow,
+  type AdminRefundLookup,
   type AdminUserRow,
   type AdminWalletSummary,
 } from '@/lib/admin-api';
@@ -97,6 +98,10 @@ function WalletOps() {
   const [creditReason, setCreditReason] = useState('');
   const [creditSubmitting, setCreditSubmitting] = useState(false);
 
+  const [freezeOpen, setFreezeOpen] = useState<null | 'freeze' | 'unfreeze'>(null);
+  const [freezeReason, setFreezeReason] = useState('');
+  const [freezeSubmitting, setFreezeSubmitting] = useState(false);
+
   const search = useCallback(async () => {
     if (q.trim().length < 3) {
       showToast('Enter at least 3 characters to search', 'error');
@@ -140,6 +145,32 @@ function WalletOps() {
   const refresh = useCallback(() => {
     if (selected) loadWallet(selected);
   }, [selected, loadWallet]);
+
+  const submitFreeze = useCallback(async () => {
+    if (!selected || !freezeOpen) return;
+    if (freezeReason.trim().length < 4) {
+      showToast('Reason must be at least 4 characters', 'error');
+      return;
+    }
+    setFreezeSubmitting(true);
+    try {
+      if (freezeOpen === 'freeze') {
+        await adminWalletApi.freeze(selected.id, freezeReason.trim());
+        showToast('Wallet frozen', 'success');
+      } else {
+        await adminWalletApi.unfreeze(selected.id, freezeReason.trim());
+        showToast('Wallet unfrozen', 'success');
+      }
+      setFreezeOpen(null);
+      setFreezeReason('');
+      await loadWallet(selected);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Action failed.';
+      showToast(msg, 'error');
+    } finally {
+      setFreezeSubmitting(false);
+    }
+  }, [selected, freezeOpen, freezeReason, loadWallet]);
 
   const submitCredit = useCallback(async () => {
     if (!selected) return;
@@ -244,7 +275,7 @@ function WalletOps() {
                 Open user profile →
               </Link>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={refresh}
@@ -253,6 +284,23 @@ function WalletOps() {
               >
                 Refresh
               </button>
+              {wallet && (wallet.status === 'frozen' ? (
+                <button
+                  type="button"
+                  onClick={() => { setFreezeReason(''); setFreezeOpen('unfreeze'); }}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700"
+                >
+                  Unfreeze
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setFreezeReason(''); setFreezeOpen('freeze'); }}
+                  className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700"
+                >
+                  Freeze
+                </button>
+              ))}
               <button
                 type="button"
                 onClick={() => setCreditOpen(true)}
@@ -343,6 +391,32 @@ function WalletOps() {
         </section>
       )}
 
+      {freezeOpen && selected && (
+        <ConfirmModal
+          title={freezeOpen === 'freeze' ? 'Freeze wallet' : 'Unfreeze wallet'}
+          onCancel={() => (freezeSubmitting ? null : setFreezeOpen(null))}
+          onConfirm={submitFreeze}
+          submitting={freezeSubmitting}
+          confirmLabel={freezeOpen === 'freeze' ? 'Freeze' : 'Unfreeze'}
+        >
+          <p className="text-sm text-slate-600 mb-3">
+            {freezeOpen === 'freeze'
+              ? <>Freezing <strong>{selected.email}</strong>&apos;s wallet blocks all debits, holds and outbound transfers until an admin unfreezes it. Credits still land.</>
+              : <>Unfreezing <strong>{selected.email}</strong>&apos;s wallet restores normal spend + hold behaviour.</>}
+          </p>
+          <label className="block">
+            <span className="text-xs font-medium text-slate-700">Reason (audit, min 4 chars)</span>
+            <textarea
+              value={freezeReason}
+              onChange={(e) => setFreezeReason(e.target.value)}
+              rows={3}
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+              placeholder="e.g. Fraud investigation — ticket #42"
+            />
+          </label>
+        </ConfirmModal>
+      )}
+
       {creditOpen && selected && (
         <ConfirmModal
           title="Manual wallet credit"
@@ -385,24 +459,130 @@ function WalletOps() {
 /* ─────────────────────────  Refunds tab  ─────────────────────────────── */
 
 function Refunds() {
-  const [ownerId, setOwnerId] = useState('');
-  const [referenceId, setReferenceId] = useState('');
+  // User search (mirrors the Wallet Ops pattern) — used to prefill / verify
+  // the owner. Auto-filled from lookupRefund() if the operator only knows
+  // the booking id.
+  const [userQ, setUserQ] = useState('');
+  const [searchingUsers, setSearchingUsers] = useState(false);
+  const [userMatches, setUserMatches] = useState<AdminUserRow[]>([]);
+  const [selectedUser, setSelectedUser] = useState<AdminUserRow | null>(null);
+  const [selectedWallet, setSelectedWallet] = useState<AdminWalletSummary | null>(null);
+  const [loadingWallet, setLoadingWallet] = useState(false);
+
+  // Booking lookup — one input, either UUID or bookingRef.
+  const [refInput, setRefInput] = useState('');
+  const [lookingUp, setLookingUp] = useState(false);
+  const [lookup, setLookup] = useState<AdminRefundLookup | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+
   const [amountRupees, setAmountRupees] = useState('');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const submit = useCallback(async () => {
-    if (!ownerId.trim()) {
-      showToast('Owner user ID required', 'error');
+  const searchUsers = useCallback(async () => {
+    if (userQ.trim().length < 3) {
+      showToast('Enter at least 3 characters to search', 'error');
       return;
     }
-    if (!referenceId.trim()) {
-      showToast('Reference ID required', 'error');
+    setSearchingUsers(true);
+    try {
+      const res = await adminWalletApi.findUser(userQ.trim());
+      setUserMatches(res.items ?? []);
+      if ((res.items ?? []).length === 0) {
+        showToast('No users match that search', 'error');
+      }
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Search failed.';
+      showToast(msg, 'error');
+    } finally {
+      setSearchingUsers(false);
+    }
+  }, [userQ]);
+
+  const pickUser = useCallback(async (user: AdminUserRow) => {
+    setSelectedUser(user);
+    setSelectedWallet(null);
+    setLoadingWallet(true);
+    try {
+      const w = await adminWalletApi.get(user.id);
+      setSelectedWallet(w);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Failed to load wallet.';
+      showToast(msg, 'error');
+    } finally {
+      setLoadingWallet(false);
+    }
+  }, []);
+
+  const doLookup = useCallback(async () => {
+    if (!refInput.trim()) {
+      showToast('Enter a booking id or reference', 'error');
+      return;
+    }
+    setLookingUp(true);
+    setLookupError(null);
+    try {
+      const res = await adminWalletApi.lookupRefund(refInput.trim());
+      setLookup(res);
+      // Auto-prefill the amount to the max refundable so the operator can
+      // just hit "Issue refund" for a full refund.
+      setAmountRupees(
+        res.maxRefundablePaise > 0 ? (res.maxRefundablePaise / 100).toFixed(2) : '',
+      );
+      // If nobody's selected yet, pull the owner in as the target user so
+      // ownerId autofills — otherwise trust the operator's selection.
+      if (!selectedUser) {
+        const pseudoUser: AdminUserRow = {
+          id: res.ownerId,
+          name: res.ownerName ?? null,
+          email: res.ownerEmail ?? '(unknown)',
+          role: 'seeker',
+          accountStatus: 'active',
+          isActive: true,
+          isProvider: false,
+          createdAt: new Date().toISOString(),
+        };
+        setSelectedUser(pseudoUser);
+        try {
+          const w = await adminWalletApi.get(res.ownerId);
+          setSelectedWallet(w);
+        } catch { /* non-fatal */ }
+      } else if (selectedUser.id !== res.ownerId) {
+        showToast(
+          `Booking owner (${res.ownerEmail ?? res.ownerId.slice(0, 8)}) doesn't match selected user`,
+          'error',
+        );
+      }
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Lookup failed.';
+      setLookupError(msg);
+      setLookup(null);
+    } finally {
+      setLookingUp(false);
+    }
+  }, [refInput, selectedUser]);
+
+  const submit = useCallback(async () => {
+    const ownerId = selectedUser?.id ?? lookup?.ownerId;
+    const referenceId = lookup?.bookingId ?? '';
+    if (!ownerId) {
+      showToast('Select a user or run a booking lookup first', 'error');
+      return;
+    }
+    if (!referenceId) {
+      showToast('Run booking lookup — need the internal booking UUID', 'error');
       return;
     }
     const amt = parseFloat(amountRupees);
     if (!Number.isFinite(amt) || amt <= 0) {
       showToast('Enter a positive amount', 'error');
+      return;
+    }
+    if (lookup && amt * 100 > lookup.maxRefundablePaise) {
+      showToast(
+        `Amount exceeds max refundable (₹${(lookup.maxRefundablePaise / 100).toFixed(2)})`,
+        'error',
+      );
       return;
     }
     if (reason.trim().length < 4) {
@@ -411,97 +591,247 @@ function Refunds() {
     }
     if (
       !window.confirm(
-        `Refund ₹${amt.toFixed(2)} into wallet of ${ownerId} for ref ${referenceId}?`,
+        `Refund ₹${amt.toFixed(2)} into wallet of ${selectedUser?.email ?? ownerId} for booking ${lookup?.bookingRef ?? referenceId}?`,
       )
     ) {
       return;
     }
     setSubmitting(true);
     try {
-      await adminWalletApi.forceRefund(ownerId.trim(), {
+      await adminWalletApi.forceRefund(ownerId, {
         amountPaise: Math.round(amt * 100),
-        referenceId: referenceId.trim(),
+        referenceId,
         reason: reason.trim(),
       });
       showToast('Refund posted', 'success');
       setAmountRupees('');
       setReason('');
-      setReferenceId('');
+      // Re-run lookup so the "already refunded" figure reflects reality.
+      await doLookup();
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : 'Refund failed.';
       showToast(msg, 'error');
     } finally {
       setSubmitting(false);
     }
-  }, [ownerId, referenceId, amountRupees, reason]);
+  }, [selectedUser, lookup, amountRupees, reason, doLookup]);
 
   return (
-    <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm">
-      <p className="text-sm text-slate-600 mb-4">
-        Issue a force-refund into a user&apos;s wallet. Amounts are bound to a
-        booking / payment reference so the operation is idempotent per
-        (admin, reference, amount) — re-firing the same values is a no-op.
-      </p>
+    <div className="space-y-5">
+      {/* User search */}
+      <section className="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+          1. Find the target user
+        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="flex-1 block">
+            <span className="text-xs font-medium text-slate-600">Search by email or name</span>
+            <input
+              type="text"
+              value={userQ}
+              onChange={(e) => setUserQ(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && searchUsers()}
+              placeholder="user@example.com or name"
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={searchUsers}
+            disabled={searchingUsers}
+            className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-50"
+          >
+            {searchingUsers ? 'Searching…' : 'Search'}
+          </button>
+        </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <label className="block">
-          <span className="text-xs font-medium text-slate-700">
-            Target user ID (wallet owner)
-          </span>
-          <input
-            type="text"
-            value={ownerId}
-            onChange={(e) => setOwnerId(e.target.value)}
-            className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-            placeholder="uuid…"
-          />
-        </label>
-        <label className="block">
-          <span className="text-xs font-medium text-slate-700">
-            Reference ID (booking / payment)
-          </span>
-          <input
-            type="text"
-            value={referenceId}
-            onChange={(e) => setReferenceId(e.target.value)}
-            className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-            placeholder="uuid…"
-          />
-        </label>
-        <label className="block">
-          <span className="text-xs font-medium text-slate-700">Amount (₹)</span>
-          <input
-            type="number"
-            min={0}
-            step="0.01"
-            value={amountRupees}
-            onChange={(e) => setAmountRupees(e.target.value)}
-            className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-          />
-        </label>
-        <label className="block sm:col-span-2">
-          <span className="text-xs font-medium text-slate-700">Reason (audit)</span>
-          <textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={3}
-            className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
-            placeholder="e.g. Duplicate charge on booking XYZ"
-          />
-        </label>
-      </div>
+        {userMatches.length > 0 && (
+          <ul className="mt-3 divide-y divide-slate-100 border border-slate-200 rounded-lg">
+            {userMatches.map((u) => (
+              <li
+                key={u.id}
+                className="p-3 hover:bg-slate-50 cursor-pointer flex items-center justify-between"
+                onClick={() => pickUser(u)}
+              >
+                <div>
+                  <p className="text-sm font-medium text-slate-900">{u.name ?? '—'}</p>
+                  <p className="text-xs text-slate-500">{u.email}</p>
+                </div>
+                <span className="text-xs text-slate-400 font-mono">
+                  {u.id.slice(0, 12)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
 
-      <div className="mt-4 flex justify-end">
-        <button
-          type="button"
-          onClick={submit}
-          disabled={submitting}
-          className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50"
-        >
-          {submitting ? 'Processing…' : 'Issue refund'}
-        </button>
-      </div>
-    </section>
+        {selectedUser && (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  {selectedUser.name ?? '—'}{' '}
+                  <span className="text-xs text-slate-500 font-normal">
+                    ({selectedUser.email})
+                  </span>
+                </p>
+                <p className="text-xs text-slate-500 font-mono mt-0.5">{selectedUser.id}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setSelectedUser(null); setSelectedWallet(null); }}
+                className="text-xs text-slate-500 underline"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <StatBox
+                label="Available"
+                value={loadingWallet ? '…' : rupees(selectedWallet?.availableBalance)}
+              />
+              <StatBox
+                label="Held"
+                value={loadingWallet ? '…' : rupees((selectedWallet as any)?.heldBalance)}
+              />
+              <StatBox
+                label="Wallet status"
+                value={
+                  loadingWallet
+                    ? '…'
+                    : selectedWallet?.status
+                      ? <span className="capitalize">{selectedWallet.status}</span>
+                      : '—'
+                }
+              />
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Booking lookup */}
+      <section className="rounded-2xl bg-white border border-slate-200 p-4 shadow-sm">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+          2. Look up the booking
+        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <label className="flex-1 block">
+            <span className="text-xs font-medium text-slate-600">
+              Booking id or reference (e.g. RG-B-XXXXXXXX)
+            </span>
+            <input
+              type="text"
+              value={refInput}
+              onChange={(e) => setRefInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && doLookup()}
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+              placeholder="uuid or RG-B-…"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={doLookup}
+            disabled={lookingUp}
+            className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-50"
+          >
+            {lookingUp ? 'Looking up…' : 'Lookup'}
+          </button>
+        </div>
+
+        {lookupError && (
+          <div className="mt-3 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+            {lookupError}
+          </div>
+        )}
+
+        {lookup && (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <StatBox label="Captured" value={rupees(lookup.capturedPaise)} />
+              <StatBox label="Already refunded" value={rupees(lookup.alreadyRefundedPaise)} />
+              <StatBox label="Max refundable" value={rupees(lookup.maxRefundablePaise)} />
+              <StatBox
+                label="Status"
+                value={<span className="capitalize">{lookup.status}</span>}
+              />
+            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              Booking <span className="font-mono">{lookup.bookingRef}</span> — payer{' '}
+              <span className="font-mono">{lookup.ownerEmail ?? lookup.ownerId.slice(0, 12)}</span>
+            </p>
+          </div>
+        )}
+      </section>
+
+      {/* Refund form */}
+      <section className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+          3. Issue the refund
+        </p>
+        <p className="text-sm text-slate-600 mb-4">
+          Refunds are idempotent per (admin, reference, amount) — re-firing the
+          same values collapses into a single ledger row.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <span className="text-xs font-medium text-slate-700 block">
+              Target user
+            </span>
+            <div className="mt-1 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700">
+              {selectedUser
+                ? <><span className="font-mono">{selectedUser.id.slice(0, 12)}</span> — {selectedUser.email}</>
+                : <span className="text-slate-400">Select a user above</span>}
+            </div>
+          </div>
+          <div>
+            <span className="text-xs font-medium text-slate-700 block">
+              Booking reference
+            </span>
+            <div className="mt-1 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700">
+              {lookup
+                ? <><span className="font-mono">{lookup.bookingRef}</span></>
+                : <span className="text-slate-400">Run booking lookup above</span>}
+            </div>
+          </div>
+          <label className="block">
+            <span className="text-xs font-medium text-slate-700">
+              Amount (₹){lookup ? ` — max ${(lookup.maxRefundablePaise / 100).toFixed(2)}` : ''}
+            </span>
+            <input
+              type="number"
+              min={0}
+              max={lookup ? lookup.maxRefundablePaise / 100 : undefined}
+              step="0.01"
+              value={amountRupees}
+              onChange={(e) => setAmountRupees(e.target.value)}
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+            />
+          </label>
+          <label className="block sm:col-span-2">
+            <span className="text-xs font-medium text-slate-700">Reason (audit)</span>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+              placeholder="e.g. Duplicate charge on booking XYZ"
+            />
+          </label>
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={submitting || !lookup || !selectedUser}
+            className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-50"
+          >
+            {submitting ? 'Processing…' : 'Issue refund'}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 

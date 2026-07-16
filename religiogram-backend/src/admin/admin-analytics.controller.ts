@@ -70,7 +70,19 @@ export class AdminAnalyticsController {
       this.bookingRepo.count(),
       this.bookingRepo.count({ where: { status: BookingStatus.COMPLETED } }),
       this.bookingRepo.count({ where: { status: BookingStatus.CANCELLED } }),
-      this.disputeRepo.count({ where: { status: DisputeStatus.RAISED } }),
+      // "Open" = every non-terminal dispute state, matching the
+      // Disputes queue "Open" tab. Previously counted only RAISED which
+      // meant the dashboard KPI drifted from the queue UI.
+      this.disputeRepo
+        .createQueryBuilder('d')
+        .where('d.status IN (:...openStates)', {
+          openStates: [
+            DisputeStatus.RAISED,
+            DisputeStatus.UNDER_INVESTIGATION,
+            DisputeStatus.ESCALATED,
+          ],
+        })
+        .getCount(),
       this.disputeRepo.count(),
       // "Resolved" from the admin's perspective = any terminal outcome.
       // We UNION the three resolved states in a single COUNT with a raw
@@ -185,17 +197,31 @@ export class AdminAnalyticsController {
   @Get('dispute-sla')
   async getDisputeSla() {
     const now = new Date();
-    const [open, overdue] = await Promise.all([
-      this.disputeRepo.count({ where: { status: DisputeStatus.UNDER_INVESTIGATION } }),
+    // Open = every non-terminal dispute state (raised / under_investigation /
+    // escalated). Keep in lockstep with getKpis() so SLA health % is computed
+    // against the same universe the Disputes queue "Open" tab shows.
+    const openStates = [
+      DisputeStatus.RAISED,
+      DisputeStatus.UNDER_INVESTIGATION,
+      DisputeStatus.ESCALATED,
+    ];
+    const [open, overdueRows] = await Promise.all([
+      this.disputeRepo
+        .createQueryBuilder('d')
+        .where('d.status IN (:...openStates)', { openStates })
+        .getCount(),
       this.ds.query<Array<{ count: string }>>(
-        `SELECT COUNT(*) as count FROM disputes WHERE status = 'under_investigation' AND sla_deadline < $1`,
+        `SELECT COUNT(*) as count FROM disputes
+         WHERE status IN ('raised','under_investigation','escalated')
+           AND sla_deadline < $1`,
         [now],
       ),
     ]);
+    const overdue = Number(overdueRows[0]?.count ?? 0);
     return {
       open,
-      overdue: Number(overdue[0]?.count ?? 0),
-      healthPct: open > 0 ? Math.round(((open - Number(overdue[0]?.count ?? 0)) / open) * 100) : 100,
+      overdue,
+      healthPct: open > 0 ? Math.round(((open - overdue) / open) * 100) : 100,
     };
   }
 }

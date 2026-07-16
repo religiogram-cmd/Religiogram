@@ -28,6 +28,8 @@ import type { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface
 import { EntryType, LedgerEntry } from '../wallet/entities/ledger-entry.entity';
 import { WalletBalance } from '../wallet/entities/wallet-balance.entity';
 import { Wallet, WalletStatus } from '../wallet/entities/wallet.entity';
+import { Booking } from '../bookings/entities/booking.entity';
+import { User } from '../users/entities/user.entity';
 import { AdminAuditService } from './admin-audit.service';
 
 // v9 (P0-1 fix): DTOs scrubbed of `adminId` — the field was never read by the
@@ -74,9 +76,78 @@ export class AdminWalletController {
     private readonly ledgerRepo: Repository<LedgerEntry>,
     @InjectRepository(WalletBalance)
     private readonly walletBalanceRepo: Repository<WalletBalance>,
+    @InjectRepository(Booking)
+    private readonly bookingRepo: Repository<Booking>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly ds: DataSource,
     private readonly audit: AdminAuditService,
   ) {}
+
+  /* ─── GET /v1/admin/wallets/refunds/lookup?referenceId=…
+   *
+   * Resolves a booking (by UUID or bookingRef) so the Refunds tab can
+   * pre-fill the ownerId + validate the max refundable amount. Returns
+   * the captured amount, sum of prior admin refunds against this booking,
+   * and the delta operators may still refund.
+   *
+   * Route sits above `:ownerId` handlers because NestJS matches literal
+   * segments first — but we keep it explicit with `refunds/lookup` to
+   * avoid any UUID-parse collision with the /:ownerId parameterized routes.
+   */
+  @Get('refunds/lookup')
+  async lookupRefundContext(@Query('referenceId') referenceId?: string) {
+    const raw = (referenceId ?? '').trim();
+    if (!raw) throw new NotFoundException('referenceId query is required');
+
+    // Accept either the internal UUID or the human-readable bookingRef
+    // (e.g. `RG-B-A1B2C3D4`). Look up by both — one column will hit.
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
+    const booking = isUuid
+      ? await this.bookingRepo.findOne({ where: { id: raw } })
+      : await this.bookingRepo.findOne({ where: { bookingRef: raw } });
+    if (!booking) throw new NotFoundException(`No booking for reference ${raw}`);
+
+    // Only consider it "captured" when the payment actually reached us. A
+    // pending / payment_failed row means there's nothing to refund.
+    const capturedStates = new Set(['paid', 'captured', 'settled']);
+    const captured = capturedStates.has((booking.paymentStatus || '').toLowerCase())
+      || booking.status === 'completed'
+      || booking.status === 'in_progress'
+      || booking.status === 'disputed';
+    const capturedPaise = captured ? Number(booking.amountPaise) : 0;
+
+    // Sum of prior refunds targeted at this booking id. Includes both
+    // regular refunds (referenceType='refund' with referenceId=bookingId)
+    // and admin force-refunds (referenceType='admin_refund').
+    const priorRefundAgg = await this.ledgerRepo
+      .createQueryBuilder('l')
+      .select('COALESCE(SUM(l.amount), 0)', 'sum')
+      .where('l.referenceId = :bookingId', { bookingId: booking.id })
+      .andWhere('l.entryType = :type', { type: EntryType.REFUND })
+      .getRawOne<{ sum: string }>();
+    const alreadyRefundedPaise = Number(priorRefundAgg?.sum ?? 0);
+
+    const maxRefundablePaise = Math.max(0, capturedPaise - alreadyRefundedPaise);
+
+    const user = await this.userRepo.findOne({
+      where: { id: booking.userId },
+      select: ['id', 'email', 'name'],
+    });
+
+    return {
+      bookingId: booking.id,
+      bookingRef: booking.bookingRef,
+      ownerId: booking.userId,
+      ownerEmail: user?.email ?? null,
+      ownerName: user?.name ?? null,
+      status: booking.status,
+      paymentStatus: booking.paymentStatus,
+      capturedPaise,
+      alreadyRefundedPaise,
+      maxRefundablePaise,
+    };
+  }
 
   @Get(':ownerId')
   async getWallet(@Param('ownerId', ParseUUIDPipe) ownerId: string) {

@@ -193,14 +193,25 @@ export interface AdminUserRow {
 }
 
 export interface AdminUserDetail extends AdminUserRow {
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+  phone?: string | null;
+  isVerified?: boolean;
+  updatedAt?: string;
+  lastLoginAt?: string | null;
   provider?: {
     id: string;
     status: string;
     providerCategory: string | null;
+    fullName?: string | null;
     city: string | null;
+    religion?: string | null;
     bio: string | null;
+    perMinutePaise?: number | null;
     ratingAvg: number | null;
     ratingCount: number;
+    isOnline?: boolean;
   } | null;
 }
 
@@ -275,6 +286,8 @@ export interface AdminProviderRow {
   ratingCount: number;
   perMinutePaise: number | null;
   createdAt: string;
+  isOnline?: boolean;
+  isVerified?: boolean;
 }
 
 export interface AdminProviderDetail extends AdminProviderRow {
@@ -285,6 +298,8 @@ export interface AdminProviderDetail extends AdminProviderRow {
   specialisations: string[];
   specialisationYears?: Record<string, number>;
   consultationChannels: ConsultationChannel[];
+  isOnline?: boolean;
+  isVerified?: boolean;
 }
 
 export interface AdminProviderListResponse {
@@ -306,12 +321,15 @@ export interface AdminProviderEditPayload {
   specialisations?: string[];
   specialisationYears?: Record<string, number>;
   consultationChannels?: ConsultationChannel[];
+  isOnline?: boolean;
+  isVerified?: boolean;
 }
 
 export const adminProvidersApi = {
   list: (params?: {
     status?: ProviderStatus | '';
     category?: ProviderCategory | '';
+    q?: string;
     cursor?: string;
     limit?: number;
   }) =>
@@ -319,6 +337,7 @@ export const adminProvidersApi = {
       `/admin/providers${buildQuery({
         status: params?.status || undefined,
         category: params?.category || undefined,
+        q: params?.q || undefined,
         cursor: params?.cursor || undefined,
         limit: params?.limit ?? 20,
       })}`,
@@ -337,6 +356,15 @@ export const adminProvidersApi = {
     ),
 
   edit: (id: string, body: AdminProviderEditPayload) =>
+    apiFetch<AdminProviderDetail>(
+      `/admin/providers/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    ),
+
+  /** Convenience wrapper for the isOnline / isVerified quick toggles.
+   * Under the hood it's the same PATCH endpoint — this just narrows the
+   * body so callers can't accidentally clobber other fields. */
+  toggle: (id: string, body: { isOnline?: boolean; isVerified?: boolean }) =>
     apiFetch<AdminProviderDetail>(
       `/admin/providers/${encodeURIComponent(id)}`,
       { method: 'PATCH', body: JSON.stringify(body) },
@@ -600,7 +628,27 @@ export const adminWalletApi = {
     apiFetch<AdminUserListResponse>(
       `/admin/users${buildQuery({ q, limit: 10 })}`,
     ),
+
+  /** Resolve a booking / reference id to the payer + refund headroom.
+   * Used by the Refunds tab to prefill ownerId and cap the amount. */
+  lookupRefund: (referenceId: string) =>
+    apiFetch<AdminRefundLookup>(
+      `/admin/wallets/refunds/lookup${buildQuery({ referenceId })}`,
+    ),
 };
+
+export interface AdminRefundLookup {
+  bookingId: string;
+  bookingRef: string;
+  ownerId: string;
+  ownerEmail: string | null;
+  ownerName: string | null;
+  status: string;
+  paymentStatus: string;
+  capturedPaise: number;
+  alreadyRefundedPaise: number;
+  maxRefundablePaise: number;
+}
 
 /* ─────────────────────────  Analytics extras  ──────────────────────── */
 

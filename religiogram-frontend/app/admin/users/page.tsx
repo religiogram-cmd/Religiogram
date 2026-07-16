@@ -274,7 +274,11 @@ function UserRow({
       </td>
       <td className="px-4 py-2.5 text-xs text-slate-500">{timeAgo(user.createdAt)}</td>
       <td className="px-4 py-2.5 text-right">
-        <div className="inline-flex gap-1.5">
+        <div className="inline-flex gap-1.5 items-center">
+          <Link
+            href={`/admin/users/${user.id}`}
+            className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700"
+          >View</Link>
           {isSelf ? (
             <span className="text-xs text-slate-400">—</span>
           ) : (

@@ -8,7 +8,7 @@
  * Each row links to /admin/applications/[id] for the full review screen.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   adminApi,
@@ -76,24 +76,44 @@ export default function AdminApplicationsPage() {
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState<string>('');
+  const [debouncedQuery, setDebouncedQuery] = useState<string>('');
 
-  const fetchPage = useCallback(async (status: AdminApplicationStatus) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await adminApi.applications.list({ status, limit: PAGE_SIZE, offset: 0 });
-      setItems(res.items ?? []);
-      setTotal(typeof res.total === 'number' ? res.total : (res.items ?? []).length);
-    } catch (err) {
-      const msg =
-        err instanceof ApiError ? err.message : 'Failed to load applications.';
-      setError(msg);
-      setItems([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Debounce the search input — 300ms after last keystroke — so we're not
+  // hammering the backend on every character while the operator types.
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, [query]);
+
+  const fetchPage = useCallback(
+    async (status: AdminApplicationStatus, q: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await adminApi.applications.list({
+          status,
+          limit: PAGE_SIZE,
+          offset: 0,
+          q: q || undefined,
+        });
+        setItems(res.items ?? []);
+        setTotal(typeof res.total === 'number' ? res.total : (res.items ?? []).length);
+      } catch (err) {
+        const msg =
+          err instanceof ApiError ? err.message : 'Failed to load applications.';
+        setError(msg);
+        setItems([]);
+        setTotal(0);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   const loadMore = useCallback(async () => {
     setLoadingMore(true);
@@ -102,6 +122,7 @@ export default function AdminApplicationsPage() {
         status: filter,
         limit: PAGE_SIZE,
         offset: items.length,
+        q: debouncedQuery || undefined,
       });
       setItems((prev) => [...prev, ...(res.items ?? [])]);
       if (typeof res.total === 'number') setTotal(res.total);
@@ -112,29 +133,17 @@ export default function AdminApplicationsPage() {
     } finally {
       setLoadingMore(false);
     }
-  }, [filter, items.length]);
+  }, [filter, items.length, debouncedQuery]);
 
+  // Refetch whenever the filter chip OR the debounced search value changes;
+  // both reset the offset to 0 by using fetchPage() directly.
   useEffect(() => {
-    fetchPage(filter);
-  }, [filter, fetchPage]);
+    fetchPage(filter, debouncedQuery);
+  }, [filter, debouncedQuery, fetchPage]);
 
-  // Client-side search filter (server-side would need a `q` param on
-  // /verifications/queue which currently ignores it).
-  const q = query.trim().toLowerCase();
-  const displayItems = q
-    ? items.filter((it) => {
-        const hay = [
-          it.fullName ?? '',
-          it.religion ?? '',
-          it.city ?? '',
-        ]
-          .join(' ')
-          .toLowerCase();
-        return hay.includes(q);
-      })
-    : items;
-
+  const displayItems = items;
   const hasMore = items.length < total;
+  const q = debouncedQuery.toLowerCase();
 
   return (
     <div className="space-y-5">
@@ -214,7 +223,7 @@ export default function AdminApplicationsPage() {
           <p className="text-sm text-slate-600 mt-1">{error}</p>
           <button
             type="button"
-            onClick={() => fetchPage(filter)}
+            onClick={() => fetchPage(filter, debouncedQuery)}
             className="mt-3 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm font-medium"
           >
             Retry
@@ -309,7 +318,7 @@ export default function AdminApplicationsPage() {
             ))}
           </ul>
 
-          {hasMore && !q && (
+          {hasMore && (
             <div className="border-t border-slate-100 p-4 flex justify-center">
               <button
                 type="button"

@@ -15,6 +15,7 @@ import { UseGuards } from '@nestjs/common';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsObject,
@@ -127,6 +128,16 @@ class EditProviderDto {
   @ArrayMaxSize(3)
   @IsEnum(ConsultationChannel, { each: true })
   consultationChannels?: ConsultationChannel[];
+
+  /** Quick-toggle flags — either can be flipped in isolation from the
+   * providers list without opening the full edit modal. */
+  @IsOptional()
+  @IsBoolean()
+  isOnline?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isVerified?: boolean;
 }
 
 /**
@@ -192,6 +203,8 @@ export class AdminProvidersController {
       specialisations:  p.specialisations ?? [],
       specialisationYears:  p.specialisationYears ?? {},
       consultationChannels: p.consultationChannels ?? [],
+      isOnline:         (p as any).isOnline ?? false,
+      isVerified:       (p as any).isVerified ?? false,
     };
   }
 
@@ -199,6 +212,7 @@ export class AdminProvidersController {
   async list(
     @Query('status') status?: string,
     @Query('category') category?: string,
+    @Query('q') q?: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit = 20,
   ) {
@@ -232,6 +246,17 @@ export class AdminProvidersController {
     // Category filter (was silently ignored before this fix).
     if (category && (category === 'priest' || category === 'astrologer' || category === 'both')) {
       qb.andWhere('p.providerCategory = :category', { category });
+    }
+
+    // Debounced search on full name / city. LIKE metacharacters in the
+    // operator-typed string are escaped so `%` doesn't match everything.
+    if (q && q.trim().length > 0) {
+      const safe = q.trim().toLowerCase().replace(/[\\%_]/g, (m) => `\\${m}`);
+      const like = `%${safe}%`;
+      qb.andWhere(
+        '(LOWER(p.fullName) LIKE :like OR LOWER(p.city) LIKE :like)',
+        { like },
+      );
     }
 
     if (cursor) {
@@ -384,6 +409,8 @@ export class AdminProvidersController {
       'specialisations',
       'specialisationYears',
       'consultationChannels',
+      'isOnline',
+      'isVerified',
     ];
     for (const key of editableKeys) {
       if (dto[key] !== undefined) {

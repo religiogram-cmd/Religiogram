@@ -12,7 +12,7 @@
  * multiply back to paise on save to match the wire format.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   adminProvidersApi,
@@ -54,9 +54,19 @@ export default function AdminProvidersPage() {
 
   const [status, setStatus] = useState<ProviderStatus | ''>('');
   const [category, setCategory] = useState<ProviderCategory | ''>('');
+  const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [moderate, setModerate] = useState<{ id: string; row: AdminProviderRow; action: ModerationAction } | null>(null);
+
+  // Debounce provider search — matches the users page pattern.
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => setDebouncedQ(q.trim()), 300);
+    return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); };
+  }, [q]);
 
   const load = async () => {
     setErr(null);
@@ -65,6 +75,7 @@ export default function AdminProvidersPage() {
       const resp = await adminProvidersApi.list({
         status: status || undefined,
         category: category || undefined,
+        q: debouncedQ || undefined,
         limit: 50,
       });
       setRows(resp.items);
@@ -76,7 +87,7 @@ export default function AdminProvidersPage() {
       setLoading(false);
     }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status, category]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status, category, debouncedQ]);
 
   const loadMore = async () => {
     if (!hasMore || !nextCursor) return;
@@ -85,6 +96,7 @@ export default function AdminProvidersPage() {
       const resp = await adminProvidersApi.list({
         status: status || undefined,
         category: category || undefined,
+        q: debouncedQ || undefined,
         cursor: nextCursor,
         limit: 50,
       });
@@ -95,6 +107,23 @@ export default function AdminProvidersPage() {
       setErr(e?.message ?? 'Failed to load more');
     } finally {
       setLoadingMore(false);
+    }
+  };
+
+  /** Optimistic quick-toggle for isOnline / isVerified. Reverts the row if
+   * the PATCH fails. Full modal isn't opened — one click, one field. */
+  const quickToggle = async (
+    id: string,
+    field: 'isOnline' | 'isVerified',
+    next: boolean,
+  ) => {
+    setRows((cur) => cur.map((r) => (r.id === id ? { ...r, [field]: next } : r)));
+    try {
+      await adminProvidersApi.toggle(id, { [field]: next });
+    } catch (e: any) {
+      setErr(e?.message ?? 'Toggle failed');
+      // Revert on failure.
+      setRows((cur) => cur.map((r) => (r.id === id ? { ...r, [field]: !next } : r)));
     }
   };
 
@@ -118,6 +147,13 @@ export default function AdminProvidersPage() {
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search by name or city…"
+          className="flex-1 min-w-[220px] px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm"
+        />
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value as ProviderStatus | '')}
@@ -165,6 +201,7 @@ export default function AdminProvidersPage() {
                   <th className="px-4 py-2.5 font-medium">City</th>
                   <th className="px-4 py-2.5 font-medium text-right">Rating</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
+                  <th className="px-4 py-2.5 font-medium text-center">Flags</th>
                   <th className="px-4 py-2.5 font-medium text-right">Actions</th>
                 </tr>
               </thead>
@@ -175,6 +212,7 @@ export default function AdminProvidersPage() {
                     provider={p}
                     onEdit={() => setEditingId(p.id)}
                     onModerate={(action) => setModerate({ id: p.id, row: p, action })}
+                    onToggle={(field, next) => quickToggle(p.id, field, next)}
                   />
                 ))}
               </tbody>
@@ -223,11 +261,12 @@ export default function AdminProvidersPage() {
 /* ─────────── Row + badges ─────────── */
 
 function ProviderRow({
-  provider, onEdit, onModerate,
+  provider, onEdit, onModerate, onToggle,
 }: {
   provider: AdminProviderRow;
   onEdit: () => void;
   onModerate: (a: ModerationAction) => void;
+  onToggle: (field: 'isOnline' | 'isVerified', next: boolean) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   return (
@@ -243,6 +282,22 @@ function ProviderRow({
       </td>
       <td className="px-4 py-2.5">
         <ProviderStatusBadge status={provider.status} />
+      </td>
+      <td className="px-4 py-2.5">
+        <div className="flex items-center justify-center gap-2">
+          <ToggleChip
+            label="Online"
+            on={!!provider.isOnline}
+            onColour="emerald"
+            onClick={() => onToggle('isOnline', !provider.isOnline)}
+          />
+          <ToggleChip
+            label="Verified"
+            on={!!provider.isVerified}
+            onColour="sky"
+            onClick={() => onToggle('isVerified', !provider.isVerified)}
+          />
+        </div>
       </td>
       <td className="px-4 py-2.5 text-right">
         <div className="inline-flex gap-1.5 items-center relative">
@@ -290,6 +345,33 @@ function MenuBtn({
       onClick={onClick}
       className={`w-full text-xs px-3 py-1.5 ${cls}`}
     >{children}</button>
+  );
+}
+
+function ToggleChip({
+  label, on, onColour, onClick,
+}: {
+  label: string;
+  on: boolean;
+  onColour: 'emerald' | 'sky';
+  onClick: () => void;
+}) {
+  const onCls =
+    onColour === 'emerald'
+      ? 'bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-200'
+      : 'bg-sky-100 text-sky-800 border-sky-200 hover:bg-sky-200';
+  const offCls =
+    'bg-white text-slate-500 border-slate-200 hover:bg-slate-50';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`${label}: ${on ? 'on' : 'off'} — click to toggle`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${on ? onCls : offCls}`}
+    >
+      <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${on ? (onColour === 'emerald' ? 'bg-emerald-600' : 'bg-sky-600') : 'bg-slate-300'}`} />
+      {label}
+    </button>
   );
 }
 

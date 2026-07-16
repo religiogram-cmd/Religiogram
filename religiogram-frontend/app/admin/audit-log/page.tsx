@@ -8,7 +8,7 @@
  * action type / date range and pages with a keyset cursor.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import {
   adminAuditApi,
   type AdminAuditRow,
@@ -255,8 +255,8 @@ export default function AdminAuditLogPage() {
                 {rows.map((r) => {
                   const open = expanded[r.id];
                   return (
-                    <>
-                      <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50 align-top">
+                    <Fragment key={r.id}>
+                      <tr className="border-t border-slate-100 hover:bg-slate-50 align-top">
                         <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
                           <div>{relativeTime(r.createdAt)}</div>
                           <div className="text-xs text-slate-400">
@@ -296,7 +296,7 @@ export default function AdminAuditLogPage() {
                         </td>
                       </tr>
                       {open && (
-                        <tr key={`${r.id}-detail`} className="border-t border-slate-100 bg-slate-50">
+                        <tr className="border-t border-slate-100 bg-slate-50">
                           <td colSpan={6} className="px-4 py-4">
                             <pre className="text-xs text-slate-700 whitespace-pre-wrap break-all">
 {JSON.stringify(
@@ -315,7 +315,7 @@ export default function AdminAuditLogPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>

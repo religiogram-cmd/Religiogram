@@ -44,7 +44,7 @@ function useAuthedBlob(providerId: string, kind: string) {
         const tok =
           tokenStore.access ??
           (typeof window !== 'undefined' ? localStorage.getItem('rg_access') : null);
-        const base = process.env.NEXT_PUBLIC_API_BASE ?? '/v1';
+        const base = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1';
         const r = await fetch(`${base}/admin/verifications/${providerId}/file/${kind}`, {
           headers: tok ? { Authorization: `Bearer ${tok}` } : {},
           cache: 'no-store',

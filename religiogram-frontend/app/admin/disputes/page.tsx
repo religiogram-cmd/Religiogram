@@ -116,19 +116,51 @@ export default function AdminDisputesPage() {
     if (!cursor) return;
     setLoadingMore(true);
     try {
+      // Primary status page-forward (uses the returned cursor).
       const res = await adminDisputesApi.list({
         status: activeFilter.matches[0],
         cursor,
         limit: 50,
       });
-      setRows((prev) => [...prev, ...(res.data ?? [])]);
+      let extra = res.data ?? [];
+
+      // For merged tabs (Under review = under_investigation + escalated)
+      // the cursor only paginates the primary status. Ask each secondary
+      // status for its next page too so combined tabs actually advance.
+      if (activeFilter.matches.length > 1) {
+        // Cheapest correct approach: refetch each secondary status
+        // completely and drop rows already in our list. Overlapping is
+        // small because each secondary tab caps at 50 rows per call.
+        const seen = new Set(rows.map((r) => r.id));
+        const secondary = await Promise.all(
+          activeFilter.matches.slice(1).map((s) =>
+            adminDisputesApi
+              .list({ status: s, limit: 50 })
+              .then((r) => r.data ?? [])
+              .catch(() => []),
+          ),
+        );
+        for (const chunk of secondary) {
+          for (const row of chunk) {
+            if (!seen.has(row.id)) {
+              extra = [...extra, row];
+              seen.add(row.id);
+            }
+          }
+        }
+        extra.sort(
+          (a, b) => new Date(a.slaDeadline).getTime() - new Date(b.slaDeadline).getTime(),
+        );
+      }
+
+      setRows((prev) => [...prev, ...extra]);
       setCursor(res.nextCursor);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load more.');
     } finally {
       setLoadingMore(false);
     }
-  }, [cursor, activeFilter]);
+  }, [cursor, activeFilter, rows]);
 
   useEffect(() => {
     fetchList();
