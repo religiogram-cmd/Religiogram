@@ -1,64 +1,38 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 /**
- * Admin route gate (edge middleware).
+ * Admin route middleware — pure pass-through.
  *
- * Runs at the edge for every `/admin/*` request.
+ * Previous versions tried to gate `/admin/*` at the edge by looking for a
+ * JWT in a cookie. That doesn't work for us: the SPA stores its access
+ * token in `localStorage['rg_access']` (managed by `lib/api.ts::tokenStore`),
+ * which the edge runtime cannot read. The middleware ended up treating
+ * logged-in admins as logged-out visitors and redirecting them to /auth,
+ * which then bounced them back to /home because they WERE actually signed
+ * in — an infinite-feeling loop that looked like "admin is broken".
  *
- * ── Design ─────────────────────────────────────────────────────────────
- * The middleware is intentionally lightweight — it checks for the
- * PRESENCE of an auth token, not its cryptographic validity. Why:
+ * ── Where the real auth check lives ──────────────────────────────────
+ *   1. Client-side: `app/admin/layout.tsx` reads tokenStore + localStorage,
+ *      calls GET /users/me, and either renders the admin shell (role === 'admin'),
+ *      redirects to /auth (no token / 401), or renders an "Access denied"
+ *      panel (authenticated but not admin).
  *
- *   1. Tokens are signed HS256 with a shared secret held only by the
- *      NestJS backend. Importing that secret into the Vercel edge
- *      runtime widens the blast radius unnecessarily.
+ *   2. Backend: every /api/v1/admin/* route goes through JwtAuthGuard +
+ *      RolesGuard + @Roles('admin'). Even if the SPA shell somehow rendered
+ *      for a non-admin, the backend rejects every admin API call with 403.
  *
- *   2. The real security barrier lives on the backend:
- *      every /api/v1/admin/* endpoint runs through JwtAuthGuard +
- *      RolesGuard + @Roles('admin'). Backend rejects any request whose
- *      JWT is invalid, expired, or lacks the admin role — so even if
- *      the SPA shell loads, no admin data is fetched without a valid
- *      admin JWT.
- *
- *   3. The middleware's job here is UX: don't render the admin SPA
- *      shell to logged-out visitors (which would flash empty screens
- *      before the client-side auth check kicks in) and don't index
- *      admin routes.
- *
- * ── Behaviour ──────────────────────────────────────────────────────────
- *   - No token cookie/header  → redirect to `/auth?from=/admin/…`
- *   - Token present           → let the request through, backend enforces role
- *   - Non-prod                → pass through unconditionally (DevPanel + backend)
+ * Both layers together are the real security barrier. This middleware is
+ * intentionally a no-op so it can't create false negatives against them.
+ * Keeping the file (rather than deleting it) so future changes can put
+ * genuinely edge-only concerns here (e.g. bot filtering, geo blocking).
  */
-export function middleware(req: NextRequest): NextResponse {
-  if (!req.nextUrl.pathname.startsWith('/admin')) {
-    return NextResponse.next();
-  }
-
-  const isProd = process.env.NODE_ENV === 'production';
-
-  // Non-prod: pass through — DevPanel handles auth, backend still enforces roles.
-  if (!isProd) {
-    return NextResponse.next();
-  }
-
-  // Check for token presence — cookie first (SPA sets it), then Authorization header.
-  const token =
-    req.cookies.get('rg_access_token')?.value ??
-    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
-
-  if (!token) {
-    // No token — send them to sign in. Auth page is at `/auth` (not `/login`).
-    // Preserve where they were trying to go so we can bounce them back after login.
-    return NextResponse.redirect(
-      new URL(`/auth?from=${encodeURIComponent(req.nextUrl.pathname)}`, req.url),
-    );
-  }
-
-  // Token present — let the SPA render. Client-side and backend guard from here.
+export function middleware(_req: NextRequest): NextResponse {
   return NextResponse.next();
 }
 
 export const config = {
+  // Still scoped to /admin/* so Next's dev server has the same file present
+  // even though we currently do nothing. Add other matchers here later if
+  // an edge concern actually needs one.
   matcher: ['/admin/:path*'],
 };
