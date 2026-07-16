@@ -388,18 +388,94 @@ export class SocialService {
       } catch (err: any) { lastErr = err; }
     }
     if (!inserted) throw new BadRequestException(`Could not create post: ${lastErr?.message ?? 'DB error'}`);
-    /* Fan-out to followers' feeds.
-     * Previously this only inserted the author's own row into feed_items
-     * (with the WRONG columns — user_id/inserted_at — which no longer
-     * exist), so followers never saw new posts unless the friendship
-     * back-fill happened to catch them. Now we route through the same
-     * sync/async decision the community createCommunityPost uses. Live
-     * pub/sub still fires for author-echo. */
+    /* Fan-out — split into two phases to fix "I just posted but my own feed
+     * is still empty":
+     *
+     *  1) SYNC: insert the author's own feed_items row before we return.
+     *     Guarantees that the very next GET /social/feed the client fires
+     *     from the composer's onPosted callback will see this post. This is
+     *     one INSERT ... ON CONFLICT DO NOTHING — fast, and non-fatal if it
+     *     races with the async fan-out below (idempotent).
+     *
+     *  2) ASYNC: fan out to friends' feeds via setImmediate as before. That
+     *     path is fire-and-forget because it can touch hundreds of rows for
+     *     users with many friends and we don't want to block the response
+     *     on it.
+     *
+     * Live pub/sub still fires for author-echo so any open web sockets on
+     * the author's other devices refresh instantly. */
+    try {
+      await this.ds.query(
+        `INSERT INTO feed_items (viewer_id, post_id, author_id, post_created_at)
+         VALUES ($1, $2, $1, $3)
+         ON CONFLICT DO NOTHING`,
+        [authorId, postId, now],
+      );
+    } catch (err) {
+      // Non-fatal — the async fan-out below will try again. Log so we can
+      // spot systemic breakage in feed_items.
+      this.logger.warn(
+        `own-feed insert failed post=${postId} author=${authorId}: ${(err as Error).message}`,
+      );
+    }
     setImmediate(() => {
       this._fanOutPost(postId, authorId, now).catch(() => {});
       try { this.redis.publish(`feed:${authorId}`, JSON.stringify({ postId, authorId, createdAt: now })); } catch {}
     });
-    return { id: postId, authorId, caption, imageUrls, likesCount: 0, commentsCount: 0, sharesCount: 0, isDeleted: false, hashtags: [], postType: 'text', category: null, text: caption, imageUrl: null, createdAt: now, updatedAt: now } as any;
+    // Enrich with the author object so the composer can optimistically
+    // prepend the card without waiting for the feed refetch to hydrate it.
+    // Shape mirrors PostAuthor on the frontend (id, username, name, avatarUrl,
+    // accountType). accountType is best-effort — falls back to 'personal' if
+    // the users table doesn't have the column in a given deploy.
+    let author:
+      | {
+          id: string;
+          name: string | null;
+          username: string | null;
+          avatarUrl: string | null;
+          accountType: string;
+        }
+      | null = null;
+    try {
+      const [u] = await this.ds.query(
+        `SELECT id, name, username, avatar_url,
+                COALESCE(account_type, 'personal') AS account_type
+         FROM users WHERE id = $1 LIMIT 1`,
+        [authorId],
+      );
+      if (u) {
+        author = {
+          id: u.id,
+          name: u.name ?? null,
+          username: u.username ?? null,
+          avatarUrl: u.avatar_url ?? null,
+          accountType: u.account_type ?? 'personal',
+        };
+      }
+    } catch {
+      try {
+        const [u] = await this.ds.query(
+          `SELECT id, name, username, avatar_url FROM users WHERE id = $1 LIMIT 1`,
+          [authorId],
+        );
+        if (u) author = { id: u.id, name: u.name ?? null, username: u.username ?? null, avatarUrl: u.avatar_url ?? null, accountType: 'personal' };
+      } catch { /* non-fatal — author will hydrate on next feed load */ }
+    }
+    const extractedHashtags: string[] = Array.isArray((dto as any).hashtags) ? (dto as any).hashtags : [];
+    return {
+      id: postId, authorId,
+      caption, imageUrls,
+      likesCount: 0, likeCount: 0,
+      commentsCount: 0, commentCount: 0,
+      sharesCount: 0, shareCount: 0,
+      isDeleted: false, hashtags: extractedHashtags,
+      postType: 'text', category: null,
+      text: caption ?? '', imageUrl: null, photos: imageUrls,
+      isLiked: false, likedByMe: false,
+      bookmarkedByMe: false,
+      author,
+      createdAt: now, updatedAt: now,
+    } as any;
   }
 
   // ── Fan-out routing ────────────────────────────────────────────────────────

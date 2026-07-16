@@ -10,6 +10,7 @@ import CommunityMessagesTab from './CommunityMessagesTab';
 import CommunityNotificationsTab from './CommunityNotificationsTab';
 import CommunityProfileTab from './CommunityProfileTab';
 import PostComposerModal from './PostComposerModal';
+import type { Post } from '@/lib/community-api';
 
 const NAVY    = '#0A1628';
 const NAVY_2  = '#0F2452';
@@ -33,6 +34,12 @@ export default function CommunityScreen() {
   const [composer, setComposer] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [feedKey, setFeedKey] = useState(0);   // bumped to force feed refresh after a new post
+  /* Post handed to CommunityFeedTab for optimistic prepend right after
+   * creation. Cleared on next render so a subsequent mount doesn't re-inject
+   * the same post — CommunityFeedTab dedupes by id anyway, but keeping the
+   * hand-off short-lived also stops it from re-prepending after a manual
+   * refresh. */
+  const [pendingPost, setPendingPost] = useState<Post | null>(null);
 
   /* ── bootstrap profile ───────────────────────────── */
   useEffect(() => {
@@ -178,7 +185,7 @@ export default function CommunityScreen() {
           if (dx > 0 && idx > 0) setTab(order[idx - 1]);
         }}
       >
-        {tab === 'feed'          && <CommunityFeedTab          key={feedKey} me={profile} onOpenComposer={() => setComposer(true)} />}
+        {tab === 'feed'          && <CommunityFeedTab          key={feedKey} me={profile} onOpenComposer={() => setComposer(true)} pendingPrepend={pendingPost} />}
         {tab === 'discover'      && <CommunityDiscoverTab      me={profile} />}
         {tab === 'messages'      && <CommunityMessagesTab      me={profile} />}
         {tab === 'notifications' && <CommunityNotificationsTab me={profile} onUnreadChange={setUnreadCount} />}
@@ -189,7 +196,16 @@ export default function CommunityScreen() {
         <PostComposerModal
           me={profile}
           onClose={() => setComposer(false)}
-          onPosted={() => { setComposer(false); setFeedKey(k => k + 1); setTab('feed'); }}
+          onPosted={(post) => {
+            setComposer(false);
+            // Hand the new post to the feed tab so it shows up instantly
+            // (backend fan-out for OTHER viewers is async and may lag a
+            // beat — but for the author's own row we now insert synchronously
+            // on the server; either way we don't rely on the refetch race).
+            setPendingPost(post);
+            setFeedKey(k => k + 1);
+            setTab('feed');
+          }}
         />
       )}
     </div>

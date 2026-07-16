@@ -19,6 +19,11 @@ const HEART   = '#E11D48';
 interface Props {
   me: CommunityProfile;
   onOpenComposer: () => void;
+  /** A post created via the composer that should be optimistically prepended
+   * to the top of the feed. Passing the same object again is a no-op — we
+   * de-duplicate by id. Useful so users see their own post immediately
+   * without waiting for the fan-out race to resolve. */
+  pendingPrepend?: Post | null;
 }
 
 /* ── Quick-share circles (5) ───────────────────────────── */
@@ -43,12 +48,23 @@ const INSPIRATIONS: Array<{ quote: string; source: string; image?: string }> = [
   { quote: 'In the silence of the heart, the soul finds its home.', source: 'Sant Kabir' },
 ];
 
-export default function CommunityFeedTab({ me, onOpenComposer }: Props) {
+export default function CommunityFeedTab({ me, onOpenComposer, pendingPrepend }: Props) {
   const [posts, setPosts]   = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
   const [commentsFor, setCommentsFor] = useState<Post | null>(null);
   const [inspIdx] = useState(() => Math.floor(Math.random() * INSPIRATIONS.length));
+
+  /* Optimistic prepend for freshly-created posts. Fires whenever the parent
+   * hands us a new `pendingPrepend`. We dedupe by id so re-renders / late
+   * server refetches that include the same post don't duplicate it. */
+  useEffect(() => {
+    if (!pendingPrepend) return;
+    setPosts(prev => {
+      if (prev.some(p => p.id === pendingPrepend.id)) return prev;
+      return [pendingPrepend, ...prev];
+    });
+  }, [pendingPrepend]);
 
   /* ── initial load + socket realtime (polling fallback every 60s) ── */
   useEffect(() => {
