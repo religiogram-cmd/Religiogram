@@ -79,7 +79,7 @@ function NavBar({ authed }: { authed: boolean }) {
     { label: 'Holy Places', href: authed ? '/places'  : '/auth' },
     { label: 'Community',   href: authed ? '/social'  : '/auth' },
     { label: 'About',       href: '#features' },
-    { label: 'Contact',     href: 'mailto:support@religiogram.in' },
+    { label: 'Contact',     href: 'mailto:support@religiogram.com' },
   ];
   return (
     <header
@@ -1420,7 +1420,7 @@ function Footer() {
 
         <FooterCol title="Company" links={[
           { label: 'About',   href: '/terms' },
-          { label: 'Contact', href: 'mailto:support@religiogram.in' },
+          { label: 'Contact', href: 'mailto:support@religiogram.com' },
           { label: 'Privacy', href: '/privacy' },
           { label: 'Terms',   href: '/terms' },
         ]} />

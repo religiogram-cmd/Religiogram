@@ -10,8 +10,10 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   adminApi,
+  adminAuditApi,
   type AdminApplicationDetail,
   type AdminApplicationStatus,
+  type AdminAuditRow,
 } from '@/lib/admin-api';
 import { ApiError, tokenStore } from '@/lib/api';
 import { showToast } from '@/components/ui/Toast';
@@ -164,6 +166,8 @@ export default function AdminApplicationDetailPage({
   const [notes, setNotes] = useState('');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [audit, setAudit] = useState<AdminAuditRow[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   const fetchDetail = useCallback(async () => {
     setLoading(true);
@@ -181,6 +185,26 @@ export default function AdminApplicationDetailPage({
   useEffect(() => {
     fetchDetail();
   }, [fetchDetail]);
+
+  const fetchAudit = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const res = await adminAuditApi.list({
+        targetType: 'provider',
+        targetId: id,
+        limit: 20,
+      });
+      setAudit(res.items ?? []);
+    } catch {
+      setAudit([]);
+    } finally {
+      setAuditLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchAudit();
+  }, [fetchAudit]);
 
   const openAction = (kind: ActionKind) => {
     setNotes('');
@@ -221,8 +245,13 @@ export default function AdminApplicationDetailPage({
           return;
         }
         await adminApi.applications.suspend(id, reason.trim());
-        showToast('Suspended', 'success');
-        router.push('/admin/applications');
+        showToast(
+          'Suspended — user logged out and pending bookings cancelled',
+          'success',
+        );
+        setAction(null);
+        setSubmitting(false);
+        await Promise.all([fetchDetail(), fetchAudit()]);
         return;
       }
     } catch (err) {
@@ -230,7 +259,7 @@ export default function AdminApplicationDetailPage({
       showToast(msg, 'error');
       setSubmitting(false);
     }
-  }, [action, id, notes, reason, router]);
+  }, [action, id, notes, reason, router, fetchDetail, fetchAudit]);
 
   if (loading) {
     return (
@@ -414,7 +443,7 @@ export default function AdminApplicationDetailPage({
         </Card>
       </div>
 
-      <aside className="lg:sticky lg:top-6 lg:self-start">
+      <aside className="lg:sticky lg:top-6 lg:self-start space-y-5">
         <Card title="Decision">
           <div className="flex flex-col gap-2">
             <button
@@ -445,7 +474,39 @@ export default function AdminApplicationDetailPage({
           </div>
           <p className="text-xs text-slate-500 mt-3 leading-relaxed">
             Approve unlocks bookings instantly. Reject notifies the priest by SMS/email.
+            Suspend is a hard action — it logs the user out and cancels pending bookings.
           </p>
+        </Card>
+
+        <Card title="Recent audit trail">
+          {auditLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <div className="h-4 w-4 rounded-full border-2 border-slate-200 border-t-slate-700 animate-spin" />
+            </div>
+          ) : audit.length === 0 ? (
+            <p className="text-xs text-slate-500">No admin actions recorded yet.</p>
+          ) : (
+            <ol className="space-y-3">
+              {audit.map((row) => (
+                <li key={row.id} className="text-xs">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="font-semibold text-slate-800 truncate">
+                      {row.actionType}
+                    </span>
+                    <span className="text-slate-500 shrink-0">
+                      {new Date(row.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-slate-500 mt-0.5 truncate">
+                    {row.adminEmail ?? row.adminId}
+                  </p>
+                  {row.notes && (
+                    <p className="text-slate-700 mt-1 line-clamp-3">{row.notes}</p>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
         </Card>
       </aside>
 
@@ -461,6 +522,20 @@ export default function AdminApplicationDetailPage({
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-semibold text-slate-900">{modalTitle}</h3>
+
+            {action === 'suspend' && (
+              <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3">
+                <p className="text-xs font-semibold text-amber-900 uppercase tracking-wide">
+                  This is a hard action
+                </p>
+                <ul className="mt-2 text-xs text-amber-900 space-y-1 list-disc pl-4">
+                  <li>Suspends the user&apos;s account across the platform</li>
+                  <li>Logs them out immediately (revokes all sessions)</li>
+                  <li>Auto-cancels all pending &amp; confirmed bookings</li>
+                  <li>Prevents new bookings until reinstated</li>
+                </ul>
+              </div>
+            )}
 
             <div className="mt-4 space-y-3">
               {(action === 'reject' || action === 'suspend') && (

@@ -21,8 +21,8 @@ import type { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, LessThan, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -40,6 +40,11 @@ import { AdminActionLog } from './entities/admin-action-log.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { RankingService } from '../service-providers/ranking.service';
+import { AccountStatus, User } from '../users/entities/user.entity';
+import { TokenService } from '../auth/services/token.service';
+import { RedisService } from '../redis/redis.service';
+import { BookingsService } from '../bookings/bookings.service';
+import { AdminAuditService } from './admin-audit.service';
 
 /**
  * AdminProviderVerificationController
@@ -71,10 +76,17 @@ export class AdminProviderVerificationController {
     private readonly actionLog: Repository<AdminActionLog>,
     @InjectRepository(ProviderBankAccount)
     private readonly bankAccounts: Repository<ProviderBankAccount>,
+    @InjectRepository(User)
+    private readonly users: Repository<User>,
     private readonly notifs: NotificationsService,
     private readonly config: ConfigService,
     private readonly encryption: EncryptionService,
     private readonly ranking: RankingService,
+    private readonly tokens: TokenService,
+    private readonly redis: RedisService,
+    private readonly bookings: BookingsService,
+    private readonly audit: AdminAuditService,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {
     const r2Endpoint = this.config.get<string>('storage.r2Endpoint');
     const accessKeyId = this.config.get<string>('storage.accessKeyId', '');
@@ -384,7 +396,13 @@ export class AdminProviderVerificationController {
     return { providerState: ProviderStatus.PendingReview };
   }
 
-  /* ─── POST /v1/admin/providers/:providerId/suspend ─── */
+  /* ─── POST /v1/admin/providers/:providerId/suspend ───
+   * Hard suspend: cascades to the user's account (flips accountStatus to
+   * SUSPENDED, revokes all refresh tokens, stamps minIat so live access
+   * tokens are treated as revoked on their next request) and auto-cancels
+   * pending bookings. Mirrors the behaviour of the moderate handler on
+   * admin-providers.controller.ts so both admin surfaces produce identical
+   * side effects. */
   @Post('providers/:providerId/suspend')
   @HttpCode(HttpStatus.OK)
   async suspend(
@@ -395,17 +413,77 @@ export class AdminProviderVerificationController {
     if (!body.reason) throw new BadRequestException('reason is required');
     const provider = await this.mustFind(providerId);
 
-    await this.providers.update(
-      { id: providerId },
-      { status: ProviderStatus.Suspended },
+    // Transactional writes: provider status flip + user account cascade.
+    await this.dataSource.transaction(async (em) => {
+      await em.getRepository(ProviderEntity).update(
+        { id: providerId },
+        { status: ProviderStatus.Suspended, rejectionReason: body.reason },
+      );
+      await em.getRepository(User).update(
+        { id: provider.userId },
+        { accountStatus: AccountStatus.SUSPENDED },
+      );
+    });
+
+    // Best-effort side effects (kill sessions + cancel pending bookings +
+    // audit). Kept outside the transaction so a failure here doesn't roll
+    // back the state flip.
+    const cancelled = await this.bookings
+      .cancelBookingsByProvider(providerId, 'provider_suspend')
+      .catch((e) => {
+        this.logger.warn(`cancelBookingsByProvider failed: ${(e as Error).message}`);
+        return 0;
+      });
+    this.logger.log(
+      `[admin] provider ${providerId} suspended: cancelled ${cancelled} bookings`,
     );
 
-    await this.logAction({
-      adminId: me.id,
-      actionType: 'provider.suspend',
-      targetId: providerId,
-      notes: body.reason,
-    });
+    const nowSec = Math.floor(Date.now() / 1000);
+    await Promise.all([
+      this.tokens.revokeAllForUser(provider.userId).catch((e) =>
+        this.logger.warn(
+          `revokeAllForUser failed for ${provider.userId}: ${(e as Error).message}`,
+        ),
+      ),
+      this.redis
+        .getClient()
+        .set(`user:${provider.userId}:minIat`, String(nowSec))
+        .catch((e) =>
+          this.logger.warn(
+            `minIat stamp failed for ${provider.userId}: ${(e as Error).message}`,
+          ),
+        ),
+    ]);
+
+    // Primary audit trail — hash-chained. Fallback to the legacy
+    // payload_json log if the chained service throws (schema drift).
+    await this.audit
+      .log({
+        adminId: me.id,
+        actionType: 'provider.suspend',
+        targetType: 'provider',
+        targetId: providerId,
+        justification: body.reason,
+      })
+      .catch(() =>
+        this.logAction({
+          adminId: me.id,
+          actionType: 'provider.suspend',
+          targetId: providerId,
+          notes: body.reason,
+        }),
+      );
+
+    // Cascade audit row so searches by target_type='user' surface it.
+    await this.audit
+      .log({
+        adminId: me.id,
+        actionType: `user.status.${AccountStatus.SUSPENDED}`,
+        targetType: 'user',
+        targetId: provider.userId,
+        justification: `Cascaded from provider.suspend: ${body.reason}`,
+      })
+      .catch(() => undefined);
 
     await this.notifs.send(
       provider.userId,
@@ -414,7 +492,10 @@ export class AdminProviderVerificationController {
       `Your provider account has been suspended. Reason: ${body.reason}. Contact support for assistance.`,
     );
 
-    return { providerState: ProviderStatus.Suspended };
+    return {
+      providerState: ProviderStatus.Suspended,
+      cancelledBookings: cancelled,
+    };
   }
 
   /* ─── POST /v1/admin/providers/:providerId/reinstate ─── */

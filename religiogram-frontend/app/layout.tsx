@@ -58,7 +58,10 @@ export const metadata: Metadata = {
     siteName: 'ReligioGram',
     images: [
       {
-        url: '/og-image.jpg',
+        // Auto-generated at edge by app/opengraph-image.tsx — no static
+        // JPG needed. Next.js serves it at /opengraph-image, and the
+        // metadataBase makes this an absolute URL for social crawlers.
+        url: '/opengraph-image',
         width: 1200,
         height: 630,
         alt: 'ReligioGram — Book Verified Pandits, Priests & Astrologers',
@@ -73,7 +76,7 @@ export const metadata: Metadata = {
       'ReligioGram — Book Verified Pandits, Priests & Astrologers Online in India',
     description:
       "India's trusted multi-faith spiritual marketplace. Book verified Pandits, Imams, Granthis & Christian Priests. Live astrology, holy places, kundli & horoscope.",
-    images: ['/og-image.jpg'],
+    images: ['/opengraph-image'],
   },
   robots: {
     index: true,

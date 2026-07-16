@@ -20,6 +20,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${BASE_URL}/rituals?faith=muslim`,lastModified: now, changeFrequency: 'weekly',  priority: 0.7 },
     { url: `${BASE_URL}/rituals?faith=sikh`,  lastModified: now, changeFrequency: 'weekly',  priority: 0.7 },
     { url: `${BASE_URL}/rituals?faith=christian`, lastModified: now, changeFrequency: 'weekly', priority: 0.7 },
+    // E-E-A-T + LLM-friendly info pages
+    { url: `${BASE_URL}/about`,               lastModified: now, changeFrequency: 'monthly', priority: 0.7 },
+    { url: `${BASE_URL}/faq`,                 lastModified: now, changeFrequency: 'monthly', priority: 0.8 },
+    { url: `${BASE_URL}/contact`,             lastModified: now, changeFrequency: 'yearly',  priority: 0.4 },
+    // Legal / compliance
     { url: `${BASE_URL}/terms`,               lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
     { url: `${BASE_URL}/privacy`,             lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },
     { url: `${BASE_URL}/delete-account`,      lastModified: now, changeFrequency: 'yearly',  priority: 0.3 },

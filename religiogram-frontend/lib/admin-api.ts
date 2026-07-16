@@ -347,12 +347,13 @@ export const adminProvidersApi = {
 
 export const adminApi = {
   applications: {
-    list: (params?: { status?: string; limit?: number; offset?: number }) =>
+    list: (params?: { status?: string; limit?: number; offset?: number; q?: string }) =>
       apiFetch<AdminApplicationListResponse>(
         `/admin/verifications/queue${buildQuery({
           status: params?.status ?? 'pending_review',
           limit: params?.limit ?? 50,
           offset: params?.offset ?? 0,
+          q: params?.q || undefined,
         })}`,
       ),
 
@@ -397,4 +398,256 @@ export const adminApi = {
         },
       ),
   },
+};
+
+/* ─────────────────────────  Audit log  ─────────────────────────────── */
+
+export interface AdminAuditRow {
+  id: string;
+  adminId: string;
+  adminEmail: string | null;
+  actionType: string;
+  targetType: string;
+  targetId: string;
+  ipAddress: string | null;
+  createdAt: string;
+  justification: string | null;
+  notes: string | null;
+  beforeState: Record<string, any> | null;
+  afterState: Record<string, any> | null;
+  payloadJson: Record<string, any> | null;
+}
+
+export interface AdminAuditListResponse {
+  items: AdminAuditRow[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export const adminAuditApi = {
+  list: (params?: {
+    targetType?: string;
+    targetId?: string;
+    adminId?: string;
+    actionType?: string;
+    from?: string;
+    to?: string;
+    cursor?: string;
+    limit?: number;
+  }) =>
+    apiFetch<AdminAuditListResponse>(
+      `/admin/audit-log${buildQuery({
+        targetType: params?.targetType || undefined,
+        targetId: params?.targetId || undefined,
+        adminId: params?.adminId || undefined,
+        actionType: params?.actionType || undefined,
+        from: params?.from || undefined,
+        to: params?.to || undefined,
+        cursor: params?.cursor || undefined,
+        limit: params?.limit ?? 50,
+      })}`,
+    ),
+};
+
+/* ─────────────────────────  Disputes  ──────────────────────────────── */
+
+export type DisputeStatus =
+  | 'raised'
+  | 'under_investigation'
+  | 'resolved_for_user'
+  | 'resolved_for_provider'
+  | 'escalated'
+  | 'closed';
+
+export interface AdminDisputeRow {
+  id: string;
+  disputeRef: string;
+  raisedById: string;
+  referenceId: string;
+  referenceType: 'booking' | 'session';
+  status: DisputeStatus;
+  title: string;
+  description: string;
+  evidence: Array<{ type: string; url: string; description: string }>;
+  resolvedById: string | null;
+  resolutionNote: string | null;
+  refundAmountPaise: number;
+  slaDeadline: string;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminDisputeListResponse {
+  data: AdminDisputeRow[];
+  nextCursor: string | null;
+}
+
+export const adminDisputesApi = {
+  list: (params?: { status?: DisputeStatus | ''; cursor?: string; limit?: number }) =>
+    apiFetch<AdminDisputeListResponse>(
+      `/admin/disputes${buildQuery({
+        status: params?.status || undefined,
+        cursor: params?.cursor || undefined,
+        limit: params?.limit ?? 50,
+      })}`,
+    ),
+
+  get: (id: string) =>
+    apiFetch<AdminDisputeRow>(`/admin/disputes/${encodeURIComponent(id)}`),
+
+  assign: (id: string, assigneeId: string) =>
+    apiFetch<{ success: boolean }>(
+      `/admin/disputes/${encodeURIComponent(id)}/assign`,
+      { method: 'PATCH', body: JSON.stringify({ assigneeId }) },
+    ),
+
+  resolve: (
+    id: string,
+    body: {
+      resolution: 'resolved_for_user' | 'resolved_for_provider' | 'closed';
+      resolutionNote: string;
+      refundAmountPaise?: number;
+    },
+  ) =>
+    apiFetch<{ success: boolean }>(
+      `/admin/disputes/${encodeURIComponent(id)}/resolve`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    ),
+
+  escalate: (id: string, escalationNote: string) =>
+    apiFetch<{ success: boolean }>(
+      `/admin/disputes/${encodeURIComponent(id)}/escalate`,
+      { method: 'PATCH', body: JSON.stringify({ escalationNote }) },
+    ),
+};
+
+/* ─────────────────────────  Wallet / Payments  ─────────────────────── */
+
+export interface AdminWalletSummary {
+  ownerId: string;
+  availableBalance?: number;
+  heldBalance?: number;
+  status?: string;
+  currency?: string;
+  id?: string;
+}
+
+export interface AdminLedgerRow {
+  id: string;
+  walletId: string;
+  entryType: string;
+  amount: number;
+  direction: number;
+  balanceAfter: number;
+  referenceType: string | null;
+  referenceId: string | null;
+  description: string | null;
+  createdAt: string;
+}
+
+export interface AdminWalletLedgerResponse {
+  data: AdminLedgerRow[];
+  total: number;
+}
+
+export const adminWalletApi = {
+  get: (ownerId: string) =>
+    apiFetch<AdminWalletSummary>(
+      `/admin/wallets/${encodeURIComponent(ownerId)}`,
+    ),
+
+  ledger: (ownerId: string, params?: { page?: number; limit?: number }) =>
+    apiFetch<AdminWalletLedgerResponse>(
+      `/admin/wallets/${encodeURIComponent(ownerId)}/ledger${buildQuery({
+        page: params?.page ?? 1,
+        limit: params?.limit ?? 50,
+      })}`,
+    ),
+
+  credit: (
+    ownerId: string,
+    body: { amountPaise: number; justification: string; idempotencyKey: string },
+  ) =>
+    apiFetch<{ success: boolean; amountPaise: number }>(
+      `/admin/wallets/${encodeURIComponent(ownerId)}/credit`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  forceRefund: (
+    ownerId: string,
+    body: { amountPaise: number; referenceId: string; reason: string },
+  ) =>
+    apiFetch<{ success: boolean; refundedPaise: number }>(
+      `/admin/wallets/${encodeURIComponent(ownerId)}/force-refund`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  freeze: (ownerId: string, reason: string) =>
+    apiFetch<{ success: boolean; status: string }>(
+      `/admin/wallets/${encodeURIComponent(ownerId)}/freeze`,
+      { method: 'POST', body: JSON.stringify({ reason }) },
+    ),
+
+  unfreeze: (ownerId: string, reason: string) =>
+    apiFetch<{ success: boolean; status: string }>(
+      `/admin/wallets/${encodeURIComponent(ownerId)}/unfreeze`,
+      { method: 'POST', body: JSON.stringify({ reason }) },
+    ),
+
+  /** Look up a user by email or phone → returns id so wallet can be resolved. */
+  findUser: (q: string) =>
+    apiFetch<AdminUserListResponse>(
+      `/admin/users${buildQuery({ q, limit: 10 })}`,
+    ),
+};
+
+/* ─────────────────────────  Analytics extras  ──────────────────────── */
+
+export interface AdminRevenue {
+  fromDate: string;
+  toDate: string;
+  credits: number;
+  debits: number;
+  holds: number;
+  releases: number;
+}
+
+export interface AdminBookingTrendRow {
+  day: string;
+  status: string;
+  count: string;
+}
+
+export interface AdminBookingTrend {
+  fromDate: string;
+  toDate: string;
+  rows: AdminBookingTrendRow[];
+}
+
+export interface AdminDisputeSla {
+  open: number;
+  overdue: number;
+  healthPct: number;
+}
+
+export const adminAnalyticsApi = {
+  revenue: (params?: { from?: string; to?: string }) =>
+    apiFetch<AdminRevenue>(
+      `/admin/analytics/revenue${buildQuery({
+        from: params?.from || undefined,
+        to: params?.to || undefined,
+      })}`,
+    ),
+
+  bookingTrend: (params?: { from?: string; to?: string }) =>
+    apiFetch<AdminBookingTrend>(
+      `/admin/analytics/booking-trend${buildQuery({
+        from: params?.from || undefined,
+        to: params?.to || undefined,
+      })}`,
+    ),
+
+  disputeSla: () =>
+    apiFetch<AdminDisputeSla>(`/admin/analytics/dispute-sla`),
 };

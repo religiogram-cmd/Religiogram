@@ -16,6 +16,7 @@ import { AdminAuditService } from "./admin-audit.service";
 import { AdminPaymentsController } from "./admin-payments.controller";
 import { AdminProviderVerificationController } from "./admin-provider-verification.controller";
 import { AdminUsersController } from "./admin-users.controller";
+import { AdminAuditLogController } from "./admin-audit-log.controller";
 import { KycVideoEntity } from "../service-providers/entities/kyc-video.entity";
 import { ProviderBankAccount } from "../service-providers/entities/provider-bank-account.entity";
 import { QUEUE } from "../common/queues/queue.constants";
@@ -88,6 +89,7 @@ import { AuthModule } from '../auth/auth.module';
     AdminPaymentsController,
     AdminProviderVerificationController,
     AdminUsersController,
+    AdminAuditLogController,
   ],
   providers: [AdminTemplesService, AdminAuditService],
   exports: [TypeOrmModule, AdminAuditService],

@@ -37,7 +37,7 @@ export const metadata: Metadata = {
     siteName: 'ReligioGram',
     images: [
       {
-        url: '/og-image.jpg',
+        url: '/opengraph-image',
         width: 1200,
         height: 630,
         alt: 'ReligioGram — Book Verified Pandits, Priests & Astrologers',
@@ -52,7 +52,7 @@ export const metadata: Metadata = {
       'ReligioGram — Book Verified Pandits, Priests & Astrologers Online in India',
     description:
       "India's trusted multi-faith spiritual services marketplace. Verified Pandits, Imams, Granthis, Christian Priests. Live astrology, holy places, Kundli — all in one app.",
-    images: ['/og-image.jpg'],
+    images: ['/opengraph-image'],
   },
 };
 

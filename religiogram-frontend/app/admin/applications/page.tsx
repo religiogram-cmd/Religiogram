@@ -65,19 +65,23 @@ function StatusBadge({ status }: { status: AdminApplicationStatus }) {
   );
 }
 
+const PAGE_SIZE = 50;
+
 export default function AdminApplicationsPage() {
   const router = useRouter();
   const [filter, setFilter] = useState<AdminApplicationStatus>('pending_review');
   const [items, setItems] = useState<AdminApplicationSummary[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState<string>('');
 
   const fetchPage = useCallback(async (status: AdminApplicationStatus) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await adminApi.applications.list({ status, limit: 50, offset: 0 });
+      const res = await adminApi.applications.list({ status, limit: PAGE_SIZE, offset: 0 });
       setItems(res.items ?? []);
       setTotal(typeof res.total === 'number' ? res.total : (res.items ?? []).length);
     } catch (err) {
@@ -91,9 +95,46 @@ export default function AdminApplicationsPage() {
     }
   }, []);
 
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const res = await adminApi.applications.list({
+        status: filter,
+        limit: PAGE_SIZE,
+        offset: items.length,
+      });
+      setItems((prev) => [...prev, ...(res.items ?? [])]);
+      if (typeof res.total === 'number') setTotal(res.total);
+    } catch (err) {
+      const msg =
+        err instanceof ApiError ? err.message : 'Failed to load more results.';
+      setError(msg);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [filter, items.length]);
+
   useEffect(() => {
     fetchPage(filter);
   }, [filter, fetchPage]);
+
+  // Client-side search filter (server-side would need a `q` param on
+  // /verifications/queue which currently ignores it).
+  const q = query.trim().toLowerCase();
+  const displayItems = q
+    ? items.filter((it) => {
+        const hay = [
+          it.fullName ?? '',
+          it.religion ?? '',
+          it.city ?? '',
+        ]
+          .join(' ')
+          .toLowerCase();
+        return hay.includes(q);
+      })
+    : items;
+
+  const hasMore = items.length < total;
 
   return (
     <div className="space-y-5">
@@ -110,30 +151,57 @@ export default function AdminApplicationsPage() {
         <div className="flex items-center gap-2 text-sm">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-700 font-medium">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-            {total} {filter === 'pending_review' ? 'pending review' : statusLabel(filter).toLowerCase()}
+            Showing {items.length.toLocaleString()} of {total.toLocaleString()}{' '}
+            {filter === 'pending_review' ? 'pending review' : statusLabel(filter).toLowerCase()}
           </span>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {FILTERS.map((f) => {
-          const active = f.id === filter;
-          return (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setFilter(f.id)}
-              className={[
-                'px-3 py-1.5 rounded-full text-sm font-medium border transition-colors',
-                active
-                  ? 'bg-slate-900 text-white border-slate-900'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100',
-              ].join(' ')}
-            >
-              {f.label}
-            </button>
-          );
-        })}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map((f) => {
+            const active = f.id === filter;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setFilter(f.id)}
+                className={[
+                  'px-3 py-1.5 rounded-full text-sm font-medium border transition-colors',
+                  active
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100',
+                ].join(' ')}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="relative sm:w-72">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name, religion, city…"
+            className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+          />
+          <svg
+            aria-hidden
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </div>
       </div>
 
       {loading ? (
@@ -152,13 +220,15 @@ export default function AdminApplicationsPage() {
             Retry
           </button>
         </div>
-      ) : items.length === 0 ? (
+      ) : displayItems.length === 0 ? (
         <div className="rounded-2xl bg-white border border-slate-200 p-10 shadow-sm text-center">
           <h2 className="text-base font-semibold text-slate-900">
-            No applications waiting
+            {q ? 'No matches for your search' : 'No applications waiting'}
           </h2>
           <p className="text-sm text-slate-500 mt-1">
-            New submissions will appear here automatically.
+            {q
+              ? 'Try a different name, religion, or city.'
+              : 'New submissions will appear here automatically.'}
           </p>
         </div>
       ) : (
@@ -177,7 +247,7 @@ export default function AdminApplicationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((it) => (
+                {displayItems.map((it) => (
                   <tr key={it.id} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="px-5 py-3 font-medium text-slate-900">
                       {it.fullName || '—'}
@@ -210,7 +280,7 @@ export default function AdminApplicationsPage() {
 
           {/* Mobile cards */}
           <ul className="md:hidden divide-y divide-slate-100">
-            {items.map((it) => (
+            {displayItems.map((it) => (
               <li key={it.id} className="p-4 flex flex-col gap-2">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -238,6 +308,21 @@ export default function AdminApplicationsPage() {
               </li>
             ))}
           </ul>
+
+          {hasMore && !q && (
+            <div className="border-t border-slate-100 p-4 flex justify-center">
+              <button
+                type="button"
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="px-4 py-2 rounded-lg bg-white border border-slate-300 text-slate-800 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+              >
+                {loadingMore
+                  ? 'Loading…'
+                  : `Load more (${(total - items.length).toLocaleString()} remaining)`}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

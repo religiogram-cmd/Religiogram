@@ -65,10 +65,10 @@ export default function DeleteAccountPage() {
           <p style={{ margin: '0 0 12px' }}>
             Email{' '}
             <a
-              href="mailto:support@religiogram.in?subject=Account%20Deletion%20Request"
+              href="mailto:support@religiogram.com?subject=Account%20Deletion%20Request"
               style={{ color: GOLD, fontWeight: 700 }}
             >
-              support@religiogram.in
+              support@religiogram.com
             </a>{' '}
             from the same address you use to sign in. Subject:{' '}
             <i>Account Deletion Request</i>.
@@ -119,10 +119,10 @@ export default function DeleteAccountPage() {
             your KYC video, or your birth profile) without closing your account.
             Email{' '}
             <a
-              href="mailto:support@religiogram.in?subject=Partial%20Data%20Deletion"
+              href="mailto:support@religiogram.com?subject=Partial%20Data%20Deletion"
               style={{ color: GOLD, fontWeight: 700 }}
             >
-              support@religiogram.in
+              support@religiogram.com
             </a>{' '}
             with the subject <i>Partial Data Deletion</i> and describe what you
             want removed.
@@ -131,7 +131,7 @@ export default function DeleteAccountPage() {
 
         <p style={{ marginTop: 40, fontSize: 13, color: TEXT2 }}>
           Last updated: June 2026 • Operator: ReligioGram • Contact:{' '}
-          support@religiogram.in
+          support@religiogram.com
         </p>
       </div>
     </div>
