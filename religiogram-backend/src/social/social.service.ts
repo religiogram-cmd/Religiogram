@@ -535,50 +535,71 @@ export class SocialService {
   async getFeed(userId: string, cursor?: string, limit = 20) {
     // P1-1 / FIX-9: Keyset pagination on (post_created_at DESC, post_id DESC).
     // cursor = base64url({ d: post_created_at ISO, i: post_id }).
+    //
     // Post-audit-#5 fix: feed_items columns are viewer_id / post_created_at
     // (see feed-item.entity.ts). Old code referenced fi.user_id / fi.inserted_at
-    // which do not exist — the query threw and the catch fell back to a
-    // "recent global posts" scan, so users never saw fanned-out follow content.
+    // which do not exist.
+    //
+    // Own-posts fix: UNION the viewer's OWN posts with the fan-out feed_items
+    // rows. Fan-out can lag (setImmediate) or occasionally fail (partition
+    // rollover, transient DB error) — but the user should always see their
+    // own posts on their own feed. The DISTINCT-based subquery below merges
+    // both sources and deduplicates by post_id so a post that appears in
+    // BOTH sources (author's own row from fan-out + author's own posts row)
+    // is not double-counted.
     const safeLimit = Math.min(100, Math.max(1, limit));
 
-    let whereClause = 'WHERE fi.viewer_id = $1';
+    // $1 always = viewer/author id; cursor params (if any) shift subsequent
+    // numbering. We build cursor pagination separately and append limit last.
     const params: (string | number)[] = [userId];
 
+    let cursorClause = '';
     if (cursor) {
       try {
         const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as { d: string; i: string };
-        whereClause += ` AND (fi.post_created_at < $${params.length + 1} OR (fi.post_created_at = $${params.length + 1} AND fi.post_id < $${params.length + 2}))`;
         params.push(decoded.d, decoded.i);
+        cursorClause = ` AND (m.post_created_at < $${params.length - 1} OR (m.post_created_at = $${params.length - 1} AND m.post_id < $${params.length}))`;
       } catch {
         // ignore bad cursor — start from top
       }
     }
 
     params.push(safeLimit + 1);
+    const limitParam = `$${params.length}`;
+
     let feedRows: Array<{ post_id: string; post_created_at: Date }> = [];
     try {
-      // FIX C: exclude posts authored by users the viewer has blocked. The
-      // join is on social_posts.author_id (feed_items carries author_id
-      // denormalized but we still join sp to be safe against drift).
+      // Merged source: fan-out rows UNION own posts, dedup by post_id, take
+      // the max created_at when both sides carry the same post (should match
+      // anyway since post_created_at is denormalized from social_posts).
       feedRows = await this.ds.query(
-        `SELECT fi.post_id, fi.post_created_at
-         FROM feed_items fi
-         JOIN social_posts sp ON sp.id = fi.post_id
-         ${whereClause}
-           AND NOT EXISTS (
-             SELECT 1 FROM user_blocks ub
-              WHERE ub.blocker_id = $1 AND ub.blocked_id = sp.author_id
-           )
-         ORDER BY fi.post_created_at DESC, fi.post_id DESC
-         LIMIT $${params.length}`,
+        `WITH merged AS (
+           SELECT fi.post_id, fi.post_created_at
+             FROM feed_items fi
+            WHERE fi.viewer_id = $1
+           UNION
+           SELECT sp2.id AS post_id, sp2.created_at AS post_created_at
+             FROM social_posts sp2
+            WHERE sp2.author_id = $1
+              AND sp2.is_deleted = false
+         )
+         SELECT m.post_id, MAX(m.post_created_at) AS post_created_at
+           FROM merged m
+           JOIN social_posts sp ON sp.id = m.post_id
+          WHERE sp.is_deleted = false
+            AND NOT EXISTS (
+              SELECT 1 FROM user_blocks ub
+               WHERE ub.blocker_id = $1 AND ub.blocked_id = sp.author_id
+            )
+            ${cursorClause}
+          GROUP BY m.post_id
+          ORDER BY MAX(m.post_created_at) DESC, m.post_id DESC
+          LIMIT ${limitParam}`,
         params,
       );
     } catch (err) {
-      // Primary query failed — this is unexpected on a healthy DB. Log at
-      // ERROR severity so it shows up in prod logs (previously swallowed
-      // silently) and return an empty page rather than silently dropping
-      // the user into an unrelated "recent global posts" fallback that
-      // masks the real problem.
+      // Primary query failed — unexpected on a healthy DB. Log at ERROR
+      // severity so it shows up in prod logs and return empty.
       this.logger.error(
         `getFeed query failed for user=${userId}: ${(err as Error).message}`,
         (err as Error).stack,
