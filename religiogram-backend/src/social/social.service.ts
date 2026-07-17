@@ -533,79 +533,107 @@ export class SocialService {
   }
 
   async getFeed(userId: string, cursor?: string, limit = 20) {
-    // P1-1 / FIX-9: Keyset pagination on (post_created_at DESC, post_id DESC).
-    // cursor = base64url({ d: post_created_at ISO, i: post_id }).
+    // Rock-solid rewrite: two independent SELECTs (fan-out rows + own posts),
+    // merged/deduped in JavaScript. No CTE, no UNION, no GROUP BY — anything
+    // that could quietly break on a schema quirk is gone.
     //
-    // Post-audit-#5 fix: feed_items columns are viewer_id / post_created_at
-    // (see feed-item.entity.ts). Old code referenced fi.user_id / fi.inserted_at
-    // which do not exist.
+    // - fanoutRows: rows already fanned out into feed_items for this viewer
+    // - ownRows: this viewer's OWN posts, always included regardless of
+    //   whether fan-out completed. This is the key fix: your feed shows your
+    //   own posts even if `feed_items` is out of sync.
     //
-    // Own-posts fix: UNION the viewer's OWN posts with the fan-out feed_items
-    // rows. Fan-out can lag (setImmediate) or occasionally fail (partition
-    // rollover, transient DB error) — but the user should always see their
-    // own posts on their own feed. The DISTINCT-based subquery below merges
-    // both sources and deduplicates by post_id so a post that appears in
-    // BOTH sources (author's own row from fan-out + author's own posts row)
-    // is not double-counted.
+    // Keyset pagination cursor = base64url({d: created_at ISO, i: post_id}).
     const safeLimit = Math.min(100, Math.max(1, limit));
 
-    // $1 always = viewer/author id; cursor params (if any) shift subsequent
-    // numbering. We build cursor pagination separately and append limit last.
-    const params: (string | number)[] = [userId];
-
-    let cursorClause = '';
+    let cursorDate: string | null = null;
+    let cursorId: string | null = null;
     if (cursor) {
       try {
         const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as { d: string; i: string };
-        params.push(decoded.d, decoded.i);
-        cursorClause = ` AND (m.post_created_at < $${params.length - 1} OR (m.post_created_at = $${params.length - 1} AND m.post_id < $${params.length}))`;
-      } catch {
-        // ignore bad cursor — start from top
-      }
+        cursorDate = decoded.d;
+        cursorId = decoded.i;
+      } catch { /* ignore bad cursor — start from top */ }
     }
 
-    params.push(safeLimit + 1);
-    const limitParam = `$${params.length}`;
+    // Take extra rows so JS-side merge still has enough after dedup.
+    const overFetch = safeLimit * 2 + 5;
 
-    let feedRows: Array<{ post_id: string; post_created_at: Date }> = [];
+    type Row = { post_id: string; post_created_at: Date };
+
+    // ── Source 1: fan-out feed_items ──────────────────────────────────────
+    let fanoutRows: Row[] = [];
     try {
-      // Merged source: fan-out rows UNION own posts, dedup by post_id, take
-      // the max created_at when both sides carry the same post (should match
-      // anyway since post_created_at is denormalized from social_posts).
-      feedRows = await this.ds.query(
-        `WITH merged AS (
-           SELECT fi.post_id, fi.post_created_at
-             FROM feed_items fi
-            WHERE fi.viewer_id = $1
-           UNION
-           SELECT sp2.id AS post_id, sp2.created_at AS post_created_at
-             FROM social_posts sp2
-            WHERE sp2.author_id = $1
-              AND sp2.is_deleted = false
-         )
-         SELECT m.post_id, MAX(m.post_created_at) AS post_created_at
-           FROM merged m
-           JOIN social_posts sp ON sp.id = m.post_id
-          WHERE sp.is_deleted = false
+      const params: any[] = [userId];
+      let cursorSql = '';
+      if (cursorDate && cursorId) {
+        params.push(cursorDate, cursorId);
+        cursorSql = ` AND (fi.post_created_at < $2 OR (fi.post_created_at = $2 AND fi.post_id < $3))`;
+      }
+      params.push(overFetch);
+      fanoutRows = await this.ds.query(
+        `SELECT fi.post_id, fi.post_created_at
+           FROM feed_items fi
+          WHERE fi.viewer_id = $1${cursorSql}
             AND NOT EXISTS (
               SELECT 1 FROM user_blocks ub
-               WHERE ub.blocker_id = $1 AND ub.blocked_id = sp.author_id
+               WHERE ub.blocker_id = $1 AND ub.blocked_id = fi.author_id
             )
-            ${cursorClause}
-          GROUP BY m.post_id
-          ORDER BY MAX(m.post_created_at) DESC, m.post_id DESC
-          LIMIT ${limitParam}`,
+          ORDER BY fi.post_created_at DESC, fi.post_id DESC
+          LIMIT $${params.length}`,
         params,
       );
     } catch (err) {
-      // Primary query failed — unexpected on a healthy DB. Log at ERROR
-      // severity so it shows up in prod logs and return empty.
       this.logger.error(
-        `getFeed query failed for user=${userId}: ${(err as Error).message}`,
-        (err as Error).stack,
+        `getFeed fanout query failed user=${userId}: ${(err as Error).message}`,
       );
-      return { items: [], hasMore: false, nextCursor: null };
     }
+
+    // ── Source 2: viewer's own posts (always included) ────────────────────
+    let ownRows: Row[] = [];
+    try {
+      const params: any[] = [userId];
+      let cursorSql = '';
+      if (cursorDate && cursorId) {
+        params.push(cursorDate, cursorId);
+        cursorSql = ` AND (sp.created_at < $2 OR (sp.created_at = $2 AND sp.id < $3))`;
+      }
+      params.push(overFetch);
+      ownRows = await this.ds.query(
+        `SELECT sp.id AS post_id, sp.created_at AS post_created_at
+           FROM social_posts sp
+          WHERE sp.author_id = $1
+            AND sp.is_deleted = false${cursorSql}
+          ORDER BY sp.created_at DESC, sp.id DESC
+          LIMIT $${params.length}`,
+        params,
+      );
+    } catch (err) {
+      this.logger.error(
+        `getFeed ownPosts query failed user=${userId}: ${(err as Error).message}`,
+      );
+    }
+
+    // ── Merge + dedup + sort in JavaScript ────────────────────────────────
+    const mergedById = new Map<string, Row>();
+    for (const r of [...fanoutRows, ...ownRows]) {
+      const existing = mergedById.get(r.post_id);
+      if (!existing || new Date(r.post_created_at) > new Date(existing.post_created_at)) {
+        mergedById.set(r.post_id, r);
+      }
+    }
+    const merged = Array.from(mergedById.values()).sort((a, b) => {
+      const dt = new Date(b.post_created_at).getTime() - new Date(a.post_created_at).getTime();
+      if (dt !== 0) return dt;
+      return b.post_id.localeCompare(a.post_id);
+    });
+
+    this.logger.log(
+      `getFeed user=${userId} fanout=${fanoutRows.length} own=${ownRows.length} merged=${merged.length}`,
+    );
+
+    // Take safeLimit + 1 so we know if there's more
+    const sliced = merged.slice(0, safeLimit + 1);
+    const feedRows = sliced;
 
     const hasMore = feedRows.length > safeLimit;
     const rows = hasMore ? feedRows.slice(0, safeLimit) : feedRows;
