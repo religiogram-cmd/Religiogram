@@ -12,7 +12,7 @@ const SITE_URL = 'https://www.religiogram.com';
 export const metadata: Metadata = {
   title: 'About ReligioGram — India\'s Multi-Faith Spiritual Marketplace',
   description:
-    "Learn how ReligioGram verifies every Pandit, Imam, Granthi, and Christian Priest — and why we're building India's most trusted spiritual services platform for Hindu, Muslim, Sikh, and Christian communities.",
+    "Learn how ReligioGram verifies every Pandit, Imam, Granthi, and Christian Priest — and how we bring trusted spiritual services to Hindu, Muslim, Sikh, and Christian communities across India.",
   alternates: { canonical: '/about' },
   openGraph: {
     title: 'About ReligioGram — India\'s Multi-Faith Spiritual Marketplace',
@@ -106,9 +106,9 @@ export default function AboutPage() {
         </h1>
 
         <p style={{ fontSize: 18, color: '#5A4A38', marginBottom: 40 }}>
-          India&apos;s first multi-faith spiritual services marketplace — bringing
-          verified Pandits, Imams, Granthis, and Christian Priests to devotees
-          across the country.
+          A multi-faith spiritual services marketplace — bringing verified
+          Pandits, Imams, Granthis, and Christian Priests to devotees across
+          India.
         </p>
 
         <section style={{ marginBottom: 40 }}>
