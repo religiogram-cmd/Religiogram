@@ -199,6 +199,16 @@ export class UsersService {
     }
 
     Object.assign(user, patch);
+
+    // Sync fix: when Settings changes `name`, mirror to `displayName` too
+    // so the Community feed / posts / DMs pick it up without a second write.
+    // If a user wants a *different* handle for Community they set it via the
+    // Community edit flow which writes both fields together — so the pair
+    // stays consistent regardless of which UI edited it.
+    if (patch.name !== undefined) {
+      (user as any).displayName = patch.name;
+    }
+
     const saved = await this.users.save(user);
 
     // Invalidate the refresh-cache so the next /auth/refresh sees fresh data.

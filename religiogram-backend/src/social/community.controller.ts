@@ -97,14 +97,22 @@ export class CommunityController {
     if (existing && existing.id !== userId) throw new BadRequestException('Username already taken');
     const validTypes = ['user', 'priest', 'temple'];
     const accountType = validTypes.includes(dto.accountType ?? '') ? dto.accountType! : 'user';
-    await this.users.update(userId, {
+    // Mirror displayName into name (the legacy Settings field) so admin
+    // panel + Settings + Community all show the same identity. Without
+    // this mirror, users who onboard via Community first have blank
+    // "Full name" in Settings and admin.
+    const patch: Partial<User> = {
       username,
-      displayName: dto.displayName || undefined,
-      bio: dto.bio || undefined,
-      avatarUrl: dto.avatarUrl || undefined,
       accountType,
       profileComplete: true,
-    } as Partial<User>);
+    } as Partial<User>;
+    if (dto.displayName !== undefined) {
+      patch.displayName = dto.displayName || undefined;
+      patch.name = dto.displayName || undefined;
+    }
+    if (dto.bio !== undefined) patch.bio = dto.bio || undefined;
+    if (dto.avatarUrl !== undefined) patch.avatarUrl = dto.avatarUrl || undefined;
+    await this.users.update(userId, patch);
     const updated = await this.users.findOneOrFail({ where: { id: userId } });
     return this.toProfile(updated);
   }
@@ -117,11 +125,20 @@ export class CommunityController {
     return this.toProfile(u);
   }
 
-  /** P1-11 (v5): strict validators on profile updates. */
+  /** P1-11 (v5): strict validators on profile updates.
+   *
+   * Sync fix: any change to `displayName` is also mirrored to `name`, and
+   * `avatarUrl` is single-sourced anyway. This keeps Community, Settings,
+   * and the admin panel showing one consistent identity instead of two
+   * fields that silently drift because different UIs edit different columns.
+   */
   @Patch('me')
   async updateMyProfile(@Body() dto: UpdateCommunityProfileDto, @Req() req: Request) {
     const updates: Partial<User> = {};
-    if (dto.displayName !== undefined) updates.displayName = dto.displayName;
+    if (dto.displayName !== undefined) {
+      updates.displayName = dto.displayName;
+      updates.name = dto.displayName;
+    }
     if (dto.bio !== undefined) updates.bio = dto.bio;
     if (dto.avatarUrl !== undefined) updates.avatarUrl = dto.avatarUrl;
     await this.users.update(this.uid(req), updates);

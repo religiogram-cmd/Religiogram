@@ -24,7 +24,19 @@ export type AccountType = 'user' | 'priest' | 'temple';
 export interface CommunityProfile {
   id: string;
   username: string;          // unique, lowercase, 3-20 chars
-  name?: string;             // display name (optional)
+  /**
+   * Display name shown on posts, DMs, comments, etc.
+   *
+   * The backend field is `displayName` (see UsersEntity). We keep both
+   * `displayName` and `name` on this interface as aliases so:
+   *   - code that reads `.displayName` (the truth) works, AND
+   *   - code that still reads `.name` (legacy Settings terminology)
+   *     also works.
+   * The `me` fetcher normalises the payload so both are always set to
+   * the same value.
+   */
+  displayName?: string;
+  name?: string;
   bio?: string;              // 0-160 chars
   avatarUrl?: string;
   accountType: AccountType;
@@ -162,10 +174,22 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const me = {
   /** Returns the caller's community profile, or null if setup hasn't been done.
-   * Real backend route: GET /v1/community/me. */
+   * Real backend route: GET /v1/community/me.
+   *
+   * Normalises the payload so `.displayName` and `.name` are always both
+   * populated with the same value. Older parts of the frontend read `.name`
+   * (from when Community had its own display-name field) — without this
+   * shim they'd see `undefined` and fall back to `@username`, which was the
+   * source of the "@admin" bug even after the user set a full name. */
   get: async (): Promise<CommunityProfile | null> => {
     try {
-      return await call<CommunityProfile>('/community/me');
+      const p = await call<CommunityProfile>('/community/me');
+      if (p) {
+        const shown = p.displayName ?? p.name ?? '';
+        (p as any).displayName = shown;
+        (p as any).name = shown;
+      }
+      return p;
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) return null;
       throw err;
@@ -191,14 +215,14 @@ export const me = {
   /** First-time setup. Server enforces uniqueness — 409 on conflict.
    * Real backend route: POST /v1/community/setup with SetupCommunityDto
    *   { username, displayName?, bio?, avatarUrl?, accountType? }. */
-  setup: (body: {
+  setup: async (body: {
     username: string;
     name?: string;
     bio?: string;
     avatarUrl?: string;
     accountType?: 'user' | 'priest' | 'temple';
-  }) =>
-    call<CommunityProfile>('/community/setup', {
+  }): Promise<CommunityProfile> => {
+    const p = await call<CommunityProfile>('/community/setup', {
       method: 'POST',
       body: JSON.stringify({
         username:    body.username,
@@ -207,19 +231,29 @@ export const me = {
         avatarUrl:   body.avatarUrl,
         accountType: body.accountType ?? 'user',
       }),
-    }),
+    });
+    const shown = p.displayName ?? p.name ?? '';
+    (p as any).displayName = shown;
+    (p as any).name = shown;
+    return p;
+  },
 
   /** Update profile (name, bio, avatar). Username is immutable after setup.
    * Real backend route: PATCH /v1/community/me. */
-  update: (body: { name?: string; bio?: string; avatarUrl?: string }) =>
-    call<CommunityProfile>('/community/me', {
+  update: async (body: { name?: string; bio?: string; avatarUrl?: string }): Promise<CommunityProfile> => {
+    const p = await call<CommunityProfile>('/community/me', {
       method: 'PATCH',
       body: JSON.stringify({
         displayName: body.name,
         bio:         body.bio,
         avatarUrl:   body.avatarUrl,
       }),
-    }),
+    });
+    const shown = p.displayName ?? p.name ?? '';
+    (p as any).displayName = shown;
+    (p as any).name = shown;
+    return p;
+  },
 };
 
 // 2. ─── USER SEARCH + FRIENDS ─────────────────────────────────────────────
