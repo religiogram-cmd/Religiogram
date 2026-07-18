@@ -357,15 +357,29 @@ function PostCard({
     }
   })();
 
+  // Extract images once — the backend returns them under either key.
+  const imgs: string[] = ((post as any).photos ?? (post as any).imageUrls ?? []) as string[];
+
+  // Provider/role chip below the display name (Pandit, Imam, etc.).
+  // Falls back to no chip if the author is a regular user.
+  const roleChip = (() => {
+    const t = (post.author as any).accountType as string | undefined;
+    const role = (post.author as any).providerRole as string | undefined;
+    if (role) return role;
+    if (t === 'provider') return 'Provider';
+    return null;
+  })();
+
   return (
     <article style={{
       background: '#fff', borderRadius: 16,
       padding: 14,
       boxShadow: '0 2px 10px rgba(60,30,5,0.06)',
       border: '1px solid rgba(200,146,10,0.18)',
+      overflow: 'hidden',
     }}>
-      {/* Header row */}
-      <header style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+      {/* ── Header row: avatar + name/role + timestamp + menu ─────────── */}
+      <header style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
         {post.author.avatarUrl ? (
           <div style={{
             width: 40, height: 40, borderRadius: '50%',
@@ -376,14 +390,22 @@ function PostCard({
           <div style={initialsAvatarStyle(40)}>{getInitials(post.author.name, post.author.username)}</div>
         )}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontSize: 13.5, fontWeight: 800, color: TEXT, lineHeight: 1.1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13.5, fontWeight: 800, color: TEXT, lineHeight: 1.15 }}>
               {post.author.name || ('@' + post.author.username)}
             </span>
             {(post.author as any).isVerified === true && <VerifiedBadge />}
           </div>
-          <div style={{ fontSize: 11, color: TEXT3, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span>{timeAgo(post.createdAt)}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+            {roleChip && (
+              <span style={{
+                fontSize: 10, fontWeight: 700,
+                padding: '2px 8px', borderRadius: 6,
+                background: 'rgba(200,146,10,0.14)', color: '#8B5A00',
+                letterSpacing: '0.02em',
+              }}>{roleChip}</span>
+            )}
+            <span style={{ fontSize: 11, color: TEXT3 }}>{timeAgo(post.createdAt)}</span>
           </div>
         </div>
         {isOwner && (
@@ -404,49 +426,96 @@ function PostCard({
         )}
       </header>
 
-      {/* Body row — text left, image right */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {post.text && (
-            <div style={{ fontSize: 13, color: TEXT, lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: 8 }}>
-              {renderWithHashtags(post.text, post.hashtags)}
-            </div>
-          )}
-          {categoryLabel && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              padding: '4px 10px', borderRadius: 8,
-              background: categoryLabel.bg, color: categoryLabel.fg,
-              fontSize: 10.5, fontWeight: 700,
-            }}>
-              {categoryLabel.icon} {categoryLabel.label}
-            </span>
-          )}
+      {/* ── Text (full width, stacked above image) ─────────────────────── */}
+      {post.text && (
+        <div style={{ fontSize: 14, color: TEXT, lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: imgs.length > 0 ? 10 : 8 }}>
+          {renderWithHashtags(post.text, post.hashtags)}
         </div>
-        {(() => {
-          const imgs: string[] = (post as any).photos ?? (post as any).imageUrls ?? [];
-          return imgs.length > 0 && (
-            <div style={{
-              width: 120, aspectRatio: '4/3', borderRadius: 10, overflow: 'hidden', flexShrink: 0,
-              border: '1px solid rgba(200,146,10,0.2)',
+      )}
+
+      {categoryLabel && (
+        <div style={{ marginBottom: imgs.length > 0 ? 10 : 8 }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 8,
+            background: categoryLabel.bg, color: categoryLabel.fg,
+            fontSize: 10.5, fontWeight: 700,
+          }}>
+            {categoryLabel.icon} {categoryLabel.label}
+          </span>
+        </div>
+      )}
+
+      {/* ── Image gallery (full-width, stacked below text) ─────────────── */}
+      {imgs.length === 1 && (
+        <div style={{
+          width: '100%',
+          borderRadius: 12, overflow: 'hidden',
+          border: '1px solid rgba(200,146,10,0.2)',
+          background: '#F5EFDE',
+          maxHeight: 480,
+        }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imgs[0]}
+            alt=""
+            loading="lazy"
+            style={{
+              width: '100%', height: 'auto',
+              maxHeight: 480,
+              objectFit: 'cover',
+              display: 'block',
+            }}
+          />
+        </div>
+      )}
+      {imgs.length >= 2 && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: imgs.length === 2 ? '1fr 1fr' : '2fr 1fr',
+          gridTemplateRows: imgs.length === 2 ? '1fr' : imgs.length === 3 ? '1fr 1fr' : 'repeat(2, 1fr)',
+          gap: 4,
+          borderRadius: 12, overflow: 'hidden',
+          border: '1px solid rgba(200,146,10,0.2)',
+          aspectRatio: imgs.length === 2 ? '2/1' : '4/3',
+        }}>
+          {imgs.slice(0, 4).map((src, i) => (
+            <div key={i} style={{
+              position: 'relative',
+              gridRow: imgs.length === 3 && i === 0 ? 'span 2' : undefined,
+              overflow: 'hidden',
+              background: '#F5EFDE',
             }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imgs[0]} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              <img
+                src={src}
+                alt=""
+                loading="lazy"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              />
+              {i === 3 && imgs.length > 4 && (
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  background: 'rgba(0,0,0,0.55)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', fontSize: 20, fontWeight: 800,
+                }}>+{imgs.length - 4}</div>
+              )}
             </div>
-          );
-        })()}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {/* Action row */}
+      {/* ── Action row ─────────────────────────────────────────────────── */}
       <div style={{
-        marginTop: 10, paddingTop: 10,
+        marginTop: 12, paddingTop: 10,
         borderTop: '1px solid rgba(200,146,10,0.15)',
         display: 'flex', justifyContent: 'space-around',
         alignItems: 'center', gap: 4,
       }}>
         <ActionButton icon={post.likedByMe ? '❤️' : '🤍'} label={formatCount(post.likeCount)} onClick={onLike} active={post.likedByMe} activeColor={HEART} />
         <ActionButton icon="💬" label={formatCount(post.commentCount)} onClick={onOpenComments} />
-        <ActionButton icon="↗" label="Share" onClick={onShare} />
+        <ActionButton icon="↗" label={post.shareCount > 0 ? formatCount(post.shareCount) : 'Share'} onClick={onShare} />
       </div>
     </article>
   );
