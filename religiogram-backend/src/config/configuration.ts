@@ -132,19 +132,39 @@ export default () => ({
   },
 
   storage: {
-    bucket: process.env.S3_BUCKET ?? process.env.AWS_S3_BUCKET ?? 'religiogram-uploads',
+    // Bucket + region + credentials support both `S3_*` (AWS) and `R2_*`
+    // (any S3-compatible provider — Cloudflare R2, Supabase Storage, etc.).
+    bucket:
+      process.env.R2_BUCKET ??
+      process.env.S3_BUCKET ??
+      process.env.AWS_S3_BUCKET ??
+      'religiogram-uploads',
     region: process.env.AWS_REGION ?? process.env.AWS_S3_REGION ?? 'ap-south-1',
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    cdnBase: process.env.CDN_BASE_URL ?? process.env.STORAGE_PUBLIC_BASE_URL,
+    accessKeyId: process.env.R2_ACCESS_KEY ?? process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_KEY ?? process.env.AWS_SECRET_ACCESS_KEY,
+    // Public URL base used to build canonical image URLs. Read from any of
+    // the common env-var names so the backend works regardless of which
+    // storage provider the deployment uses.
+    //
+    // For Supabase Storage set R2_PUBLIC_URL to:
+    //   https://<project-ref>.supabase.co/storage/v1/object/public/<bucket>
+    // For Cloudflare R2 with the public dev URL:
+    //   https://pub-<hash>.r2.dev
+    // For AWS S3 with public bucket policy this can stay unset — the code
+    // falls back to https://<bucket>.s3.<region>.amazonaws.com/<key>.
+    cdnBase:
+      process.env.R2_PUBLIC_URL ??
+      process.env.CDN_BASE_URL ??
+      process.env.STORAGE_PUBLIC_BASE_URL,
     /**
-     * R2_ENDPOINT — Cloudflare R2 S3-compatible endpoint.
+     * R2_ENDPOINT — S3-compatible endpoint for any non-AWS provider.
      *
-     * When set, UploadsService routes all object storage through R2 instead
-     * of AWS S3.  R2 has zero egress fees, which saves ~Rs 6,000/month on
-     * user media at 1 lakh users (plan §4 variable cost).
+     * When set, UploadsService routes all object storage through this
+     * endpoint instead of AWS S3. Works for Cloudflare R2 AND for
+     * Supabase Storage (S3-compatible URL:
+     *   https://<project-ref>.supabase.co/storage/v1/s3
+     * ).
      *
-     * Format: https://<account_id>.r2.cloudflarestorage.com
      * Leave unset to use standard AWS S3 (existing behaviour).
      */
     r2Endpoint: process.env.R2_ENDPOINT,
