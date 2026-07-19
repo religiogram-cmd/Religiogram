@@ -150,6 +150,19 @@ class PatchDraftDto {
   @IsOptional()
   @IsObject()
   specialisationYears?: Record<string, number>;
+
+  /**
+   * Per-category furthest step reached. Persisted to draft.data so a user
+   * who resumes the wizard on a different device (or after clearing
+   * localStorage) still sees a "Continue where you left off" banner for
+   * whichever role they were mid-way through — priest / astrologer / both.
+   *
+   * Shape: { priest?: number; astrologer?: number; both?: number }
+   * Without this the autosave PATCH would 400 due to forbidNonWhitelisted.
+   */
+  @IsOptional()
+  @IsObject()
+  progressByCategory?: Record<string, number>;
 }
 
 class PresignKycDto {

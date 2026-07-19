@@ -35,7 +35,10 @@ export default function ProviderOnboardingEntry() {
     }
   }, [searchParams, data.providerCategory, update]);
 
-  // Block re-fill if application is already submitted/decided.
+  // Block re-fill if the application is already submitted/decided AND
+  // seed the local store's `progressByCategory` + `step` from the server
+  // so a user resuming on a new browser (empty localStorage) still sees
+  // a Continue banner.
   useEffect(() => {
     let cancelled = false;
     providerOnboardingApi
@@ -43,13 +46,35 @@ export default function ProviderOnboardingEntry() {
       .then((d) => {
         if (cancelled) return;
         const st = d.providerStatus;
-        if (st === 'pending_review' || st === 'approved' || st === 'rejected') {
+        if (st === 'pending_review' || st === 'approved' || st === 'rejected' || st === 'suspended') {
           router.replace('/provider-status');
+          return;
+        }
+        // If the backend has a further step or a progressByCategory the
+        // local store hasn't seen, merge it in so the resume banner renders.
+        const remoteProgress = ((d.data as any)?.progressByCategory ?? {}) as
+          Partial<Record<Category, number>>;
+        const localProgress = (data.progressByCategory ?? {}) as
+          Partial<Record<Category, number>>;
+        const merged: Partial<Record<Category, number>> = { ...localProgress };
+        (['priest', 'astrologer', 'both'] as Category[]).forEach((c) => {
+          const remote = remoteProgress[c] ?? 0;
+          const local = localProgress[c] ?? 0;
+          if (remote > local) merged[c] = remote;
+        });
+        // If we have no per-category record at all but the backend knows we're
+        // past step 1, fall back to whichever category is on the draft.
+        const cat = ((d.data as any)?.providerCategory ?? data.providerCategory) as Category | undefined;
+        if (cat && d.step > 1 && !(merged[cat] ?? 0)) {
+          merged[cat] = d.step;
+        }
+        if (Object.keys(merged).length > 0) {
+          update({ progressByCategory: merged });
         }
       })
-      .catch(() => { /* non-fatal */ });
+      .catch(() => { /* non-fatal — user can still start fresh */ });
     return () => { cancelled = true; };
-  }, [router]);
+  }, [router, data.progressByCategory, data.providerCategory, update]);
 
   useEffect(() => {
     if (saveStatus !== 'idle') { setChecked(true); return; }
