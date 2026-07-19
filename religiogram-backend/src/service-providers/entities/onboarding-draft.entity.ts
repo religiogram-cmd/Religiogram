@@ -20,7 +20,13 @@ import {
  */
 @Entity({ name: 'onboarding_drafts' })
 export class OnboardingDraftEntity {
-  @PrimaryColumn({ name: 'user_id', type: 'bigint' })
+  // The database column is UUID (see migration 1700000000012). Previously
+  // this was declared `bigint`, which caused TypeORM to bind the userId as
+  // a numeric parameter — PostgreSQL then rejected the WHERE clause because
+  // a UUID string like 'abc-def-…' is not a valid bigint. That was the
+  // "GET /provider/onboarding/start → 500" the client was retrying
+  // indefinitely.
+  @PrimaryColumn({ name: 'user_id', type: 'uuid' })
   userId!: string;
 
   @Column({ name: 'step', type: 'smallint', default: 1 })

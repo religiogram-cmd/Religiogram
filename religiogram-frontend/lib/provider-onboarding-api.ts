@@ -107,6 +107,19 @@ export const servicesCatalogueApi = {
 
 let currentDraftId: string | null = null;
 
+/** In-flight promise so a burst of concurrent calls only fires one HTTP
+ *  request. Without this, mounting the wizard (which triggers a getDraft)
+ *  at the same time as the first keystroke (which triggers a saveDraft)
+ *  used to fire two /start calls in parallel. */
+let inFlightStart: Promise<string> | null = null;
+
+/** After a failure we cool down for this many ms before hitting /start
+ *  again. Previously any keystroke would immediately re-attempt, producing
+ *  a stream of 500s in DevTools. */
+const START_ERROR_COOLDOWN_MS = 30_000;
+let lastStartErrorAt = 0;
+let lastStartError: Error | null = null;
+
 /**
  * Pick the canonical id out of the various shapes the backend uses.
  * Real backend:  /start → { onboardingId },  /me → { state, draft } (no id;
@@ -126,17 +139,43 @@ function pickId(resp: any): string | null {
  * second call inside the wizard doesn't hit the network. We always POST
  * /start because the real backend treats it as idempotent (it returns the
  * existing draft if one exists) — that also matches the mock.
+ *
+ * Failure behaviour: after a failed /start we cache the error for
+ * START_ERROR_COOLDOWN_MS. Any calls during that window immediately
+ * reject with the cached error so we don't hammer a broken endpoint
+ * with every keystroke.
  */
 async function ensureDraftId(): Promise<string> {
   if (currentDraftId) return currentDraftId;
-  const created = await apiFetch<any>(`/provider/onboarding/start`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
-  const id = pickId(created);
-  if (!id) throw new ApiError('NO_DRAFT_ID', 'Could not start onboarding draft', 500);
-  currentDraftId = id;
-  return currentDraftId;
+  if (inFlightStart) return inFlightStart;
+
+  // Recent failure — don't spam the server, surface the cached error.
+  if (lastStartError && Date.now() - lastStartErrorAt < START_ERROR_COOLDOWN_MS) {
+    throw lastStartError;
+  }
+
+  inFlightStart = (async () => {
+    try {
+      const created = await apiFetch<any>(`/provider/onboarding/start`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      const id = pickId(created);
+      if (!id) throw new ApiError('NO_DRAFT_ID', 'Could not start onboarding draft', 500);
+      currentDraftId = id;
+      lastStartError = null;
+      lastStartErrorAt = 0;
+      return currentDraftId;
+    } catch (err) {
+      lastStartError = err instanceof Error ? err : new Error(String(err));
+      lastStartErrorAt = Date.now();
+      throw lastStartError;
+    } finally {
+      inFlightStart = null;
+    }
+  })();
+
+  return inFlightStart;
 }
 
 /**
