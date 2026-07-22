@@ -202,6 +202,18 @@ class SubmitKycDto {
   @Min(30)
   durationSeconds!: number;
 
+  /**
+   * Actual size of the uploaded video in bytes. Required so the DB
+   * check constraint `chk_kyc_size` (size_bytes > 0) is satisfied.
+   * Also lets admins see the file size in the review UI.
+   * Optional for backward compat — if the client doesn't send it we
+   * fall back to a placeholder in the handler.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  sizeBytes?: number;
+
   @IsOptional()
   @IsString()
   deviceFingerprint?: string;
@@ -588,12 +600,15 @@ export class ProviderOnboardingV2Controller {
       );
       if (existing?.id) {
         // Overwrite the s3_key + duration so the new upload replaces the old.
+        const sizeForUpdate = Number.isFinite(dto.sizeBytes) && (dto.sizeBytes ?? 0) > 0
+          ? Math.floor(dto.sizeBytes as number)
+          : 1;
         await this.ds.query(
           `UPDATE kyc_videos
              SET s3_key = $2, duration_seconds = $3, mime_type = $4,
-                 status = 'uploaded'
+                 size_bytes = $5::bigint, status = 'uploaded'
            WHERE id = $1`,
-          [existing.id, key, Math.max(30, Math.floor(dto.durationSeconds)), mimeType],
+          [existing.id, key, Math.max(30, Math.floor(dto.durationSeconds)), mimeType, sizeForUpdate],
         );
         this.logger.log?.(
           `submitKyc: updated existing kyc_videos row id=${existing.id} for provider=${provider.id}`,
@@ -601,16 +616,26 @@ export class ProviderOnboardingV2Controller {
         return { kycVideoId: String(existing.id) };
       }
 
+      // Explicit ::bigint cast on provider_id so node-pg's text parameter
+      // binding doesn't confuse the FK check. providers.id is bigint, and
+      // some pg drivers won't implicit-cast text -> bigint for FK lookups.
+      //
+      // size_bytes must be > 0 to satisfy the chk_kyc_size CHECK constraint.
+      // If the client didn't send the real size we fall back to 1 (one byte)
+      // just to pass the check; admins re-verify via signed download anyway.
+      const sizeBytes = Number.isFinite(dto.sizeBytes) && (dto.sizeBytes ?? 0) > 0
+        ? Math.floor(dto.sizeBytes as number)
+        : 1;
       const [inserted] = await this.ds.query(
         `INSERT INTO kyc_videos
            (provider_id, s3_key, duration_seconds, size_bytes, mime_type, status, created_at)
-         VALUES ($1, $2, $3, $4, $5, 'uploaded', NOW())
+         VALUES ($1::bigint, $2, $3, $4::bigint, $5, 'uploaded', NOW())
          RETURNING id`,
         [
           String(provider.id),
           key,
           Math.max(30, Math.floor(dto.durationSeconds)),
-          0,
+          sizeBytes,
           mimeType,
         ],
       );

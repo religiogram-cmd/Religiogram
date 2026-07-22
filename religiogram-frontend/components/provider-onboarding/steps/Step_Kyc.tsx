@@ -350,6 +350,7 @@ export default function Step_Kyc({ flow, nextStepPath, gateCheck }: Props) {
       await providerOnboardingApi.step7({
         r2ObjectKey: presigned.r2ObjectKey,
         durationSeconds: recordedDuration,
+        sizeBytes: recordedBlob.size,
       });
 
       advance(flow.advanceTo);

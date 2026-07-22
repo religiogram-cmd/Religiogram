@@ -255,10 +255,13 @@ export interface PresignKycResp {
   headers: Record<string, string>;
   maxSizeBytes: number;
 }
-/** Step 7 — backend's SubmitKycDto = { r2ObjectKey, durationSeconds, deviceFingerprint? }. */
+/** Step 7 — backend's SubmitKycDto = { r2ObjectKey, durationSeconds, sizeBytes?, deviceFingerprint? }. */
 export interface Step7Body {
   r2ObjectKey: string;
   durationSeconds: number;
+  /** Actual file size in bytes. Required so the backend's chk_kyc_size
+   *  CHECK constraint (size_bytes > 0) is satisfied. */
+  sizeBytes?: number;
   deviceFingerprint?: string;
 }
 
@@ -359,6 +362,12 @@ export const providerOnboardingApi = {
       body: JSON.stringify({
         r2ObjectKey:        body.r2ObjectKey,
         durationSeconds:    Math.floor(body.durationSeconds),
+        // Real file size in bytes — required to satisfy the
+        // chk_kyc_size DB constraint (size_bytes > 0). Falls back
+        // to a placeholder on the server if omitted.
+        ...(typeof body.sizeBytes === 'number' && body.sizeBytes > 0
+          ? { sizeBytes: Math.floor(body.sizeBytes) }
+          : {}),
         ...(body.deviceFingerprint ? { deviceFingerprint: body.deviceFingerprint } : {}),
       }),
     });
