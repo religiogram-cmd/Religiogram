@@ -3,26 +3,80 @@
 /**
  * /provider-onboarding/submitted — post-submission success screen.
  *
- * Shown after Step 7's video upload succeeds. We clear the local draft
- * here (not inside the step page) so the step-7 gate can't redirect away
- * during the same render cycle the state is being cleared.
+ * Verifies with the backend that the caller's provider row is actually in
+ * `pending_review` or beyond BEFORE clearing the local draft or showing the
+ * success copy. Previously this page rendered unconditionally, so if a user
+ * landed here by mistake (typing the URL, or a race where the submit call
+ * failed but router.push had already fired) they'd see fake congratulations
+ * AND lose their local draft to `reset()`. That produced two support
+ * incidents where the applicant thought they were done but their record
+ * was still `draft`.
  *
- * Status copy is deliberately warm, realistic, and sets the review SLA.
+ * Behaviour:
+ *   • Provider status = pending_review / approved  → clear draft + render
+ *     success copy (correct case).
+ *   • Provider status = draft                       → route back to
+ *     /provider-onboarding so they can complete the missing pieces.
+ *   • Provider status = rejected / suspended       → route to
+ *     /provider-status which explains the state and next actions.
+ *   • Network error                                 → render success anyway;
+ *     the app was optimistic and the user did complete the flow. If it was
+ *     a real error we'll surface it on the next visit.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProviderOnboarding } from '@/lib/provider-onboarding-store';
+import { providerOnboardingApi } from '@/lib/provider-onboarding-api';
 
 export default function SubmittedPage() {
   const router = useRouter();
   const { reset, data } = useProviderOnboarding();
+  const [confirmed, setConfirmed] = useState<'checking' | 'ok'>('checking');
 
   useEffect(() => {
-    // Clear the draft now that we've landed safely on the success page.
-    reset();
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const d = await providerOnboardingApi.getDraft();
+        if (cancelled) return;
+        const st = d.providerStatus;
+
+        if (st === 'pending_review' || st === 'approved') {
+          reset();
+          setConfirmed('ok');
+          return;
+        }
+
+        if (st === 'rejected' || st === 'suspended') {
+          router.replace('/provider-status');
+          return;
+        }
+
+        // Still draft — the submit didn't actually succeed even though the
+        // client navigated here. Send the user back to finish + surface a
+        // toast via query param so the entry page can show a warning.
+        router.replace('/provider-onboarding?resubmit=pending');
+      } catch {
+        // Network flaky — show the success screen and don't wipe the draft
+        // until confirmed. Better to show success optimistically than block
+        // a legit user who's actually done.
+        if (!cancelled) setConfirmed('ok');
+      }
+    })();
+
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (confirmed === 'checking') {
+    return (
+      <div className="min-h-svh bg-[#F7EFE1] flex items-center justify-center">
+        <span className="w-8 h-8 border-2 border-[#0F2452]/20 border-t-amber-700 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   const firstName = (data.fullName ?? '').split(' ')[0] || 'there';
 

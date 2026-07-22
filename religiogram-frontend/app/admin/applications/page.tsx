@@ -141,6 +141,44 @@ export default function AdminApplicationsPage() {
     fetchPage(filter, debouncedQuery);
   }, [filter, debouncedQuery, fetchPage]);
 
+  // Live updates: silently re-poll the queue every 30 s so a new
+  // pending_review application submitted by a priest shows up here
+  // without the admin having to hit F5. Only polls when the tab is
+  // visible — we don't waste bandwidth for background tabs.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function silentRefresh() {
+      if (document.hidden) return;
+      try {
+        const res = await adminApi.applications.list({
+          status: filter,
+          limit: PAGE_SIZE,
+          offset: 0,
+          q: debouncedQuery || undefined,
+        });
+        if (cancelled) return;
+        setItems(res.items ?? []);
+        setTotal(typeof res.total === 'number' ? res.total : (res.items ?? []).length);
+      } catch {
+        // Silent — don't display a red banner for a background poll error;
+        // the next successful poll will overwrite the stale state.
+      }
+    }
+
+    const id = setInterval(silentRefresh, 30_000);
+    // Also refresh immediately when the tab comes back into focus so the
+    // admin sees fresh data as soon as they switch back.
+    const onVis = () => { if (!document.hidden) silentRefresh(); };
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [filter, debouncedQuery]);
+
   const displayItems = items;
   const hasMore = items.length < total;
   const q = debouncedQuery.toLowerCase();
