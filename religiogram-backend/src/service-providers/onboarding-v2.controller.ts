@@ -6,6 +6,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   NotFoundException,
   Param,
   Patch,
@@ -268,6 +269,8 @@ class SubmitBankDto {
  * ────────────────────────────────────────────────────────────── */
 @Controller({ path: 'provider/onboarding', version: '1' })
 export class ProviderOnboardingV2Controller {
+  private readonly logger = new Logger(ProviderOnboardingV2Controller.name);
+
   constructor(
     @InjectDataSource()
     private readonly ds: DataSource,
@@ -553,17 +556,78 @@ export class ProviderOnboardingV2Controller {
       throw new ForbiddenException('Invalid document key — must belong to your provider folder');
     }
 
-    const kyc = this.kycRepo.create({
-      providerId: provider.id,
-      s3Key:      dto.r2ObjectKey,
-      durationSeconds: dto.durationSeconds.toFixed(2),
-      sizeBytes:  '0',
-      mimeType:   'video/mp4',
-      status:     KycStatus.Uploaded,
-    });
-    await this.kycRepo.save(kyc);
+    // Detect mime type from the object key extension so the DB row matches
+    // whatever the browser recorded (webm on most Androids, mp4 on iOS/mac).
+    const key = dto.r2ObjectKey;
+    const mimeType =
+      key.endsWith('.mp4')  ? 'video/mp4'  :
+      key.endsWith('.webm') ? 'video/webm' :
+      key.endsWith('.mov')  ? 'video/quicktime' :
+      'video/mp4';
 
-    return { kycVideoId: kyc.id };
+    /* ── Defensive INSERT ───────────────────────────────────────────────
+     * The kycRepo.save() path went through TypeORM entity metadata and
+     * would silently 500 whenever the DB schema and entity drifted (we
+     * hit this three times today with different tables). Raw SQL here
+     * is explicit about which columns we're writing, uses schema-safe
+     * literals, and returns a rich error message + logs the raw pg
+     * error so the next failure won't be invisible.
+     *
+     * Idempotency: if a `uploaded` row already exists for this provider
+     * (e.g. user retried after a network blip), we just return the
+     * existing row's id instead of erroring on the partial unique.
+     */
+    try {
+      // Return existing live row if any — makes retries safe.
+      const [existing] = await this.ds.query(
+        `SELECT id FROM kyc_videos
+          WHERE provider_id::text = $1::text
+            AND status <> 'rejected'
+          LIMIT 1`,
+        [String(provider.id)],
+      );
+      if (existing?.id) {
+        // Overwrite the s3_key + duration so the new upload replaces the old.
+        await this.ds.query(
+          `UPDATE kyc_videos
+             SET s3_key = $2, duration_seconds = $3, mime_type = $4,
+                 status = 'uploaded'
+           WHERE id = $1`,
+          [existing.id, key, Math.max(30, Math.floor(dto.durationSeconds)), mimeType],
+        );
+        this.logger.log?.(
+          `submitKyc: updated existing kyc_videos row id=${existing.id} for provider=${provider.id}`,
+        );
+        return { kycVideoId: String(existing.id) };
+      }
+
+      const [inserted] = await this.ds.query(
+        `INSERT INTO kyc_videos
+           (provider_id, s3_key, duration_seconds, size_bytes, mime_type, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, 'uploaded', NOW())
+         RETURNING id`,
+        [
+          String(provider.id),
+          key,
+          Math.max(30, Math.floor(dto.durationSeconds)),
+          0,
+          mimeType,
+        ],
+      );
+      this.logger.log?.(
+        `submitKyc: inserted kyc_videos id=${inserted.id} for provider=${provider.id}`,
+      );
+      return { kycVideoId: String(inserted.id) };
+    } catch (err: any) {
+      // Log the raw error so we can debug in Railway logs without touching
+      // the frontend's generic error wrapper.
+      this.logger.error?.(
+        `submitKyc INSERT failed provider=${provider.id} key=${key} duration=${dto.durationSeconds}: ${err?.message ?? err} | code=${err?.code} | detail=${err?.detail}`,
+      );
+      throw new BadRequestException(
+        `Could not save KYC video: ${err?.message ?? 'database error'}`,
+      );
+    }
   }
 
   /* ─── POST /v1/provider/onboarding/:id/pan/presign ─── */
